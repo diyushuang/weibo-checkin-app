@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 多选选中态遮罩：盖在缩略图上，圆角与网格单元一致 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/select_scrim" />
+    <corners android:radius="@dimen/gallery_cell_radius" />
+</shape>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 图标底托（v2.0）：32dp / 9dp 圆角 / 次级表面色。
+     列表行、入口卡里的小图标都装在这里，比裸图标"有据可依"。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface_2" />
+    <corners android:radius="@dimen/icon_tile_radius" />
+</shape>

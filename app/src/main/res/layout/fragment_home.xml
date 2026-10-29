@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================
+  首页 · 签到（v2.0）
+  ============================================================
+  骨架与参考稿一致：应用栏 → Hero（结论）→ 主行动 → 明细 → 日志。
+
+    应用栏 48dp   左：问候 + 「日期 · N 个账号」；右：刷新、添加账号（品牌方块）
+    Hero 卡       左：88dp 进度环（已签/总数）；右：待签数 + 两个 pill
+                  结论先行 —— 3 秒内回答「今天签完没有」
+    主行动        整行品牌实底「立即签到」，是这一屏唯一的强按钮
+    账号卡        行式账号：头像 / 昵称 + 状态 pill / UID / 说明
+    日志卡        默认收起，展开是恒深色的终端块
+
+  为什么把「立即签到」放成整行按钮而不是卡片里的次要元素：
+  这一屏的全部价值是「点一下签到」，它必须是页面上对比度最高的东西。
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout style="@style/Widget.Wcm.Page">
+
+        <!-- ==================== 应用栏 ==================== -->
+        <LinearLayout style="@style/Widget.Wcm.AppBar">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvGreeting"
+                    style="@style/Widget.Wcm.Text.Display"
+                    android:text="@string/greeting_morning" />
+
+                <TextView
+                    android:id="@+id/tvToday"
+                    style="@style/Widget.Wcm.Text.Hint"
+                    android:layout_marginTop="1dp" />
+            </LinearLayout>
+
+            <!-- 刷新超话状态（原次级操作行里的按钮，提到应用栏） -->
+            <ImageButton
+                android:id="@+id/btnRefreshTopics"
+                style="@style/Widget.Wcm.IconButton"
+                android:contentDescription="@string/btn_refresh_topics"
+                android:src="@drawable/ic_refresh"
+                app:tint="@color/ink_2" />
+
+            <!-- 添加账号：品牌实底方块，页面上唯一的"新建"入口 -->
+            <ImageButton
+                android:id="@+id/btnAdd"
+                style="@style/Widget.Wcm.IconButton"
+                android:layout_marginStart="@dimen/sp_2"
+                android:background="@drawable/bg_icon_button_brand"
+                android:contentDescription="@string/cd_add_account"
+                android:src="@drawable/ic_add"
+                app:tint="@color/brand_on" />
+        </LinearLayout>
+
+        <!-- ==================== Hero：结论先行 ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/heroCard"
+            style="@style/Widget.Wcm.Card.Hero"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="@string/nav_topics">
+
+            <LinearLayout
+                style="@style/Widget.Wcm.CardContent.Hero"
+                android:orientation="vertical">
+
+                <!-- 进度环（图形）+ 右侧两列文字，字基线没有可比性，关掉基线对齐省一次测量 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:baselineAligned="false"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <!-- 进度环：已签 / 总数。用 Material 的 determinate 环 + 叠字，
+                         避免自绘 View（性能与无障碍都交给框架） -->
+                    <FrameLayout
+                        android:layout_width="@dimen/ring_size"
+                        android:layout_height="@dimen/ring_size">
+
+                        <com.google.android.material.progressindicator.CircularProgressIndicator
+                            android:id="@+id/ringProgress"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:layout_gravity="center"
+                            android:indeterminate="false"
+                            android:max="100"
+                            android:progress="0"
+                            app:indicatorColor="@color/brand"
+                            app:indicatorDirectionCircular="clockwise"
+                            app:indicatorSize="@dimen/ring_size"
+                            app:trackColor="@color/surface_3"
+                            app:trackCornerRadius="4dp"
+                            app:trackThickness="@dimen/ring_thickness" />
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvRingValue"
+                                style="@style/Widget.Wcm.Text.Metric"
+                                android:textAppearance="@style/TextAppearance.Wcm.MetricHero"
+                                android:text="@string/home_ring_value_empty" />
+
+                            <TextView
+                                style="@style/Widget.Wcm.Text.Cap"
+                                android:layout_marginTop="2dp"
+                                android:text="@string/home_ring_label" />
+                        </LinearLayout>
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/sp_4"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Widget.Wcm.Text.Cap"
+                            android:text="@string/home_pending_label" />
+
+                        <TextView
+                            android:id="@+id/tvPendingMetric"
+                            style="@style/Widget.Wcm.Text.Metric"
+                            android:layout_marginTop="1dp"
+                            android:text="@string/home_metric_empty" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/sp_2"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:id="@+id/tvPillAccounts"
+                                style="@style/Widget.Wcm.Pill.Neutral"
+                                android:layout_height="@dimen/pill_height_sm"
+                                android:textSize="11sp" />
+
+                            <TextView
+                                android:id="@+id/tvPillPanel"
+                                style="@style/Widget.Wcm.Pill.Line"
+                                android:layout_height="@dimen/pill_height_sm"
+                                android:layout_marginStart="@dimen/pill_gap"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- 一句话状态（账号数 / 面板 / 保活策略），由 HomeFragment 写入 -->
+                <TextView
+                    android:id="@+id/tvSummary"
+                    style="@style/Widget.Wcm.Text.Hint"
+                    android:layout_marginTop="@dimen/sp_3"
+                    android:text="@string/home_summary_empty" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ==================== 主行动 ==================== -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCheckin"
+            style="@style/Widget.Wcm.Button.Primary.Large"
+            android:layout_width="match_parent"
+            android:layout_marginTop="@dimen/card_gap"
+            android:text="@string/btn_checkin" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSync"
+            style="@style/Widget.Wcm.Button.Text"
+            android:layout_width="match_parent"
+            android:layout_marginTop="@dimen/sp_1"
+            android:text="@string/btn_sync" />
+
+        <!-- ==================== 账号卡 ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.Wcm.Card">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent">
+
+                <LinearLayout style="@style/Widget.Wcm.CardHead">
+
+                    <TextView
+                        android:id="@+id/tvAccountsTitle"
+                        style="@style/Widget.Wcm.Text.SectionTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/accounts_label" />
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.Link"
+                        android:text="@string/home_row_hint_short" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/accountList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ==================== 日志卡（默认收起） ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.Wcm.Card">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent">
+
+                <LinearLayout
+                    android:id="@+id/logHeader"
+                    style="@style/Widget.Wcm.LogHeader"
+                    android:contentDescription="@string/cd_log_collapsed">
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.SectionTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/log_label" />
+
+                    <ImageButton
+                        android:id="@+id/btnLogToggle"
+                        style="@style/Widget.Wcm.IconButton.Row"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_expand_more"
+                        app:tint="@color/ink_3" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvLogSummary"
+                    style="@style/Widget.Wcm.Text.Hint.SingleLine"
+                    android:text="@string/log_empty" />
+
+                <!-- 这是**故意**的嵌套滚动：日志是一块固定高度的控制台窗口，
+                     内容自己滚、页面也能滚。改成不嵌套就只能把整段日志摊平，
+                     500 行会把页面撑到几万 dp。lint 的通用规则在这里不适用。 -->
+                <ScrollView
+                    android:id="@+id/logScroll"
+                    style="@style/Widget.Wcm.LogScroll"
+                    android:visibility="gone"
+                    tools:ignore="NestedScrolling">
+
+                    <TextView
+                        android:id="@+id/logView"
+                        style="@style/Widget.Wcm.Text.Log"
+                        android:text="@string/log_empty" />
+                </ScrollView>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+</ScrollView>

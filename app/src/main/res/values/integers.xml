@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  图库网格列数（v0.7）：按宽度档给值，代码只读资源，不再写死常量。
+
+  手机竖屏 3 列 → 横屏 4 列（values-land）→ 平板 4 列（sw600dp）→ 桌面 5 列（w840dp）。
+  单元格边长 = (可用宽度 - 间隙 × (列数 - 1)) / 列数，始终是正方形，
+  所以列数一变，缩略图不会变成细长条。
+-->
+<resources>
+    <integer name="gallery_columns">3</integer>
+</resources>

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用外壳（v2.0）。
+
+  内容区 + 发丝线 + 底部导航（56dp 视觉高度，跟随内容自适应）。
+    · 导航栏底色用 surface（纯白 / 深色 #15181E），和页面底 #F5F6F8 拉开一档；
+    · 顶部一条 1dp line 发丝线替代投影：深色模式下投影几乎看不见，线更稳；
+    · 底栏整体包在 bottomBar 里，键盘弹出时由 MainActivity 整块淡出。
+-->
+<!-- 不给根布局上底色：窗口背景（theme 的 windowBackground）已经是同一个颜色，
+     再画一遍只是纯粹的 overdraw（多一层全屏填充）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/fragmentContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/surface"
+        android:orientation="vertical">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/nav_divider_height"
+            android:background="@color/line" />
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottomNav"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/surface"
+            app:elevation="0dp"
+            app:itemIconSize="@dimen/tabbar_icon"
+            app:itemIconTint="@color/nav_item"
+            app:itemTextAppearanceActive="@style/TextAppearance.Wcm.NavLabel.Active"
+            app:itemTextAppearanceInactive="@style/TextAppearance.Wcm.NavLabel"
+            app:itemTextColor="@color/nav_item"
+            app:labelVisibilityMode="labeled"
+            app:menu="@menu/bottom_nav" />
+    </LinearLayout>
+</LinearLayout>

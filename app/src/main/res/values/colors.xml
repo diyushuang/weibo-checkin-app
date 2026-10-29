@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================
+  颜色令牌（v2.0 · 对齐面板端 UI 系统 tokens.css）
+  ============================================================
+  三条原则，改色只改这里：
+
+  1) **底是冷的，面是白的**。页面底 #F5F6F8（略偏冷的浅灰）衬托 #FFFFFF 卡片，
+     卡片只靠「1dp 发丝边 + 极浅投影」浮起来，不靠色块堆层级。
+     这是和上一版最大的区别：上一版卡片用暖灰填充色，整屏发闷、像线框图。
+  2) **强调色只占很小面积**。玫红 #E0245E 只出现在：主按钮、选中 Tab、
+     关键数字、状态点、软底 pill。其余全是中性色 —— 一屏里红色面积越小，越像成品。
+  3) **文字三档 + 语义四色**。ink / ink-2 / ink-3 已经够用，不再额外造灰。
+
+  对比度（WCAG 2.1 AA，正文 4.5:1）对齐面板端实测值：
+    #14161A on #FFFFFF 18.1:1 · #5B616B 6.2:1 · #6E7681 4.6:1
+    #E0245E on #FFFFFF 4.58:1（可作正文级强调）· #B41246 6.74:1（小字用这个）
+  ============================================================
+-->
+<resources>
+
+    <!-- ===== 1. 底色与面（浅色） ===== -->
+    <color name="bg">#F5F6F8</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_2">#F7F8FA</color>
+    <color name="surface_3">#EFF1F4</color>
+
+    <!-- ===== 2. 文字 ===== -->
+    <color name="ink">#14161A</color>
+    <color name="ink_2">#5B616B</color>
+    <color name="ink_3">#6E7681</color>
+
+    <!-- ===== 3. 分隔线 ===== -->
+    <color name="line">#EAECF0</color>
+    <color name="line_2">#DFE3E8</color>
+
+    <!-- ===== 4. 品牌（微博玫红） ===== -->
+    <color name="brand">#E0245E</color>
+    <color name="brand_strong">#B41246</color>
+    <color name="brand_soft">#FDECF1</color>
+    <color name="brand_on">#FFFFFF</color>
+
+    <!-- ===== 5. 语义色 ===== -->
+    <color name="ok_text">#087F5B</color>
+    <color name="ok_soft">#E7F7F1</color>
+    <color name="warn_text">#C2410C</color>
+    <color name="warn_soft">#FDF1E3</color>
+    <color name="danger">#B42318</color>
+    <color name="danger_text">#B42318</color>
+    <color name="danger_soft">#FDECEA</color>
+
+    <!-- ===== 6. 日志控制台（两个主题下都是深色，像终端窗口） ===== -->
+    <color name="console_bg">#0E1116</color>
+    <color name="console_ink">#C8D0DB</color>
+
+    <!-- ===== 7. 全屏预览页（恒黑，不跟随主题） ===== -->
+    <color name="preview_bar_scrim">#E6101010</color>
+    <color name="on_preview_surface">#FFFFFFFF</color>
+    <color name="on_preview_surface_secondary">#B3FFFFFF</color>
+    <color name="on_preview_danger">#FF8A80</color>
+
+    <!-- 图片占位 / 徽标底衬 -->
+    <color name="image_placeholder">#EFF1F4</color>
+    <color name="scrim_image">#99000000</color>
+
+    <!-- ===== 8. 超话等级徽章（v0.9.0） =====
+         四档分级配色：1-3 中性 / 4-6 蓝 / 7-9 紫 / 10+ 金。
+         底浅字深，保证 4.5:1 以上；深色主题另有一套（values-night）。 -->
+    <color name="level_neutral_bg">#EEF0F3</color>
+    <color name="level_neutral_fg">#4B5563</color>
+    <color name="level_blue_bg">#E8F0FE</color>
+    <color name="level_blue_fg">#1D4ED8</color>
+    <color name="level_purple_bg">#F1EAFE</color>
+    <color name="level_purple_fg">#6D28D9</color>
+    <color name="level_gold_bg">#FBF0D6</color>
+    <color name="level_gold_fg">#8A5A00</color>
+
+    <!-- 多选遮罩（图库批处理） -->
+    <color name="select_scrim">#66000000</color>
+
+    <color name="ic_launcher_background">#E0245E</color>
+</resources>

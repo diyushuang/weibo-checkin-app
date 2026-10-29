@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 输入框描边：默认发丝灰，聚焦时品牌色。
+     出错态不走这里 —— TextInputLayout 有独立的 boxStrokeErrorColor 属性。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/brand" android:state_focused="true" />
+    <item android:color="@color/line_2" />
+</selector>

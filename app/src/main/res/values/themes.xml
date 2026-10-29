@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      ============================================================
+      浅色主题（v2.0 · 对齐面板端 UI 系统）
+      ============================================================
+      把参考稿的令牌映射到 Material 3 的色彩角色上，这样 Material 自带的
+      Switch / TextField / Dialog / Ripple 都会自动跟着变，不用逐个改。
+
+        参考稿令牌        →  M3 角色
+        bg               →  android:colorBackground
+        surface          →  colorSurface（卡片 / 浮层底）
+        surface-2        →  colorSurfaceContainerLow
+        surface-3        →  colorSurfaceContainerHigh
+        ink / ink-2      →  colorOnSurface / colorOnSurfaceVariant
+        line / line-2    →  colorOutlineVariant / colorOutline
+        brand            →  colorPrimary（白字 4.58:1，达 AA）
+        brand-soft       →  colorPrimaryContainer / colorSecondaryContainer
+        danger           →  colorError
+
+      状态栏/导航栏：不写 statusBarColor，边到边由 enableEdgeToEdge() 接管。
+      ============================================================
+    -->
+    <style name="Theme.Wcm" parent="Theme.Material3.DayNight.NoActionBar">
+
+        <!-- ===== 品牌 ===== -->
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorOnPrimary">@color/brand_on</item>
+        <item name="colorPrimaryContainer">@color/brand_soft</item>
+        <item name="colorOnPrimaryContainer">@color/brand_strong</item>
+        <item name="colorPrimaryInverse">@color/brand_strong</item>
+        <item name="colorPrimaryDark">@color/brand</item>
+
+        <!-- 底部导航选中指示器用品牌软底 -->
+        <item name="colorSecondary">@color/brand</item>
+        <item name="colorOnSecondary">@color/brand_on</item>
+        <item name="colorSecondaryContainer">@color/brand_soft</item>
+        <item name="colorOnSecondaryContainer">@color/brand_strong</item>
+
+        <!-- ===== 底色与面 ===== -->
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/ink</item>
+        <item name="colorOnSurfaceVariant">@color/ink_2</item>
+        <item name="colorSurfaceVariant">@color/surface_2</item>
+        <item name="colorSurfaceContainerLowest">@color/surface</item>
+        <item name="colorSurfaceContainerLow">@color/surface_2</item>
+        <item name="colorSurfaceContainer">@color/surface_2</item>
+        <item name="colorSurfaceContainerHigh">@color/surface_3</item>
+        <item name="colorSurfaceContainerHighest">@color/surface_3</item>
+        <item name="colorSurfaceBright">@color/surface</item>
+        <item name="colorSurfaceDim">@color/surface_3</item>
+
+        <!-- ===== 线与语义 ===== -->
+        <item name="colorOutline">@color/line_2</item>
+        <item name="colorOutlineVariant">@color/line</item>
+        <item name="colorError">@color/danger</item>
+        <item name="colorOnError">#FFFFFF</item>
+        <item name="colorErrorContainer">@color/danger_soft</item>
+        <item name="colorOnErrorContainer">@color/danger_text</item>
+
+        <!-- ===== 形状：6 / 10 / 14 / 18 / 24 ===== -->
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.Wcm.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.Wcm.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.Wcm.Large</item>
+
+        <item name="android:windowBackground">?android:attr/colorBackground</item>
+
+        <!-- 全面屏挖孔：内容延伸进挖孔区渲染，由 insets 让位，不在挖孔侧留黑边 -->
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="o_mr1">
+            shortEdges
+        </item>
+
+        <!-- 浅色底 → 状态栏图标深色；运行时 enableEdgeToEdge() 会再校准一次 -->
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Wcm.Dialog</item>
+    </style>
+
+    <!-- 全屏图片预览：纯黑沉浸背景，系统栏图标恒为浅色 -->
+    <style name="Theme.Wcm.Preview">
+        <item name="colorPrimary">@color/brand</item>
+        <item name="android:windowBackground">#FF000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="o_mr1">
+            shortEdges
+        </item>
+    </style>
+
+    <!-- 弹窗：24dp 大圆角 + 抬高一层底色，与卡片形成"层更高、角更圆"的一致心智 -->
+    <style name="ThemeOverlay.Wcm.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="shapeAppearance">@style/ShapeAppearance.Wcm.ExtraLarge</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.Wcm.ExtraLarge</item>
+        <item name="colorSurface">@color/surface</item>
+    </style>
+
+</resources>

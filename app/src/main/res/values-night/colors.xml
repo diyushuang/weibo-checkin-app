@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  深色主题颜色令牌（v2.0）。
+
+  深色不是把浅色反相，而是四件事：
+    1) 降亮度：页面底压到 #0B0D10，卡片抬到 #15181E —— 卡片比底**亮**，浮起来的方向不变；
+    2) 抬次表面：surface-2 #1B1F26 / surface-3 #22272F，凹面在深色下必须靠"更亮"区分；
+    3) 降饱和：玫红换成 #FF5C7A（暗底提亮，6.54:1），文字专用的 #FF8AA0；
+    4) 软底换深：pill 的浅色底在深色下会变成荧光块，一律换成低明度同色系。
+-->
+<resources>
+    <!-- 底色与面 -->
+    <color name="bg">#0B0D10</color>
+    <color name="surface">#15181E</color>
+    <color name="surface_2">#1B1F26</color>
+    <color name="surface_3">#22272F</color>
+
+    <!-- 文字 -->
+    <color name="ink">#E8EAEE</color>
+    <color name="ink_2">#A2A9B4</color>
+    <color name="ink_3">#8A929E</color>
+
+    <!-- 分隔线 -->
+    <color name="line">#262B34</color>
+    <color name="line_2">#333944</color>
+
+    <!-- 品牌 -->
+    <color name="brand">#FF5C7A</color>
+    <color name="brand_strong">#FF8AA0</color>
+    <color name="brand_soft">#3A1720</color>
+    <color name="brand_on">#0B0D10</color>
+
+    <!-- 语义 -->
+    <color name="ok_text">#34D399</color>
+    <color name="ok_soft">#10312A</color>
+    <color name="warn_text">#FBBF24</color>
+    <color name="warn_soft">#322612</color>
+    <color name="danger">#F87171</color>
+    <color name="danger_text">#F87171</color>
+    <color name="danger_soft">#3A1818</color>
+
+    <!-- 图片占位 -->
+    <color name="image_placeholder">#22272F</color>
+
+    <!-- 超话等级徽章：暗底低明度同色系，字提到高对比 -->
+    <color name="level_neutral_bg">#262B34</color>
+    <color name="level_neutral_fg">#A2A9B4</color>
+    <color name="level_blue_bg">#16263F</color>
+    <color name="level_blue_fg">#93B4FF</color>
+    <color name="level_purple_bg">#2A2138</color>
+    <color name="level_purple_fg">#C4A9FF</color>
+    <color name="level_gold_bg">#33280F</color>
+    <color name="level_gold_fg">#F0C674</color>
+
+    <!-- 多选遮罩 -->
+    <color name="select_scrim">#99000000</color>
+</resources>

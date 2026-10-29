@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================
+  设置页 · 配置（v2.0）
+  ============================================================
+    应用栏     「设置」+ 一句定位
+    面板同步   表单卡：两个输入框 + 整行「保存」+ 一行结果说明
+    行为       开关卡：标题 + 说明 + 右开关，行间发丝线
+    关于       弱信息卡：版本文案 + 外观说明
+
+  输入框用 OutlinedBox：白底卡片里塞一个灰底输入框，比 Filled 更有"可输入"的暗示；
+  圆角 10dp 与按钮同族，视觉上输入与提交是一组动作。
+  键盘弹出时由 MainActivity 把 IME inset 转成内容区底部内边距，表单会被顶到键盘上方。
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout style="@style/Widget.Wcm.Page">
+
+        <!-- 应用栏：左标题块 + 右侧内容，字号差三档，基线对齐只会多量一遍 -->
+        <LinearLayout
+            style="@style/Widget.Wcm.AppBar"
+            android:baselineAligned="false">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Widget.Wcm.Text.Display"
+                    android:text="@string/page_settings_title" />
+
+                <TextView
+                    style="@style/Widget.Wcm.Text.Hint"
+                    android:layout_marginTop="1dp"
+                    android:text="@string/page_settings_subtitle" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ==================== 面板同步 ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.Wcm.Card">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent">
+
+                <LinearLayout style="@style/Widget.Wcm.CardHead">
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.SectionTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/settings_panel_title" />
+
+                    <TextView
+                        style="@style/Widget.Wcm.Pill.Neutral"
+                        android:layout_height="@dimen/pill_height_sm"
+                        android:textSize="11sp"
+                        android:text="@string/settings_panel_tag" />
+                </LinearLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.Wcm.Field"
+                    android:layout_marginTop="@dimen/sp_3"
+                    android:hint="@string/settings_panel_url_hint">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etPanelUrl"
+                        style="@style/Widget.Wcm.Field.Edit"
+                        android:inputType="textUri" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.Wcm.Field"
+                    android:layout_marginTop="@dimen/sp_2"
+                    android:hint="@string/settings_panel_token_hint">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etPanelToken"
+                        style="@style/Widget.Wcm.Field.Edit"
+                        android:inputType="text" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSavePanel"
+                    style="@style/Widget.Wcm.Button"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/sp_3"
+                    android:text="@string/settings_save" />
+
+                <TextView
+                    style="@style/Widget.Wcm.Text.Hint"
+                    android:layout_marginTop="@dimen/sp_2"
+                    android:text="@string/settings_panel_note" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ==================== 行为 ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.Wcm.Card">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent">
+
+                <LinearLayout style="@style/Widget.Wcm.CardHead">
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.SectionTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/settings_behavior_title" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/rowAutoOnOpen"
+                    style="@style/Widget.Wcm.ListRow"
+                    android:foreground="@drawable/fg_row_divider">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Widget.Wcm.Text.RowTitle"
+                            android:text="@string/auto_on_open" />
+
+                        <TextView
+                            style="@style/Widget.Wcm.Text.Hint"
+                            android:layout_marginTop="1dp"
+                            android:text="@string/settings_auto_on_open_desc" />
+                    </LinearLayout>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switchAutoOnOpen"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/sp_2" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/rowCrawlGif"
+                    style="@style/Widget.Wcm.ListRow">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Widget.Wcm.Text.RowTitle"
+                            android:text="@string/settings_live_gif" />
+
+                        <TextView
+                            style="@style/Widget.Wcm.Text.Hint"
+                            android:layout_marginTop="1dp"
+                            android:text="@string/settings_live_gif_desc" />
+                    </LinearLayout>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switchCrawlGif"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/sp_2" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ==================== 关于 ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.Wcm.Card">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent">
+
+                <LinearLayout style="@style/Widget.Wcm.CardHead">
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.SectionTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/settings_about_title" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvAbout"
+                    style="@style/Widget.Wcm.Text.Hint"
+                    android:layout_marginTop="@dimen/sp_2" />
+
+                <TextView
+                    style="@style/Widget.Wcm.Text.Hint"
+                    android:layout_marginTop="@dimen/sp_1"
+                    android:text="@string/settings_appearance_note" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+</ScrollView>

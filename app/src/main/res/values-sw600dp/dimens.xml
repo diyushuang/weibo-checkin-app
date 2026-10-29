@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  平板 / 折叠屏展开态（sw600dp 及以上，v2.0）。
+
+  大屏不是"把手机界面放大"，而是增加呼吸、减少横向拉伸：
+    · 留白 24dp、卡片内边距 18dp、卡片间距 12dp；
+    · 进度环放大到 96dp（大屏上它可以承担更强的视觉焦点）；
+    · 日志/清单滚动区给足高度，一屏能看更多行。
+-->
+<resources>
+    <dimen name="page_padding_horizontal">24dp</dimen>
+    <dimen name="page_padding_bottom">32dp</dimen>
+    <dimen name="card_padding">16dp</dimen>
+    <dimen name="card_padding_hero">20dp</dimen>
+    <dimen name="card_gap">12dp</dimen>
+    <dimen name="log_window_height">280dp</dimen>
+    <dimen name="crawl_log_window_height">260dp</dimen>
+    <dimen name="topic_list_height">420dp</dimen>
+    <dimen name="ring_size">96dp</dimen>
+    <dimen name="gallery_gutter">6dp</dimen>
+</resources>

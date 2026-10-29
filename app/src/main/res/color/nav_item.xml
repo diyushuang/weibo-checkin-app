@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 底部导航图标/文字着色：选中用品牌色，未选中用 ink-3（比 ink-2 更退后）。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:color="@color/brand" />
+    <item android:color="@color/ink_3" />
+</selector>

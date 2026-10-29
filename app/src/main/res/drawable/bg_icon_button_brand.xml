@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用栏主操作钮（v2.0）：品牌实底 + 10dp 圆角，与白色描边钮成对出现时自带主次。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/brand" />
+    <corners android:radius="@dimen/radius_s" />
+</shape>

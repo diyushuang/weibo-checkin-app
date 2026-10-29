@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 行底发丝线（v2.0）：挂在 android:foreground 上。
+     background 留给水波纹，foreground 只画 1dp 底线 —— 两者不打架，
+     列表行既有按压反馈，又有参考稿那种"被线切开的密排"观感。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:gravity="bottom">
+        <shape android:shape="rectangle">
+            <size android:height="1dp" />
+            <solid android:color="@color/line" />
+        </shape>
+    </item>
+</layer-list>

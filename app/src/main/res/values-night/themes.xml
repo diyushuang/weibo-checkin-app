@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      深色主题（v2.0）。
+
+      与浅色主题一一对应，只有两处**故意不同**：
+        1) 主色换成提亮后的 #FF5C7A：暗底上原色 #E0245E 只有 3.4:1，按钮文字会糊。
+        2) onPrimary 用近黑 #0B0D10 —— 提亮后的玫红属高明度色，压白字只有 2.9:1，
+           压近黑反而 6.5:1（这也是参考稿 tokens.css 的取法）。
+      其余是深色三件套：降亮度（bg #0B0D10）、抬次表面（surface #15181E > bg）、
+      软底换成低明度同色系（brand_soft #3A1720），避免荧光块。
+    -->
+    <style name="Theme.Wcm" parent="Theme.Material3.DayNight.NoActionBar">
+
+        <!-- ===== 品牌 ===== -->
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorOnPrimary">@color/brand_on</item>
+        <item name="colorPrimaryContainer">@color/brand_soft</item>
+        <item name="colorOnPrimaryContainer">@color/brand_strong</item>
+        <item name="colorPrimaryInverse">@color/brand_strong</item>
+        <item name="colorPrimaryDark">@color/brand</item>
+
+        <item name="colorSecondary">@color/brand</item>
+        <item name="colorOnSecondary">@color/brand_on</item>
+        <item name="colorSecondaryContainer">@color/brand_soft</item>
+        <item name="colorOnSecondaryContainer">@color/brand_strong</item>
+
+        <!-- ===== 底色与面 ===== -->
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/ink</item>
+        <item name="colorOnSurfaceVariant">@color/ink_2</item>
+        <item name="colorSurfaceVariant">@color/surface_2</item>
+        <item name="colorSurfaceContainerLowest">@color/bg</item>
+        <item name="colorSurfaceContainerLow">@color/surface</item>
+        <item name="colorSurfaceContainer">@color/surface_2</item>
+        <item name="colorSurfaceContainerHigh">@color/surface_3</item>
+        <item name="colorSurfaceContainerHighest">@color/surface_3</item>
+        <item name="colorSurfaceBright">@color/surface_3</item>
+        <item name="colorSurfaceDim">@color/bg</item>
+
+        <!-- ===== 线与语义 ===== -->
+        <item name="colorOutline">@color/line_2</item>
+        <item name="colorOutlineVariant">@color/line</item>
+        <item name="colorError">@color/danger</item>
+        <item name="colorOnError">@color/bg</item>
+        <item name="colorErrorContainer">@color/danger_soft</item>
+        <item name="colorOnErrorContainer">@color/danger_text</item>
+
+        <!-- ===== 形状 ===== -->
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.Wcm.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.Wcm.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.Wcm.Large</item>
+
+        <item name="android:windowBackground">?android:attr/colorBackground</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="o_mr1">
+            shortEdges
+        </item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Wcm.Dialog</item>
+    </style>
+
+</resources>

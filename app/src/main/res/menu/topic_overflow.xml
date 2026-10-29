@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_topic_field"
+        android:title="@string/topic_field_entry" />
+    <item
+        android:id="@+id/action_topic_refresh_all"
+        android:title="@string/btn_refresh_topics" />
+</menu>

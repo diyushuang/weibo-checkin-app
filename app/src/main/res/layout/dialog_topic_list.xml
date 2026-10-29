@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 超话状态清单：完整列出该账号关注的全部超话，逐条显示签到状态。
+     高度固定的滚动区（横屏在 values-land 里压缩），超话再多也能翻完，
+     且不会把弹窗撑出屏幕。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/space_xl"
+    android:paddingTop="@dimen/space_xs"
+    android:paddingEnd="@dimen/space_xl">
+
+    <TextView
+        android:id="@+id/tvTopicSummary"
+        style="@style/Widget.Wcm.Text.Hint" />
+
+    <ScrollView
+        android:id="@+id/topicScroll"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/topic_list_height"
+        android:layout_marginTop="@dimen/space_s"
+        android:nestedScrollingEnabled="true">
+
+        <LinearLayout
+            android:id="@+id/topicContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+</LinearLayout>

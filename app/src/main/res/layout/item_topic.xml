@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  超话列表项（v0.9.0）。
+
+  一行回答三件事：**等级多少、叫什么、签了没有**。
+  点按整卡展开详情（简介 / 关注数 / 帖子数），行尾 ⋮ 是低频操作。
+
+  为什么等级做成左侧徽章而不是文字前缀：
+  等级是扫读信号，位置固定才能一眼比大小；四档配色（中性/蓝/紫/金）
+  让「我的高等级超话」在长列表里直接跳出来。
+-->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/topicCard"
+    style="@style/Widget.Wcm.Card.Clickable">
+
+    <LinearLayout style="@style/Widget.Wcm.CardContent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvLevelBadge"
+                style="@style/Widget.Wcm.Badge.Level" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/sp_2"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvTopicName"
+                    style="@style/Widget.Wcm.Text.RowTitle" />
+
+                <TextView
+                    android:id="@+id/tvTopicMeta"
+                    style="@style/Widget.Wcm.Text.Hint.SingleLine"
+                    android:layout_marginTop="2dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvTopicState"
+                style="@style/Widget.Wcm.Pill.Ok.Small" />
+
+            <ImageButton
+                android:id="@+id/btnTopicMore"
+                style="@style/Widget.Wcm.IconButton.Row"
+                android:contentDescription="@string/cd_topic_more"
+                android:src="@drawable/ic_more_vert"
+                app:tint="@color/ink_3" />
+        </LinearLayout>
+
+        <!-- 展开区：默认隐藏，首次点开才请求详情 -->
+        <LinearLayout
+            android:id="@+id/topicDetailBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/sp_2"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvTopicIntro"
+                style="@style/Widget.Wcm.Text.Body"
+                android:ellipsize="end"
+                android:maxLines="4" />
+
+            <TextView
+                android:id="@+id/tvTopicStats"
+                style="@style/Widget.Wcm.Text.Hint"
+                android:layout_marginTop="@dimen/sp_1" />
+
+            <TextView
+                android:id="@+id/tvTopicDetailHint"
+                style="@style/Widget.Wcm.Text.Hint"
+                android:layout_marginTop="@dimen/sp_1" />
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

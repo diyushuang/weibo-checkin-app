@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 桌面模式 / 12 英寸以上：5 列 -->
+<resources>
+    <integer name="gallery_columns">5</integer>
+</resources>

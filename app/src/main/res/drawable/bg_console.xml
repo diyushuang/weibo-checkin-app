@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 日志控制台底衬（v2.0）：恒深色 + 12dp 圆角。
+     深浅两个主题下都是深色 —— 日志是"终端窗口"，恒定深色反而更好认，
+     也让整块日志区和界面其余部分明确区分开。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/console_bg" />
+    <corners android:radius="@dimen/radius_s" />
+</shape>

@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================
+  字体令牌（v2.0 · 对齐面板端 tokens.css）
+  ============================================================
+  参考稿的字号台阶是「紧凑型产品界面」的刻度：正文 13.5、说明 11.5、角标 10.5，
+  大标题只有 20（应用栏）/ 23（关键数字）/ 30（英雄数字）。
+  上一版用 28sp 做大标题，中文在小屏上会显得"喊"，也把内容挤下去了。
+
+  中文排版三条约束（改字号前先读）：
+    1) 中文没有真正的字重阶梯。系统 CJK 只有 Regular / Medium 可辨，
+       这里只用 400（sans-serif）与 500（sans-serif-medium）两档；
+    2) 字距只能收紧不能放开：标题 -0.01~-0.02em，正文 0；
+    3) 行高用 lineSpacingMultiplier（API 1），不用 android:lineHeight（API 28+），
+       否则会被 lint 的 NewApi 硬规则拦下。
+
+  数字（账号数、时间、进度）统一开 tabular-nums：等宽数字不会在刷新时跳动。
+  ============================================================
+-->
+<resources>
+
+    <!-- 角标 / 键名：10.5sp，最淡的一档 -->
+    <style name="TextAppearance.Wcm.Cap" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">10.5sp</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:lineSpacingMultiplier">1.3</item>
+        <item name="android:textColor">@color/ink_3</item>
+    </style>
+
+    <!-- 辅助说明：11.5sp -->
+    <style name="TextAppearance.Wcm.Xs" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textSize">11.5sp</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:lineSpacingMultiplier">1.5</item>
+        <item name="android:textColor">@color/ink_3</item>
+    </style>
+
+    <!-- 次要正文：12.5sp -->
+    <style name="TextAppearance.Wcm.Sm" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textSize">12.5sp</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:lineSpacingMultiplier">1.55</item>
+        <item name="android:textColor">@color/ink_2</item>
+    </style>
+
+    <!-- 正文：13.5sp -->
+    <style name="TextAppearance.Wcm.Base" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textSize">13.5sp</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:lineSpacingMultiplier">1.55</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <!-- 行标题（账号名、开关标题）：13.5sp Medium -->
+    <style name="TextAppearance.Wcm.RowTitle" parent="TextAppearance.Material3.TitleSmall">
+        <item name="android:textSize">13.5sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">-0.01</item>
+        <item name="android:lineSpacingMultiplier">1.35</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <!-- 卡片标题：14sp Medium -->
+    <style name="TextAppearance.Wcm.CardTitle" parent="TextAppearance.Material3.TitleSmall">
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">-0.01</item>
+        <item name="android:lineSpacingMultiplier">1.3</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <!-- 应用栏大标题：20sp Medium，字距收紧到 -0.02em（中文才有"贴紧"的现代感） -->
+    <style name="TextAppearance.Wcm.AppBar" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textSize">20sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">-0.02</item>
+        <item name="android:lineSpacingMultiplier">1.15</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <!-- 关键数字：19sp Medium + 等宽数字 -->
+    <style name="TextAppearance.Wcm.Metric" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textSize">19sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">-0.02</item>
+        <item name="android:lineSpacingMultiplier">1.2</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <!-- 英雄数字（进度环中心）：23sp -->
+    <style name="TextAppearance.Wcm.MetricHero" parent="TextAppearance.Wcm.Metric">
+        <item name="android:textSize">23sp</item>
+        <item name="android:letterSpacing">-0.03</item>
+    </style>
+
+    <!-- 状态 pill：11.5sp Medium -->
+    <style name="TextAppearance.Wcm.Pill" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:textSize">11.5sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <!-- 按钮文案：13sp Medium（大按钮 14sp） -->
+    <style name="TextAppearance.Wcm.Button" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textSize">13sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.Wcm.Button.Large" parent="TextAppearance.Wcm.Button">
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <!-- 日志：等宽 11sp，按列扫读 -->
+    <style name="TextAppearance.Wcm.Mono" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textSize">11sp</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:lineSpacingMultiplier">1.7</item>
+        <item name="android:textColor">@color/console_ink</item>
+    </style>
+
+    <!-- 底部导航标签：11sp（参考稿 9.5px 在中文小屏上偏细） -->
+    <style name="TextAppearance.Wcm.NavLabel" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">11sp</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:textColor">@color/ink_3</item>
+    </style>
+
+    <style name="TextAppearance.Wcm.NavLabel.Active" parent="TextAppearance.Wcm.NavLabel">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/brand</item>
+    </style>
+</resources>

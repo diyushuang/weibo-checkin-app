@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  全屏预览（v0.6）：底部三个文字按钮改图标按钮。
+  原因：文字按钮在窄屏横屏时会把文件名挤到换行，而且三个等权重的文字按钮
+  看不出主次；图标按钮天生 48dp 触控区、无需文案占宽，删除用 error 色区分。
+  文案改到 contentDescription（@string/preview_share / preview_open / preview_delete），
+  TalkBack 可读性不变。
+-->
+<!-- 不给根布局上底色：窗口背景（theme 的 windowBackground）已经是同一个颜色，
+     再画一遍只是纯粹的 overdraw（多一层全屏填充）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/previewRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/previewPager"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/preview_bar_scrim"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/space_l"
+        android:paddingTop="@dimen/space_xs"
+        android:paddingEnd="@dimen/space_xs"
+        android:paddingBottom="@dimen/space_xs">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvPreviewIndex"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                android:textColor="@color/on_preview_surface_secondary" />
+
+            <TextView
+                android:id="@+id/tvPreviewName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xxs"
+                android:ellipsize="middle"
+                android:maxLines="1"
+                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                android:textColor="@color/on_preview_surface" />
+        </LinearLayout>
+
+        <!-- 分享（最常用）。此处刻意用固定色而不是 ?attr/colorPrimary：
+             本页背景恒为纯黑、不跟随主题，Android 12+ 动态取色下 primary 会变成
+             壁纸 tonal palette 的 tone40，对纯黑只有约 3.25:1（图形门槛 3:1 的余量仅 0.25），
+             且随壁纸变化不可预期。品牌红压纯黑是稳定的 6.01:1。 -->
+        <ImageButton
+            android:id="@+id/btnShare"
+            style="@style/Widget.Wcm.IconButton.Plain"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:contentDescription="@string/preview_share"
+            android:src="@drawable/ic_share"
+            app:tint="@color/brand" />
+
+        <ImageButton
+            android:id="@+id/btnOpen"
+            style="@style/Widget.Wcm.IconButton.Plain"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:contentDescription="@string/preview_open"
+            android:src="@drawable/ic_open_in_new"
+            app:tint="@color/on_preview_surface" />
+
+        <!-- 删除：恒用浅红（预览页背景恒黑，主题 error 色在浅色模式下太暗看不清） -->
+        <ImageButton
+            android:id="@+id/btnDelete"
+            style="@style/Widget.Wcm.IconButton.Plain"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:contentDescription="@string/preview_delete"
+            android:src="@drawable/ic_delete"
+            app:tint="@color/on_preview_danger" />
+    </LinearLayout>
+</LinearLayout>

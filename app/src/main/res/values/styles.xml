@@ -1,0 +1,550 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================
+  组件样式层（v2.0 · 对齐面板端 UI 系统）
+  ============================================================
+  布局只表达「结构 + 内容」；颜色、字号、圆角、高度、间距全部在这里。
+  组件词典（改版只改这一层）：
+
+    AppBar      48dp：左侧 20sp 标题 + 11sp 副标题，右侧 34dp 图标钮
+    Card        白面 / 14dp 圆角 / 1dp line 描边 / 1dp 投影
+    Card.Hero   18dp 圆角 / 18dp 内边距：一屏最多一张，放关键数字
+    MiniStat    双列小卡：10.5sp 键名 + 19sp 数字
+    Pill        23dp 胶囊 / 11.5sp：软底表示语义（ok/warn/danger/neutral/brand/line）
+    Button      44dp / 13-14sp / 10dp 圆角：Primary(brand) > Soft(brand 软底)
+                > Secondary(描边) > Ghost(纯文字)
+    ListRow     52dp：32dp 图标托 / 13.5sp 标题 / 11.5sp 说明 / 尾部控件
+    Console     恒深色终端块，日志专用
+
+  注意：样式名带点时是**隐式继承**，基样式必须显式 parent=""，
+  否则 aapt 会把 `Widget.Wcm.Card` 当成父样式。
+  ============================================================
+-->
+<resources>
+
+    <!-- ==================== 1. 文字 ==================== -->
+
+    <!-- 应用栏大标题 -->
+    <style name="Widget.Wcm.Text.Display" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.AppBar</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <!-- 卡片标题 -->
+    <style name="Widget.Wcm.Text.SectionTitle" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.CardTitle</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <!-- 行标题 -->
+    <style name="Widget.Wcm.Text.RowTitle" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.RowTitle</item>
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <!-- 正文 -->
+    <style name="Widget.Wcm.Text.Body" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Base</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <!-- 辅助说明（11.5sp / ink-3） -->
+    <style name="Widget.Wcm.Text.Hint" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Xs</item>
+        <item name="android:textColor">@color/ink_3</item>
+    </style>
+
+    <style name="Widget.Wcm.Text.Hint.SingleLine" parent="Widget.Wcm.Text.Hint">
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <!-- 键名 / 角标（10.5sp） -->
+    <style name="Widget.Wcm.Text.Cap" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Cap</item>
+        <item name="android:textColor">@color/ink_3</item>
+    </style>
+
+    <!-- 关键数字（19sp / 等宽） -->
+    <style name="Widget.Wcm.Text.Metric" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Metric</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <!-- 日志文字（恒深色控制台里用） -->
+    <style name="Widget.Wcm.Text.Log" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Mono</item>
+    </style>
+
+    <!-- 空态提示 -->
+    <style name="Widget.Wcm.Text.Empty" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Xs</item>
+        <item name="android:textColor">@color/ink_3</item>
+        <item name="android:paddingTop">@dimen/sp_2</item>
+        <item name="android:paddingBottom">@dimen/sp_2</item>
+    </style>
+
+    <!-- 行尾「更多 ›」链接 -->
+    <style name="Widget.Wcm.Text.Link" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Xs</item>
+        <item name="android:textColor">@color/brand_strong</item>
+        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+        <item name="android:paddingStart">@dimen/sp_1</item>
+        <item name="android:paddingEnd">@dimen/sp_1</item>
+    </style>
+
+    <!-- ==================== 2. 页面骨架 ==================== -->
+
+    <style name="Widget.Wcm.Page" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:paddingStart">@dimen/page_padding_horizontal</item>
+        <item name="android:paddingEnd">@dimen/page_padding_horizontal</item>
+        <item name="android:paddingTop">@dimen/page_padding_top</item>
+        <item name="android:paddingBottom">@dimen/page_padding_bottom</item>
+    </style>
+
+    <!-- 应用栏：48dp，标题块左、操作右 -->
+    <style name="Widget.Wcm.AppBar" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/appbar_height</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <!-- 子项字号各异（20sp 标题 / 11.5sp 副标题 / 图标钮），基线对齐只会多量一遍 -->
+        <item name="android:baselineAligned">false</item>
+    </style>
+
+    <!-- 应用栏右侧图标钮：34dp / 10dp 圆角 / 白底描边 -->
+    <style name="Widget.Wcm.IconButton" parent="">
+        <item name="android:layout_width">@dimen/appbar_icon_button</item>
+        <item name="android:layout_height">@dimen/appbar_icon_button</item>
+        <item name="android:padding">8dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:background">@drawable/bg_icon_button</item>
+    </style>
+
+    <!-- 无底板的图标钮（应用栏里的次级操作） -->
+    <style name="Widget.Wcm.IconButton.Plain" parent="Widget.Wcm.IconButton">
+        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+    </style>
+
+    <!-- 行内小图标钮（44dp 触控区，图标 24dp） -->
+    <style name="Widget.Wcm.IconButton.Row" parent="Widget.Wcm.IconButton">
+        <item name="android:layout_width">40dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+    </style>
+
+    <!-- ==================== 3. 卡片 ==================== -->
+
+    <!-- 标准卡：白面 + 发丝边 + 极浅投影。
+         strokeWidth 1dp 是"有边"的关键：纯白卡片压在 #F5F6F8 上，
+         没有描边会糊成一片；而投影只取 1dp，避免 Material 的厚重阴影。 -->
+    <style name="Widget.Wcm.Card" parent="Widget.Material3.CardView.Filled">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/card_gap</item>
+        <item name="cardCornerRadius">@dimen/card_radius</item>
+        <item name="cardElevation">1dp</item>
+        <item name="cardBackgroundColor">@color/surface</item>
+        <item name="strokeColor">@color/line</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="rippleColor">?attr/colorPrimary</item>
+    </style>
+
+    <!-- 旧名兼容：Primary / Standard / Subtle / Clickable 都映射到同一张白卡，
+         旧布局不会被破坏，新布局统一用 Widget.Wcm.Card -->
+
+    <!-- Hero 卡：18dp 圆角 + 18dp 内边距，放进度环 / 关键数字，一屏最多一张 -->
+    <style name="Widget.Wcm.Card.Hero" parent="Widget.Wcm.Card">
+        <item name="cardCornerRadius">@dimen/card_radius_hero</item>
+    </style>
+
+    <!-- 可点整卡：加前景水波纹（被圆角裁切） -->
+    <style name="Widget.Wcm.Card.Clickable" parent="Widget.Wcm.Card">
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:foreground">?attr/selectableItemBackground</item>
+    </style>
+
+    <!-- 缩略图卡：只负责裁圆角 -->
+    <style name="Widget.Wcm.Card.Thumb" parent="Widget.Material3.CardView.Filled">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/gallery_cell_min_height</item>
+        <item name="cardCornerRadius">@dimen/gallery_cell_radius</item>
+        <item name="cardElevation">0dp</item>
+        <item name="cardBackgroundColor">@color/image_placeholder</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="rippleColor">?attr/colorPrimary</item>
+    </style>
+
+    <!-- 卡片内容容器 -->
+    <style name="Widget.Wcm.CardContent" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">@dimen/card_padding</item>
+    </style>
+
+    <!-- Hero 卡内容容器 -->
+    <style name="Widget.Wcm.CardContent.Hero" parent="Widget.Wcm.CardContent">
+        <item name="android:padding">@dimen/card_padding_hero</item>
+    </style>
+
+    <!-- 横向行的卡片内容（图标 + 文字 + 尾部） -->
+    <style name="Widget.Wcm.CardContent.Row" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+        <item name="android:paddingStart">@dimen/card_padding</item>
+        <item name="android:paddingEnd">@dimen/card_padding</item>
+        <item name="android:paddingTop">@dimen/sp_3</item>
+        <item name="android:paddingBottom">@dimen/sp_3</item>
+    </style>
+
+    <!-- 卡头：标题 + 右侧操作（附「更多 ›」） -->
+    <style name="Widget.Wcm.CardHead" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:minHeight">28dp</item>
+    </style>
+
+    <!-- 双列小卡：键名 10.5sp + 数字 19sp -->
+
+
+    <!-- ==================== 4. 按钮 ==================== -->
+
+    <!-- 主行动：44dp / 10dp 圆角 / 品牌实底。
+
+         layout_width / layout_height 必须在这层给默认值：
+         布局里带 style 却不写 layout_height 时，LayoutInflater 生成 LayoutParams
+         会抛「You must supply a layout_height attribute.」——整页 inflate 失败，
+         进程直接崩。按钮在布局里只表达宽度（match_parent / wrap_content），
+         高度属于组件规格，统一由这一层决定；需要不同的高度再在子样式里覆盖。 -->
+    <style name="Widget.Wcm.Button" parent="Widget.Material3.Button">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">@dimen/btn_height</item>
+        <item name="android:minHeight">@dimen/btn_height</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="cornerRadius">@dimen/radius_s</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Button</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="backgroundTint">@color/brand</item>
+        <item name="android:textColor">@color/brand_on</item>
+        <item name="iconTint">@color/brand_on</item>
+        <item name="iconSize">@dimen/icon_size_small</item>
+        <item name="iconPadding">@dimen/sp_1</item>
+        <item name="rippleColor">#33FFFFFF</item>
+    </style>
+
+    <!-- 主按钮别名 + 大号（整行主行动） -->
+
+    <style name="Widget.Wcm.Button.Primary.Large" parent="Widget.Wcm.Button">
+        <item name="android:layout_height">@dimen/touch_min</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Button.Large</item>
+    </style>
+
+    <!-- 旧名：主行动（v0.7 布局里用的名字，值已改为 v2.0 规格） -->
+
+    <!-- 软底按钮：品牌浅底 + 品牌深字（次级主行动） -->
+
+    <!-- 描边按钮：白底 + line_2 描边 -->
+    <style name="Widget.Wcm.Button.Secondary" parent="Widget.Wcm.Button">
+        <item name="backgroundTint">@color/surface</item>
+        <item name="strokeColor">@color/line_2</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="android:textColor">@color/ink</item>
+        <item name="iconTint">@color/ink_2</item>
+        <item name="rippleColor">#0F000000</item>
+    </style>
+
+
+    <!-- 描边 + 小号（行内「选择 / 重置」这类） -->
+    <style name="Widget.Wcm.Button.Secondary.Small" parent="Widget.Wcm.Button.Secondary">
+        <item name="android:layout_height">@dimen/btn_height_sm</item>
+        <item name="android:minHeight">@dimen/btn_height_sm</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingStart">@dimen/sp_3</item>
+        <item name="android:paddingEnd">@dimen/sp_3</item>
+        <item name="cornerRadius">@dimen/radius_xs</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Pill</item>
+    </style>
+
+    <!-- 纯文字按钮 -->
+    <style name="Widget.Wcm.Button.Text" parent="Widget.Wcm.Button">
+        <item name="backgroundTint">@android:color/transparent</item>
+        <item name="android:textColor">@color/ink_2</item>
+        <item name="iconTint">@color/ink_2</item>
+        <item name="rippleColor">#0F000000</item>
+    </style>
+
+    <!-- 危险动作（删除 / 停止） -->
+    <style name="Widget.Wcm.Button.Danger" parent="Widget.Wcm.Button">
+        <item name="backgroundTint">@color/danger_soft</item>
+        <item name="android:textColor">@color/danger_text</item>
+        <item name="iconTint">@color/danger_text</item>
+        <item name="rippleColor">#1AB42318</item>
+    </style>
+
+    <!-- 小号（行内） -->
+
+    <!-- ==================== 5. 列表行 / 分隔线 / 头像 ==================== -->
+
+    <style name="Widget.Wcm.ListRow" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">@dimen/list_row_min_height</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingTop">@dimen/list_row_padding_vertical</item>
+        <item name="android:paddingBottom">@dimen/list_row_padding_vertical</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+
+
+    <!-- 头像：38dp 圆角方形 + 品牌软底 + 首字 -->
+    <style name="Widget.Wcm.Avatar" parent="">
+        <item name="android:layout_width">@dimen/avatar_size</item>
+        <item name="android:layout_height">@dimen/avatar_size</item>
+        <item name="android:background">@drawable/bg_avatar</item>
+        <item name="android:gravity">center</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/brand_strong</item>
+        <item name="android:importantForAccessibility">no</item>
+    </style>
+
+    <!-- 图标托（32dp / 9dp 圆角 / 次级表面） -->
+    <style name="Widget.Wcm.IconTile" parent="">
+        <item name="android:layout_width">@dimen/icon_tile</item>
+        <item name="android:layout_height">@dimen/icon_tile</item>
+        <item name="android:background">@drawable/bg_tile</item>
+        <item name="android:gravity">center</item>
+    </style>
+
+    <!-- ==================== 6. 状态 pill ==================== -->
+
+    <style name="Widget.Wcm.Pill" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">@dimen/pill_height</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingStart">@dimen/pill_padding_horizontal</item>
+        <item name="android:paddingEnd">@dimen/pill_padding_horizontal</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Pill</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:clickable">false</item>
+        <item name="android:focusable">false</item>
+    </style>
+
+    <style name="Widget.Wcm.Pill.Ok" parent="Widget.Wcm.Pill">
+        <item name="android:background">@drawable/bg_pill_ok</item>
+        <item name="android:textColor">@color/ok_text</item>
+    </style>
+
+    <style name="Widget.Wcm.Pill.Warn" parent="Widget.Wcm.Pill">
+        <item name="android:background">@drawable/bg_pill_warn</item>
+        <item name="android:textColor">@color/warn_text</item>
+    </style>
+
+
+    <style name="Widget.Wcm.Pill.Neutral" parent="Widget.Wcm.Pill">
+        <item name="android:background">@drawable/bg_pill_neutral</item>
+        <item name="android:textColor">@color/ink_2</item>
+    </style>
+
+
+    <style name="Widget.Wcm.Pill.Line" parent="Widget.Wcm.Pill">
+        <item name="android:background">@drawable/bg_pill_line</item>
+        <item name="android:textColor">@color/ink_2</item>
+    </style>
+
+
+
+    <!-- 小号语义 pill（账号行右肩上的状态） -->
+    <style name="Widget.Wcm.Pill.Ok.Small" parent="Widget.Wcm.Pill.Ok">
+        <item name="android:layout_height">@dimen/pill_height_sm</item>
+        <item name="android:paddingStart">@dimen/sp_2</item>
+        <item name="android:paddingEnd">@dimen/sp_2</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <style name="Widget.Wcm.Pill.Warn.Small" parent="Widget.Wcm.Pill.Warn">
+        <item name="android:layout_height">@dimen/pill_height_sm</item>
+        <item name="android:paddingStart">@dimen/sp_2</item>
+        <item name="android:paddingEnd">@dimen/sp_2</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <!-- ==================== 7. 日志折叠区 + 控制台 ==================== -->
+
+    <style name="Widget.Wcm.LogHeader" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <!-- 恒深色终端块 -->
+    <style name="Widget.Wcm.Console" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:background">@drawable/bg_console</item>
+        <item name="android:paddingStart">@dimen/sp_3</item>
+        <item name="android:paddingEnd">@dimen/sp_3</item>
+        <item name="android:paddingTop">@dimen/sp_2</item>
+        <item name="android:paddingBottom">@dimen/sp_2</item>
+    </style>
+
+    <style name="Widget.Wcm.LogScroll" parent="Widget.Wcm.Console">
+        <item name="android:layout_height">@dimen/log_window_height</item>
+        <item name="android:layout_marginTop">@dimen/sp_2</item>
+        <item name="android:nestedScrollingEnabled">true</item>
+        <item name="android:fillViewport">true</item>
+    </style>
+
+    <style name="Widget.Wcm.CrawlLogScroll" parent="Widget.Wcm.Console">
+        <item name="android:layout_height">@dimen/crawl_log_window_height</item>
+        <item name="android:layout_marginTop">@dimen/sp_2</item>
+        <item name="android:nestedScrollingEnabled">true</item>
+        <item name="android:fillViewport">true</item>
+    </style>
+
+    <!-- ==================== 8. 输入框 ==================== -->
+
+    <style name="Widget.Wcm.Field" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="boxBackgroundColor">@color/surface_2</item>
+        <item name="boxStrokeColor">@color/field_stroke</item>
+        <item name="boxStrokeErrorColor">@color/danger</item>
+        <item name="boxStrokeWidth">1dp</item>
+        <item name="boxStrokeWidthFocused">2dp</item>
+        <item name="boxCornerRadiusTopStart">@dimen/radius_s</item>
+        <item name="boxCornerRadiusTopEnd">@dimen/radius_s</item>
+        <item name="boxCornerRadiusBottomStart">@dimen/radius_s</item>
+        <item name="boxCornerRadiusBottomEnd">@dimen/radius_s</item>
+        <item name="hintTextColor">@color/ink_3</item>
+        <item name="android:textColorHint">@color/ink_3</item>
+    </style>
+
+    <style name="Widget.Wcm.Field.Edit" parent="Widget.Material3.TextInputEditText.OutlinedBox">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">13.5sp</item>
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:maxLines">1</item>
+    </style>
+
+    <!-- ==================== 9. 工具栏（图库页） ==================== -->
+
+    <style name="Widget.Wcm.Toolbar" parent="Widget.Material3.Toolbar">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/appbar_height</item>
+        <item name="android:background">@color/bg</item>
+        <item name="titleTextAppearance">@style/TextAppearance.Wcm.AppBar</item>
+        <item name="subtitleTextAppearance">@style/TextAppearance.Wcm.Xs</item>
+    </style>
+
+    <!-- ==================== 10. 超话页（v0.9.0） ==================== -->
+
+    <!-- 等级徽章：18dp 高 / 6dp 圆角 / 底浅字深。
+         底衬统一用一张白底 shape，靠 backgroundTint 换档位，避免四份重复 drawable。
+         四个档位的具体颜色由 WeiboApi.topicLevelTier(level) 在代码里选，
+         这里只定义"一枚徽章长什么样"，不把颜色写死进样式。 -->
+    <style name="Widget.Wcm.Badge.Level" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">@dimen/topic_badge_height</item>
+        <item name="android:minWidth">@dimen/topic_badge_min_width</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingStart">@dimen/sp_1</item>
+        <item name="android:paddingEnd">@dimen/sp_1</item>
+        <item name="android:background">@drawable/bg_topic_badge</item>
+        <item name="android:backgroundTint">@color/level_neutral_bg</item>
+        <item name="android:textColor">@color/level_neutral_fg</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Cap</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+    </style>
+
+    <!-- 筛选 chip / 账号 pill：默认线框，选中态在代码里换成品牌软底 -->
+    <style name="Widget.Wcm.Pill.Filter" parent="Widget.Wcm.Pill">
+        <item name="android:background">@drawable/bg_pill_line</item>
+        <item name="android:textColor">@color/ink_2</item>
+    </style>
+
+    <!-- 进度条（抓取进度 / 已签占比） -->
+    <style name="Widget.Wcm.Progress" parent="Widget.Material3.LinearProgressIndicator">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="trackThickness">@dimen/progress_thickness</item>
+        <item name="trackCornerRadius">3dp</item>
+        <item name="indicatorColor">@color/brand</item>
+        <item name="trackColor">@color/surface_3</item>
+    </style>
+
+    <!-- 分组头（图库按日期 / 按博主分组时跨整行） -->
+    <style name="Widget.Wcm.GroupHeader" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/gallery_group_header_height</item>
+        <item name="android:gravity">bottom</item>
+        <item name="android:paddingBottom">@dimen/sp_1</item>
+        <item name="android:paddingStart">@dimen/sp_1</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Cap</item>
+        <item name="android:textColor">@color/ink_3</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <!-- 多选操作条（图库批处理） -->
+    <style name="Widget.Wcm.SelectBar" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/gallery_select_bar_height</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:background">@color/surface</item>
+        <item name="android:paddingStart">@dimen/page_padding_horizontal</item>
+        <item name="android:paddingEnd">@dimen/page_padding_horizontal</item>
+    </style>
+
+</resources>

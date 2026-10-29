@@ -1,0 +1,79 @@
+name: build-apk
+
+# 仅构建 Android 客户端 APK。本仓库即 Android 工程根（settings.gradle.kts 所在目录），
+# Gradle 命令直接在本仓库根执行，不再有 android-app/ 前缀。
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - '*.kts'
+      - 'gradle.properties'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    # 固定 24.04：ubuntu-latest 自 2026-10-19 起逐步切到 Ubuntu 26，
+    # 避免基础镜像突变影响构建（需要新系统时再显式升级）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Decode signing keystore
+        env:
+          WCM_KEYSTORE_B64: ${{ secrets.WCM_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$WCM_KEYSTORE_B64" ]; then
+            echo '::warning::未配置 Secret WCM_KEYSTORE_B64：本次 APK 用一次性随机 debug 密钥签名，覆盖安装旧版会报「签名冲突」。配置方法见 README「APK 签名」。'
+            exit 0
+          fi
+          mkdir -p app/keystore
+          printf '%s' "$WCM_KEYSTORE_B64" | base64 -d > app/keystore/wcm-release.p12
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Unit tests & Build debug APK
+        run: |
+          set +e
+          sh gradlew testDebugUnitTest assembleDebug --no-daemon > build.log 2>&1
+          code=$?
+          set -e
+          if [ $code -ne 0 ]; then
+            # 测试失败：把 JUnit 报告的断言消息（含期望/实际值）转成注解
+            if ls app/build/test-results/testDebugUnitTest/*.xml >/dev/null 2>&1; then
+              grep -h -A 8 "<failure" app/build/test-results/testDebugUnitTest/*.xml \
+                | head -80 | grep -vE '^\s*$' | while IFS= read -r line; do
+                  printf '::error::TEST %s\n' "$(echo "$line" | sed 's/"/%22/g' | cut -c1-280)"
+                done
+            fi
+            # 把编译/测试错误转成 check 注解：无需登录也能通过 API 读到错误明细
+            grep -E "^e: |error: |FAILED|FAILURE|What went wrong|Caused by" -A 2 build.log \
+              | grep -vE '^\s*$' | head -50 | sed 's/^/ /' | while IFS= read -r line; do
+                printf '::error::%s\n' "$(echo "$line" | sed 's/"/%22/g')"
+              done
+            tail -40 build.log | while IFS= read -r line; do
+              printf '::error::TAIL %s\n' "$(echo "$line" | sed 's/"/%22/g')"
+            done
+            exit $code
+          fi
+
+      - name: Upload APK
+        # v6 起默认 Node 24 运行时（v4/v5 仍 Node 20，触发弃用警告）
+        uses: actions/upload-artifact@v7
+        with:
+          name: wcm-app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

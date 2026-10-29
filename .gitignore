@@ -1,0 +1,18 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+/captures
+.cxx/
+app/build/
+app/keystore/
+
+# CI/本地构建日志
+build.log
+
+# AI 编辑器/助手本地状态
+.mimosa/
+.workbuddy/
+.zcode/

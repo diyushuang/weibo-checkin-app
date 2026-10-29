@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  横屏覆写（v2.0）。
+
+  横屏高度只有竖屏一半，三件事要压缩：
+    · 日志控制台 200 → 140dp，保证「主行动 + 日志」同屏；
+    · 超话清单 320 → 200dp，让「补签」按钮留在首屏；
+    · 左右留白放大到 20dp（横向富裕空间不该让卡片贴边）。
+-->
+<resources>
+    <dimen name="page_padding_horizontal">20dp</dimen>
+    <dimen name="log_window_height">140dp</dimen>
+    <dimen name="crawl_log_window_height">132dp</dimen>
+    <dimen name="topic_list_height">200dp</dimen>
+    <dimen name="ring_size">76dp</dimen>
+</resources>

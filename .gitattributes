@@ -1,0 +1,14 @@
+# 统一换行：仓库内存 LF，检出时不随平台变化
+# （避免 Windows 上 autocrlf 反复把整仓文件标记为修改；CI 在 Linux 上构建）
+* text=auto eol=lf
+
+# Windows 批处理必须 CRLF
+*.bat text eol=crlf
+
+# 二进制：不做任何换行/文本处理
+*.p12 binary
+*.jar binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.webp binary

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>微博签到助手 · UI 系统 v2.0 预览</title>
+<style>
+  /* ============================================================
+     视觉对照稿（v2.0）：令牌与工程里的 colors.xml / dimens.xml / type.xml 一一对应，
+     参考基线是面板端 docs/ui-redesign/tokens.css。
+     用途：在没有真机的情况下核对层级、留白、配色关系。
+     ============================================================ */
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --s2:#F7F8FA; --s3:#EFF1F4;
+    --ink:#14161A; --ink2:#5B616B; --ink3:#6E7681;
+    --line:#EAECF0; --line2:#DFE3E8;
+    --brand:#E0245E; --brand-strong:#B41246; --brand-soft:#FDECF1; --brand-on:#fff;
+    --ok:#0E9F6E; --ok-t:#087F5B; --ok-soft:#E7F7F1;
+    --warn:#C2410C; --warn-soft:#FDF1E3;
+    --danger:#B42318; --danger-soft:#FDECEA;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.03);
+    --console:#0E1116; --console-ink:#C8D0DB;
+  }
+  html[data-theme="dark"]{
+    --bg:#0B0D10; --surface:#15181E; --s2:#1B1F26; --s3:#22272F;
+    --ink:#E8EAEE; --ink2:#A2A9B4; --ink3:#8A929E;
+    --line:#262B34; --line2:#333944;
+    --brand:#FF5C7A; --brand-strong:#FF8AA0; --brand-soft:#3A1720; --brand-on:#0B0D10;
+    --ok:#34D399; --ok-t:#34D399; --ok-soft:#10312A;
+    --warn:#FBBF24; --warn-soft:#322612;
+    --danger:#F87171; --danger-soft:#3A1818;
+    --shadow:0 0 0 1px rgba(255,255,255,.03);
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{
+    margin:0;padding:32px 24px 64px;background:var(--bg);color:var(--ink);
+    font-family:"HarmonyOS Sans SC","MiSans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    font-size:13.5px;line-height:1.55;transition:background .2s,color .2s;
+  }
+  header{max-width:1180px;margin:0 auto 26px;display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+  h1{margin:0;font-size:22px;font-weight:500;letter-spacing:-.02em}
+  .sub{margin-top:5px;font-size:11.5px;color:var(--ink3);line-height:1.6}
+  .toggle{margin-left:auto;display:flex;gap:6px}
+  .toggle button{
+    font:inherit;font-size:12px;padding:7px 14px;border-radius:10px;cursor:pointer;
+    border:1px solid var(--line2);background:var(--surface);color:var(--ink2);
+  }
+  .toggle button[aria-pressed="true"]{background:var(--brand);border-color:transparent;color:var(--brand-on)}
+
+  .stage{max-width:1180px;margin:0 auto;display:flex;gap:26px;justify-content:center;flex-wrap:wrap}
+  .col{width:328px}
+  .cap{margin:0 0 8px 2px;font-size:11px;color:var(--ink3);letter-spacing:.04em}
+
+  /* 手机外框：360×760dp 等比 */
+  .phone{
+    width:328px;height:660px;border-radius:26px;overflow:hidden;display:flex;flex-direction:column;
+    background:var(--bg);border:1px solid var(--line2);box-shadow:0 18px 44px -26px rgba(12,16,24,.4);
+  }
+  .sb{flex:none;height:26px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 18px;font-size:10px;font-weight:600;color:var(--ink2)}
+  .scr{flex:1;overflow:hidden;padding:0 16px}
+
+  /* 应用栏 48dp：20sp 标题 + 11.5 副标题 + 34dp 图标钮 */
+  .ab{height:48px;display:flex;align-items:center;gap:8px}
+  .ab-t{flex:1;min-width:0}
+  .ab h5{margin:0;font-size:19px;font-weight:500;letter-spacing:-.02em;line-height:1.15}
+  .ab .s{margin-top:1px;font-size:10.5px;color:var(--ink3)}
+  .ib{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;
+    background:var(--surface);border:1px solid var(--line);color:var(--ink2);flex:none}
+  .ib.brand{background:var(--brand);border-color:transparent;color:var(--brand-on)}
+  .ib svg{width:17px;height:17px}
+
+  /* 卡片：白面 + 1dp 描边 + 极浅投影 */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow);padding:14px;margin-top:10px}
+  .card.hero{border-radius:18px;padding:16px}
+  .card.tap{display:flex;align-items:center;gap:12px}
+
+  /* Hero：进度环 + 指标 + pill */
+  .ring{width:84px;height:84px;border-radius:50%;flex:none;display:grid;place-items:center;
+    background:conic-gradient(var(--brand) calc(var(--p) * 1%),var(--s3) 0)}
+  .ring::after{content:"";position:absolute}
+  .ring-in{width:68px;height:68px;border-radius:50%;background:var(--surface);
+    display:grid;place-items:center;text-align:center;line-height:1}
+  .ring-in b{font-size:21px;font-weight:500;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+  .ring-in span{display:block;font-size:9.5px;color:var(--ink3);margin-top:3px}
+  .hero-row{display:flex;align-items:center;gap:14px}
+  .k{font-size:10px;color:var(--ink3);letter-spacing:.02em}
+  .v{font-size:19px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.25}
+
+  .pill{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;
+    font-size:10.5px;font-weight:500;white-space:nowrap}
+  .pill.neu{background:var(--s3);color:var(--ink2)}
+  .pill.line{background:transparent;border:1px solid var(--line2);color:var(--ink2)}
+  .pill.ok{background:var(--ok-soft);color:var(--ok-t)}
+  .pill.warn{background:var(--warn-soft);color:var(--warn)}
+  .pill.brand{background:var(--brand-soft);color:var(--brand-strong)}
+
+  /* 按钮 */
+  .btn{height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    font-size:13.5px;font-weight:500;letter-spacing:0}
+  .btn.pri{background:var(--brand);color:var(--brand-on);height:48px;margin-top:10px;
+    box-shadow:0 6px 16px -8px rgba(224,36,94,.55)}
+  .btn.ghost{background:transparent;color:var(--ink2);margin-top:2px;height:38px;font-size:13px}
+
+  /* 列表行 */
+  .row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:0;padding-bottom:2px}
+  .avatar{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;
+    font-size:13.5px;font-weight:500;flex:none}
+  .a-brand{background:var(--brand-soft);color:var(--brand-strong)}
+  .a-ok{background:var(--ok-soft);color:var(--ok-t)}
+  .a-warn{background:var(--warn-soft);color:var(--warn)}
+  .row-main{flex:1;min-width:0}
+  .row-title{display:flex;align-items:center;gap:6px}
+  .row-title b{font-size:13px;font-weight:500;letter-spacing:-.01em;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row-sub{font-size:10.5px;color:var(--ink3);margin-top:1px;line-height:1.45;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .more{color:var(--ink3);flex:none}
+  .tile{width:32px;height:32px;border-radius:9px;background:var(--s2);display:grid;place-items:center;color:var(--ink2);flex:none}
+  .tile svg{width:18px;height:18px}
+
+  .head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:26px}
+  .head h6{margin:0;font-size:14px;font-weight:500;letter-spacing:-.01em}
+  .head .link{font-size:10.5px;color:var(--brand-strong)}
+
+  /* 日志终端块 */
+  .console{background:var(--console);border-radius:10px;padding:9px 11px;margin-top:8px;
+    font-family:ui-monospace,Consolas,monospace;font-size:10px;line-height:1.75;color:var(--console-ink);
+    white-space:pre;overflow:hidden}
+
+  /* 开关 */
+  .sw{width:38px;height:22px;border-radius:999px;background:var(--brand);position:relative;flex:none}
+  .sw::after{content:"";position:absolute;right:3px;top:3px;width:16px;height:16px;border-radius:50%;background:var(--brand-on)}
+  .sw.off{background:var(--s3)}
+  .sw.off::after{right:auto;left:3px;background:var(--surface)}
+
+  /* 输入框 */
+  .field{background:var(--s2);border:1px solid var(--line2);border-radius:10px;
+    padding:9px 11px;margin-top:8px}
+  .field .lab{font-size:10.5px;color:var(--ink3)}
+  .field .val{font-size:13px;color:var(--ink);margin-top:1px}
+
+  /* 底部导航 */
+  .tabbar{flex:none;height:56px;background:var(--surface);border-top:1px solid var(--line);
+    display:grid;grid-template-columns:repeat(3,1fr);padding-bottom:6px}
+  .tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    font-size:10px;color:var(--ink3)}
+  .tab .ic{width:34px;height:20px;border-radius:8px;display:grid;place-items:center}
+  .tab.on{color:var(--brand)}
+  .tab.on .ic{background:var(--brand-soft)}
+  .tab svg{width:17px;height:17px}
+
+  /* 令牌图例 */
+  .legend{max-width:1180px;margin:38px auto 0;display:grid;gap:14px;
+    grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+  .legend section{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:14px;box-shadow:var(--shadow)}
+  .legend h2{margin:0 0 9px;font-size:13px;font-weight:500}
+  .sw-row{display:flex;align-items:center;gap:9px;margin-top:7px;font-size:11px;color:var(--ink3)}
+  .sw-row i{width:22px;height:22px;border-radius:7px;display:block;border:1px solid rgba(128,128,128,.18)}
+  .type-row{display:flex;align-items:baseline;gap:9px;margin-top:7px}
+  .type-row span:last-child{font-size:10px;color:var(--ink3)}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>微博签到助手 · UI 系统 v2.0</h1>
+    <div class="sub">对齐面板端 tokens.css：冷灰底 + 纯白微描边卡 + 玫红只占小面积。<br>令牌取自工程 colors.xml / dimens.xml / type.xml，用于无真机时核对层级。</div>
+  </div>
+  <div class="toggle">
+    <button id="btn-light" aria-pressed="true">浅色</button>
+    <button id="btn-dark" aria-pressed="false">深色</button>
+  </div>
+</header>
+
+<div class="stage">
+
+  <!-- ============ 首页 ============ -->
+  <div class="col">
+    <p class="cap">① 签到 · 结论先行</p>
+    <div class="phone">
+      <div class="sb"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="scr">
+        <div class="ab">
+          <div class="ab-t">
+            <h5>晚上好</h5>
+            <div class="s">10月28日 · 周三 · 3 个账号</div>
+          </div>
+          <span class="ib">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+          </span>
+          <span class="ib brand">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </span>
+        </div>
+
+        <div class="card hero">
+          <div class="hero-row">
+            <div class="ring" style="--p:62">
+              <div class="ring-in"><div><b>5/8</b><span>今日已签</span></div></div>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div class="k">待签超话</div>
+              <div class="v">3</div>
+              <div style="display:flex;gap:5px;margin-top:7px">
+                <span class="pill neu">3 个账号</span>
+                <span class="pill line">面板已配置</span>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:12px;font-size:10.5px;color:var(--ink3);line-height:1.5">
+            3 个账号 · 面板同步：已配置 · 后台每 6 小时保活
+          </div>
+        </div>
+
+        <div class="btn pri">立即签到</div>
+        <div class="btn ghost">仅同步面板</div>
+
+        <div class="card">
+          <div class="head"><h6>账号 (3)</h6><span class="link">点按行查看超话</span></div>
+          <div class="row">
+            <span class="avatar a-ok">林</span>
+            <div class="row-main">
+              <div class="row-title"><b>林深见鹿</b><span class="pill ok">已签 4</span></div>
+              <div class="row-sub">UID 5230188447</div>
+              <div class="row-sub">今日已签 · 更新于 20:13</div>
+            </div>
+            <span class="more">⋮</span>
+          </div>
+          <div class="row">
+            <span class="avatar a-warn">阿</span>
+            <div class="row-main">
+              <div class="row-title"><b>阿柚今天早睡了吗</b><span class="pill warn">待签 1</span></div>
+              <div class="row-sub">UID 7745120036</div>
+              <div class="row-sub">已有 1 个超话待签</div>
+            </div>
+            <span class="more">⋮</span>
+          </div>
+          <div class="row">
+            <span class="avatar a-brand">备</span>
+            <div class="row-main">
+              <div class="row-title"><b>备用号</b></div>
+              <div class="row-sub">UID 8801236691</div>
+              <div class="row-sub">超话状态刷新中…</div>
+            </div>
+            <span class="more">⋮</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="head"><h6>运行日志</h6><span class="more">⌄</span></div>
+          <div style="font-size:10.5px;color:var(--ink3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            20:13:07 林深见鹿 超话「摄影」已签到
+          </div>
+          <div class="console">20:13:02 ==== 开始签到 ====
+20:13:05 ✓ 林深见鹿 已签 4 个
+20:13:07 ✓ 摄影 / 旅行 / 胶片</div>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab on"><span class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></span>首页</div>
+        <div class="tab"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg></span>图片</div>
+        <div class="tab"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8.4"/></svg></span>设置</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 图片页 ============ -->
+  <div class="col">
+    <p class="cap">② 图片 · 抓取</p>
+    <div class="phone">
+      <div class="sb"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="scr">
+        <div class="ab">
+          <div class="ab-t">
+            <h5>图片</h5>
+            <div class="s">批量抓原图 · Live Photo 转 GIF</div>
+          </div>
+          <span class="ib brand">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </span>
+        </div>
+
+        <div class="card tap">
+          <span class="tile" style="background:var(--brand-soft);color:var(--brand-strong)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg>
+          </span>
+          <div class="row-main">
+            <div style="font-size:13px;font-weight:500">图库预览</div>
+            <div class="row-sub">1 428 张图片</div>
+          </div>
+          <span class="more">›</span>
+        </div>
+
+        <div class="card tap">
+          <span class="tile">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </span>
+          <div class="row-main">
+            <div style="font-size:13px;font-weight:500">保存到相册目录</div>
+            <div class="row-sub">Pictures/Weibo/林深见鹿</div>
+          </div>
+          <span class="pill line" style="height:30px;padding:0 12px;border-radius:6px;font-size:11px">选择</span>
+        </div>
+
+        <div class="card">
+          <div class="head"><h6>抓取目标 (2)</h6><span class="link">点按 ⋮ 管理</span></div>
+          <div class="row">
+            <div class="row-main">
+              <div class="row-title"><b>林深见鹿</b></div>
+              <div class="row-sub">UID 5230188447</div>
+              <div class="row-sub">已覆盖 2024-03-01 ~ 2026-10-26 · 待重试 2</div>
+            </div>
+            <span class="more">⋮</span>
+          </div>
+          <div class="row">
+            <div class="row-main">
+              <div class="row-title"><b>阿柚今天早睡了吗</b></div>
+              <div class="row-sub">UID 7745120036</div>
+              <div class="row-sub">尚未抓取</div>
+            </div>
+            <span class="more">⋮</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="head"><h6>抓取运行</h6></div>
+          <div class="row">
+            <div class="row-main">
+              <div style="font-size:12.5px">每次签到完成后自动增量抓取</div>
+            </div>
+            <span class="sw"></span>
+          </div>
+          <div class="btn pri" style="margin-top:10px">开始抓取（增量）</div>
+          <div class="btn ghost">单条抓取</div>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></span>首页</div>
+        <div class="tab on"><span class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="4" width="18" height="16" rx="3"/></svg></span>图片</div>
+        <div class="tab"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8.4"/></svg></span>设置</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 设置页 ============ -->
+  <div class="col">
+    <p class="cap">③ 设置 · 配置</p>
+    <div class="phone">
+      <div class="sb"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="scr">
+        <div class="ab">
+          <div class="ab-t">
+            <h5>设置</h5>
+            <div class="s">面板同步、行为开关与版本信息</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="head"><h6>面板同步</h6><span class="pill neu">可选</span></div>
+          <div class="field"><div class="lab">面板地址（公网必须 https://）</div><div class="val">https://panel.example.com</div></div>
+          <div class="field"><div class="lab">同步令牌</div><div class="val">••••••••••••</div></div>
+          <div class="btn pri" style="margin-top:12px">保存</div>
+          <div class="row-sub" style="margin-top:8px;white-space:normal">配置后 App 每 6 小时把最新 Cookie 推送到面板；留空则只在本地签到。</div>
+        </div>
+
+        <div class="card">
+          <div class="head"><h6>行为</h6></div>
+          <div class="row">
+            <div class="row-main">
+              <div style="font-size:13px;font-weight:500">打开 App 即自动签到</div>
+              <div class="row-sub" style="white-space:normal">打开应用时为全部账号自动签到（6 小时内不重复）</div>
+            </div>
+            <span class="sw"></span>
+          </div>
+          <div class="row">
+            <div class="row-main">
+              <div style="font-size:13px;font-weight:500">Live Photo 转 GIF</div>
+              <div class="row-sub" style="white-space:normal">关闭后直接保存原始视频</div>
+            </div>
+            <span class="sw off"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="head"><h6>关于</h6></div>
+          <div class="row-sub" style="margin-top:6px;white-space:normal">微博签到助手 v0.8.0<br>真机签到 · 登录态同步 · 原图抓取 · 图库预览</div>
+          <div class="row-sub" style="margin-top:6px;white-space:normal">界面配色跟随系统深浅色模式；Android 12 及以上支持跟随壁纸取色。</div>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></span>首页</div>
+        <div class="tab"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg></span>图片</div>
+        <div class="tab on"><span class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5l1.4 2.6 2.9-.4.4 2.9 2.6 1.4-1.3 2.6 1.3 2.6-2.6 1.4-.4 2.9-2.9-.4L12 21.5l-1.4-2.6-2.9.4-.4-2.9L4.7 15l1.3-2.6L4.7 10l2.6-1.4.4-2.9 2.9.4z"/></svg></span>设置</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 令牌图例 ============ -->
+<div class="legend">
+  <section>
+    <h2>底色与面（冷灰衬托白卡）</h2>
+    <div class="sw-row"><i style="background:var(--bg)"></i>bg · 页面底</div>
+    <div class="sw-row"><i style="background:var(--surface)"></i>surface · 卡片 / 底栏</div>
+    <div class="sw-row"><i style="background:var(--s2)"></i>surface-2 · 输入框 / 图标托</div>
+    <div class="sw-row"><i style="background:var(--s3)"></i>surface-3 · 进度槽</div>
+    <div class="sw-row"><i style="background:var(--line)"></i>line · 卡片描边 / 分隔</div>
+  </section>
+
+  <section>
+    <h2>品牌与语义（红只占小面积）</h2>
+    <div class="sw-row"><i style="background:var(--brand)"></i>brand · 主按钮 / 选中 / 关键数字</div>
+    <div class="sw-row"><i style="background:var(--brand-strong)"></i>brand-strong · 软底上的小字</div>
+    <div class="sw-row"><i style="background:var(--brand-soft)"></i>brand-soft · 头像 / pill / 指示器</div>
+    <div class="sw-row"><i style="background:var(--ok)"></i>ok · 已签</div>
+    <div class="sw-row"><i style="background:var(--warn)"></i>warn · 待签</div>
+    <div class="sw-row"><i style="background:var(--danger)"></i>danger · 失效 / 删除</div>
+  </section>
+
+  <section>
+    <h2>字阶（紧凑刻度）</h2>
+    <div class="type-row"><span style="font-size:19px;font-weight:500;letter-spacing:-.02em">晚上好</span><span>20 AppBar</span></div>
+    <div class="type-row"><span style="font-size:14px;font-weight:500">账号 (3)</span><span>14 CardTitle</span></div>
+    <div class="type-row"><span style="font-size:13px;font-weight:500">林深见鹿</span><span>13.5 RowTitle</span></div>
+    <div class="type-row"><span style="font-size:11px">UID 5230188447</span><span>11.5 Xs</span></div>
+    <div class="type-row"><span style="font-size:10px;color:var(--ink3)">今日已签</span><span>10.5 Cap</span></div>
+  </section>
+</div>
+
+<script>
+  const html = document.documentElement;
+  const light = document.getElementById('btn-light');
+  const dark = document.getElementById('btn-dark');
+  function setTheme(t){
+    html.dataset.theme = t;
+    light.setAttribute('aria-pressed', t === 'light');
+    dark.setAttribute('aria-pressed', t === 'dark');
+  }
+  light.onclick = () => setTheme('light');
+  dark.onclick = () => setTheme('dark');
+  if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) setTheme('dark');
+</script>
+</body>
+</html>

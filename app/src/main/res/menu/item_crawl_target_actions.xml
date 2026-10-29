@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 抓取目标行溢出菜单：原来一行并排两个文字按钮（起始日期 / 移除），
+     一行 3 个点击目标极易误触；收进菜单后行内只剩进度信息。 -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_target_since"
+        android:title="@string/crawl_since_btn" />
+    <item
+        android:id="@+id/action_target_delete"
+        android:title="@string/crawl_remove_short" />
+</menu>

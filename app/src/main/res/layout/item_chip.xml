@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通用胶囊 chip：超话页的账号选择器与筛选条共用，选中态在代码里换底衬 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/Widget.Wcm.Pill.Filter"
+    android:layout_width="wrap_content"
+    android:layout_height="@dimen/pill_height"
+    android:layout_marginEnd="@dimen/sp_1"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackgroundBorderless" />

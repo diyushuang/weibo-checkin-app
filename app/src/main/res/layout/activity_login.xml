@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  微博登录页（v0.7）：只做视觉对齐与安全区让位，
+  WebView 的行为、登录判定、Cookie 读取流程一行未改。
+
+  说明：WebView 高度用 0dp + weight=1 而不是 match_parent ——
+  match_parent 在有兄弟节点时会按"父容器剩余高度"的旧算法溢出，
+  键盘弹出时页面底部会被顶掉一截（微博登录页有输入框，会真的踩到）。
+-->
+<!-- 不给根布局上底色：窗口背景（theme 的 windowBackground）已经是同一个颜色，
+     再画一遍只是纯粹的 overdraw（多一层全屏填充）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/loginRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/loginHint"
+        style="@style/Widget.Wcm.Text.Hint"
+        android:paddingStart="@dimen/page_padding_horizontal"
+        android:paddingTop="@dimen/space_m"
+        android:paddingEnd="@dimen/page_padding_horizontal"
+        android:paddingBottom="@dimen/space_s"
+        android:text="@string/login_hint" />
+
+    <TextView
+        android:id="@+id/loginStatus"
+        style="@style/Widget.Wcm.Text.Body"
+        android:paddingStart="@dimen/page_padding_horizontal"
+        android:paddingEnd="@dimen/page_padding_horizontal"
+        android:paddingBottom="@dimen/space_s"
+        android:text="@string/login_waiting" />
+
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 手机 App 只需要联网权限：登录态保存在应用私有存储，调度由 WorkManager
+         跨重启自动持久化，无开机自启 / 存储 / 定位等任何其它权限。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Android 17（API 37）起，局域网访问默认被系统阻断；自建面板通常就在局域网里，
+         需要这个权限才能连上。在低版本上系统不认识它，声明了也不会有任何效果。 -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+
+    <application
+        android:name=".WcmApp"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.Wcm"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:targetApi="n">
+        <!-- networkSecurityConfig 是 API 24 才被系统读取的属性。minSdk 是 23，
+             在 6.0 上它被忽略——不影响安全口径：所有出站 URL 都在
+             WeiboApi.weiboUrl() 里强制 https 并做域名白名单，明文本来就走不出去。 -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".LoginWebViewActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- 图库（v0.4.0）：网格浏览与全屏预览，均为内部页面 -->
+        <activity
+            android:name=".GalleryBrowseActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ImagePreviewActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Wcm.Preview" />
+    </application>
+</manifest>

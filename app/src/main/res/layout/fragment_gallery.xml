@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================
+  图片页 · 抓取（v2.0）
+  ============================================================
+  五段，按"我现在想干什么"排：
+
+    应用栏        「图片」+ 一句说明；右侧品牌方块「＋」加抓取目标
+    图库入口      整卡可点：图标托 + 标题 + 张数 + chevron（看图是最常见的目的）
+    存储位置      ListRow：图标托 + 标题 + 路径 + 「选择」文字按钮
+    抓取目标      卡头带计数 + 目标行（行底发丝线）
+    抓取运行      开关行 + 主按钮（运行中换成危险色的「停止」）+ 低频「单条抓取」
+    抓取日志      默认收起，展开是恒深色终端块
+
+  只有「开始抓取」是品牌实底按钮；其余动作全部降级为描边 / 文字 / 软底 ——
+  一屏只有一个强按钮，用户不用想点哪个。
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout style="@style/Widget.Wcm.Page">
+
+        <!-- ==================== 应用栏 ==================== -->
+        <LinearLayout style="@style/Widget.Wcm.AppBar">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Widget.Wcm.Text.Display"
+                    android:text="@string/page_gallery_title" />
+
+                <TextView
+                    style="@style/Widget.Wcm.Text.Hint"
+                    android:layout_marginTop="1dp"
+                    android:text="@string/crawl_intro" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/btnAddTarget"
+                style="@style/Widget.Wcm.IconButton"
+                android:background="@drawable/bg_icon_button_brand"
+                android:contentDescription="@string/cd_add_target"
+                android:src="@drawable/ic_add"
+                app:tint="@color/brand_on" />
+        </LinearLayout>
+
+        <!-- ==================== 图库入口 ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/btnOpenGallery"
+            style="@style/Widget.Wcm.Card.Clickable">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent.Row">
+
+                <FrameLayout style="@style/Widget.Wcm.IconTile">
+
+                    <ImageView
+                        android:layout_width="@dimen/icon_size_small"
+                        android:layout_height="@dimen/icon_size_small"
+                        android:layout_gravity="center"
+                        android:contentDescription="@string/gallery_open"
+                        android:src="@drawable/ic_image"
+                        app:tint="@color/brand_strong" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/sp_3"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.RowTitle"
+                        android:text="@string/gallery_card_title" />
+
+                    <TextView
+                        android:id="@+id/tvGalleryCount"
+                        style="@style/Widget.Wcm.Text.Hint"
+                        android:layout_marginTop="1dp"
+                        android:text="@string/gallery_count_none" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="@dimen/icon_size_small"
+                    android:layout_height="@dimen/icon_size_small"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="@color/ink_3" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ==================== 存储位置 ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.Wcm.Card">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent.Row">
+
+                <FrameLayout style="@style/Widget.Wcm.IconTile">
+
+                    <ImageView
+                        android:layout_width="@dimen/icon_size_small"
+                        android:layout_height="@dimen/icon_size_small"
+                        android:layout_gravity="center"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_folder"
+                        app:tint="@color/ink_2" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/sp_3"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.RowTitle"
+                        android:text="@string/crawl_dir_title" />
+
+                    <TextView
+                        android:id="@+id/tvDirPath"
+                        style="@style/Widget.Wcm.Text.Hint"
+                        android:layout_marginTop="1dp"
+                        android:text="@string/crawl_dir_empty" />
+
+                    <!-- 授权自检结果：失效时这条 pill 变成按钮，点一下直接重选目录 -->
+                    <TextView
+                        android:id="@+id/tvDirStatus"
+                        style="@style/Widget.Wcm.Pill.Warn.Small"
+                        android:layout_marginTop="@dimen/sp_1"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:text="@string/crawl_saf_lost"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPickDir"
+                    style="@style/Widget.Wcm.Button.Secondary.Small"
+                    android:layout_marginStart="@dimen/sp_2"
+                    android:text="@string/crawl_pick_dir" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ==================== 抓取目标 ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.Wcm.Card">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent">
+
+                <LinearLayout style="@style/Widget.Wcm.CardHead">
+
+                    <TextView
+                        android:id="@+id/tvTargetsTitle"
+                        style="@style/Widget.Wcm.Text.SectionTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/crawl_targets_title" />
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.Link"
+                        android:text="@string/crawl_target_hint_short" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/crawlTargetList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ==================== 抓取运行 ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.Wcm.Card">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent">
+
+                <LinearLayout style="@style/Widget.Wcm.CardHead">
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.SectionTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/crawl_run_title" />
+                </LinearLayout>
+
+                <!-- 签到后自动抓图：整行可点，开关在右 -->
+                <LinearLayout
+                    android:id="@+id/rowCrawlAuto"
+                    style="@style/Widget.Wcm.ListRow"
+                    android:foreground="@drawable/fg_row_divider">
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.Body"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/crawl_auto_after_checkin" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switchCrawlAuto"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/sp_2" />
+                </LinearLayout>
+
+                <!-- ===== 结构化进度：阶段 + 计数 + 进度条（v0.9.0） ===== -->
+                <LinearLayout
+                    android:id="@+id/crawlProgressBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/sp_2"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        android:id="@+id/prCrawl"
+                        style="@style/Widget.Wcm.Progress"
+                        android:indeterminate="false"
+                        android:max="100"
+                        android:progress="0" />
+
+                    <TextView
+                        android:id="@+id/tvCrawlStep"
+                        style="@style/Widget.Wcm.Text.Hint.SingleLine"
+                        android:layout_marginTop="@dimen/sp_2" />
+
+                    <TextView
+                        android:id="@+id/tvCrawlTarget"
+                        style="@style/Widget.Wcm.Text.Hint.SingleLine"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <!-- ===== 失败清单入口：有待重试的帖子才出现 ===== -->
+                <LinearLayout
+                    android:id="@+id/crawlRetryRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/sp_2"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvRetryCount"
+                        style="@style/Widget.Wcm.Text.Hint"
+                        android:layout_width="0dp"
+                        android:layout_weight="1" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnRetryFailed"
+                        style="@style/Widget.Wcm.Button.Secondary.Small"
+                        android:text="@string/crawl_retry_action" />
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCrawlStart"
+                    style="@style/Widget.Wcm.Button.Primary.Large"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/sp_3"
+                    android:text="@string/crawl_start" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCrawlStop"
+                    style="@style/Widget.Wcm.Button.Danger"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/sp_3"
+                    android:text="@string/crawl_stop"
+                    android:visibility="gone"
+                    app:icon="@drawable/ic_stop" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSinglePost"
+                    style="@style/Widget.Wcm.Button.Text"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/sp_1"
+                    android:text="@string/single_title" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ==================== 抓取日志（默认收起） ==================== -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.Wcm.Card">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent">
+
+                <LinearLayout
+                    android:id="@+id/crawlLogHeader"
+                    style="@style/Widget.Wcm.LogHeader"
+                    android:contentDescription="@string/cd_crawl_log_collapsed">
+
+                    <TextView
+                        style="@style/Widget.Wcm.Text.SectionTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/crawl_log_title" />
+
+                    <ImageButton
+                        android:id="@+id/btnCrawlLogToggle"
+                        style="@style/Widget.Wcm.IconButton.Row"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_expand_more"
+                        app:tint="@color/ink_3" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvCrawlLogSummary"
+                    style="@style/Widget.Wcm.Text.Hint.SingleLine"
+                    android:text="@string/log_empty" />
+
+                <!-- 这是**故意**的嵌套滚动：日志是一块固定高度的控制台窗口，
+                     内容自己滚、页面也能滚。改成不嵌套就只能把整段日志摊平，
+                     500 行会把页面撑到几万 dp。lint 的通用规则在这里不适用。 -->
+                <ScrollView
+                    android:id="@+id/crawlLogScroll"
+                    style="@style/Widget.Wcm.CrawlLogScroll"
+                    android:visibility="gone"
+                    tools:ignore="NestedScrolling">
+
+                    <TextView
+                        android:id="@+id/crawlLog"
+                        style="@style/Widget.Wcm.Text.Log"
+                        android:text="@string/log_empty" />
+                </ScrollView>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/action_search"
+        android:icon="@drawable/ic_search"
+        android:title="@string/gallery_search_hint"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/action_select"
+        android:icon="@drawable/ic_check"
+        android:title="@string/gallery_cd_check"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/action_group"
+        android:icon="@drawable/ic_folder"
+        android:title="@string/gallery_group_label"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/action_refresh"
+        android:icon="@drawable/ic_refresh"
+        android:title="@string/gallery_refresh"
+        app:showAsAction="ifRoom" />
+</menu>

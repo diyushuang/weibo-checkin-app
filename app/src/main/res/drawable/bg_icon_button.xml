@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用栏图标钮底衬（v2.0）：34dp / 10dp 圆角 / 白面 + 发丝边。
+     不用纯透明：白底小方块在浅灰页面里给操作一个"落点"，也让左右两个图标的
+     视觉重量一致。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface" />
+    <stroke android:width="1dp" android:color="@color/line" />
+    <corners android:radius="@dimen/radius_s" />
+</shape>

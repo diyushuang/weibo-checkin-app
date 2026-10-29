@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  图库网格单元（v2.0 / v0.9.0 增加多选态）。
+
+  外框是 MaterialCardView，只为**裁 12dp 圆角**（outline 由框架负责，不做 BitmapShader）。
+  边长与外边距由 GalleryBrowseActivity 按「(可用宽度 - 间隙×(列数-1)) / 列数」算好后
+  覆写 layoutParams，所以换列数、换屏幕，格子永远是正方形。
+
+  多选态：左上角品牌圆点对勾 + 全格半透明遮罩。遮罩与勾都常驻布局、
+  只用 visibility 切换，避免长按时临时 addView 引发布局跳动。
+-->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/Widget.Wcm.Card.Thumb">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <ImageView
+            android:id="@+id/gridImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@string/gallery_item_desc"
+            android:scaleType="centerCrop" />
+
+        <!-- GIF 徽标：压在右上角，深色半透明底保证任何图片上都可读 -->
+        <TextView
+            android:id="@+id/gifBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_margin="@dimen/sp_1"
+            android:background="@drawable/bg_gif_badge"
+            android:paddingStart="@dimen/gallery_gif_badge_padding_horizontal"
+            android:paddingTop="@dimen/gallery_gif_badge_padding_vertical"
+            android:paddingEnd="@dimen/gallery_gif_badge_padding_horizontal"
+            android:paddingBottom="@dimen/gallery_gif_badge_padding_vertical"
+            android:text="@string/gallery_gif_badge"
+            android:textAppearance="@style/TextAppearance.Wcm.Cap"
+            android:textColor="@color/on_preview_surface" />
+
+        <!-- 选中遮罩 -->
+        <View
+            android:id="@+id/selectScrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_selected_scrim"
+            android:importantForAccessibility="no"
+            android:visibility="gone" />
+
+        <!-- 选中角标 -->
+        <ImageView
+            android:id="@+id/selectCheck"
+            android:layout_width="@dimen/gallery_check_size"
+            android:layout_height="@dimen/gallery_check_size"
+            android:layout_gravity="top|start"
+            android:layout_margin="@dimen/sp_1"
+            android:background="@drawable/bg_cell_check"
+            android:contentDescription="@string/gallery_cd_check"
+            android:padding="3dp"
+            android:src="@drawable/ic_check"
+            android:visibility="gone"
+            app:tint="@color/brand_on" />
+    </FrameLayout>
+</com.google.android.material.card.MaterialCardView>

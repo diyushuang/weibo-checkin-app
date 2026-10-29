@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 横屏手机：宽度富余，图库多放一列 -->
+<resources>
+    <integer name="gallery_columns">4</integer>
+</resources>

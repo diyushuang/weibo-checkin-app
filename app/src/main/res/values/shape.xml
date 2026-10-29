@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  形状令牌（v2.0）：Material 组件的圆角基准，对齐参考稿的 6 / 10 / 14 / 18 / 24。
+
+  为什么不用 M3 默认的 8 / 12 / 16：参考稿的卡片是 14dp，比 M3 的 16 略小、
+  比 12 略大 —— 这个刻度在"信息密度高"的界面上最稳：够圆润，又不吃掉内容宽度。
+  单个组件想更圆用 shapeAppearanceOverlay，不要改这里。
+-->
+<resources>
+
+    <style name="ShapeAppearance.Wcm.Small" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/radius_s</item>
+    </style>
+
+    <style name="ShapeAppearance.Wcm.Medium" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/radius_m</item>
+    </style>
+
+    <style name="ShapeAppearance.Wcm.Large" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/radius_l</item>
+    </style>
+
+    <style name="ShapeAppearance.Wcm.ExtraLarge" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/radius_xl</item>
+    </style>
+</resources>

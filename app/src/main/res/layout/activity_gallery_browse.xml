@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================
+  图库浏览（v2.0 / v0.9.0 增强）
+  ============================================================
+  工具栏 48dp（返回 + 标题 + 数量副标题 + 菜单）
+  → 搜索行（点搜索才展开）
+  → 筛选条 40dp（类型 chip + 作者 pill + 排序按钮）
+  → 正方形网格（可带跨行分组头）
+  → 多选操作条 56dp（长按进入多选时才出现）
+
+    · 工具栏底色 = 页面底，网格与工具栏之间没有色块断层；
+    · 网格留白 16dp，列数由资源限定符决定（3/4/4/5），间隙由代码均分；
+    · 空态：图标托 + 说明 + 明确的下一步，避免"页面挂了"的错觉。
+-->
+<!-- 不给根布局上底色：窗口背景（theme 的 windowBackground）已经是同一个颜色，
+     再画一遍只是纯粹的 overdraw（多一层全屏填充）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/galleryRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/galleryToolbar"
+        style="@style/Widget.Wcm.Toolbar"
+        app:navigationIcon="?attr/homeAsUpIndicator"
+        app:title="@string/gallery_browse_title" />
+
+    <!-- ==================== 搜索行（默认收起） ==================== -->
+    <LinearLayout
+        android:id="@+id/searchRow"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/gallery_search_height"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/page_padding_horizontal"
+        android:paddingEnd="@dimen/page_padding_horizontal"
+        android:visibility="gone">
+
+        <androidx.appcompat.widget.AppCompatEditText
+            android:id="@+id/searchInput"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_search_field"
+            android:hint="@string/gallery_search_hint"
+            android:imeOptions="actionSearch"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:maxLines="1"
+            android:paddingStart="@dimen/sp_3"
+            android:paddingEnd="@dimen/sp_3"
+            android:textColor="@color/ink"
+            android:textColorHint="@color/ink_3"
+            android:textSize="13.5sp" />
+
+        <ImageButton
+            android:id="@+id/btnSearchClose"
+            style="@style/Widget.Wcm.IconButton.Row"
+            android:contentDescription="@string/gallery_search_clear"
+            android:src="@drawable/ic_close"
+            app:tint="@color/ink_3" />
+    </LinearLayout>
+
+    <!-- ==================== 筛选 / 排序 ==================== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/gallery_filter_bar_height"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/page_padding_horizontal"
+        android:paddingEnd="@dimen/page_padding_horizontal">
+
+        <HorizontalScrollView
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/galleryFilters"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
+        <ImageButton
+            android:id="@+id/btnGallerySort"
+            style="@style/Widget.Wcm.IconButton.Row"
+            android:contentDescription="@string/gallery_sort_label"
+            android:src="@drawable/ic_sort"
+            app:tint="@color/ink_2" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/galleryGrid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingStart="@dimen/page_padding_horizontal"
+            android:paddingTop="@dimen/sp_2"
+            android:paddingEnd="@dimen/page_padding_horizontal"
+            android:scrollbars="none" />
+
+        <LinearLayout
+            android:id="@+id/galleryEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="@dimen/sp_7"
+            android:visibility="gone">
+
+            <FrameLayout
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/bg_pill_brand">
+
+                <ImageView
+                    android:layout_width="@dimen/icon_size"
+                    android:layout_height="@dimen/icon_size"
+                    android:layout_gravity="center"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_image"
+                    app:tint="@color/brand_strong" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/tvGalleryEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/sp_4"
+                android:gravity="center"
+                android:text="@string/gallery_empty"
+                android:textAppearance="@style/TextAppearance.Wcm.Sm"
+                android:textColor="@color/ink_2" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnGalleryEmptyAction"
+                style="@style/Widget.Wcm.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_marginTop="@dimen/sp_4"
+                android:text="@string/gallery_empty_action" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- ==================== 多选操作条（长按进入多选时才显示） ==================== -->
+    <LinearLayout
+        android:id="@+id/selectBar"
+        style="@style/Widget.Wcm.SelectBar"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvSelectedCount"
+            style="@style/Widget.Wcm.Text.SectionTitle"
+            android:layout_width="0dp"
+            android:layout_weight="1" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSelectShare"
+            style="@style/Widget.Wcm.Button.Secondary.Small"
+            android:layout_width="wrap_content"
+            android:text="@string/gallery_batch_share" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSelectDelete"
+            style="@style/Widget.Wcm.Button.Danger"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/btn_height_sm"
+            android:layout_marginStart="@dimen/sp_2"
+            android:minHeight="@dimen/btn_height_sm"
+            android:paddingStart="@dimen/sp_3"
+            android:paddingEnd="@dimen/sp_3"
+            android:text="@string/gallery_batch_delete"
+            android:textAppearance="@style/TextAppearance.Wcm.Pill" />
+
+        <ImageButton
+            android:id="@+id/btnSelectCancel"
+            style="@style/Widget.Wcm.IconButton.Row"
+            android:layout_marginStart="@dimen/sp_1"
+            android:contentDescription="@string/gallery_select_cancel"
+            android:src="@drawable/ic_close"
+            app:tint="@color/ink_3" />
+    </LinearLayout>
+</LinearLayout>

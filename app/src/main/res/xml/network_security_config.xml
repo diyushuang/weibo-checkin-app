@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  明文流量策略说明（重要）：
+  面板地址由用户自行填写，常见部署是局域网自建（http://192.168.x.x:8080），
+  域名/IP 无法在构建期枚举，所以 network-security-config 的 domain-config
+  派不上用场，OS 层只能整体放行明文。
+
+  真正的安全边界收在应用层（见 PanelUrl.kt）：
+    · 公网地址一律强制 https —— Cookie 走公网明文等于公开登录态；
+    · 只有私有网段 / 回环 / .local / .lan 才允许 http；
+    · 微博侧（接口 + 图片 CDN）只允许 https（见 WeiboApi.weiboUrl）。
+
+  如果你把面板换成带证书的 https 反代，把下面 true 改成 false 就能彻底关掉明文能力。
+  这里显式 suppress 掉 lint 的 InsecureBaseConfiguration：属于已知且经过权衡的取舍，
+  不是遗漏 —— 应用层已经把它收敛到"只有内网 http 能发"。
+-->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config
+        cleartextTrafficPermitted="true"
+        tools:ignore="InsecureBaseConfiguration" />
+</network-security-config>

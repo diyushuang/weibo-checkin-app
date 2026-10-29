@@ -1,0 +1,300 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">微博签到助手</string>
+
+    <!-- 底部导航 -->
+    <string name="nav_home">首页</string>
+    <string name="nav_gallery">图片</string>
+    <string name="nav_settings">设置</string>
+
+    <!-- 通用 -->
+    <string name="busy">正在运行中…</string>
+    <string name="log_empty">（暂无日志）</string>
+
+    <!-- ===== v0.7 设计系统：三个主页面的大标题与副标题 =====
+         页头用 28sp 大标题做"我在哪"的定位，副标题补一句"这里能干什么"。
+         页头刻意不做成卡片，省下的垂直空间留给主行动。 -->
+    <string name="page_gallery_title">图片</string>
+    <string name="page_settings_title">设置</string>
+    <string name="page_settings_subtitle">面板同步、行为开关与版本信息</string>
+
+    <!-- 首页 -->
+    <string name="home_summary_empty">还没有账号，点「＋ 添加账号」用微博官方页面登录</string>    <string name="home_summary_fmt">%1$d 个账号 · 面板同步：%2$s · 后台每 6 小时保活</string>
+    <string name="home_panel_ok">已配置</string>
+    <string name="home_panel_off">未配置</string>
+    <string name="home_account_empty">点右上「＋ 添加账号」开始</string>
+    <string name="home_no_account">没有账号，请先「＋ 添加账号」</string>
+    <string name="home_cookie_dead">Cookie 已失效，请删除后重新添加账号</string>
+    <string name="home_delete_title">删除账号 %1$s?</string>
+    <string name="home_delete_msg">只删除本机存储的登录态，不影响面板。</string>
+    <string name="btn_checkin">立即签到</string>
+    <string name="btn_sync">仅同步面板</string>
+    <string name="accounts_label">账号</string>
+    <string name="log_label">运行日志</string>
+    <string name="auto_on_open">打开 App 即自动签到</string>
+    <string name="login_hint">在下方页面登录微博（账密 / 验证码均在微博官方页面完成，本应用不经手）；登录成功后会自动返回。</string>
+    <string name="login_blocked_nav">已拦截跳转到非微博页面：%1$s</string>
+
+    <!-- 图片页 -->
+    <string name="crawl_intro">批量抓原图 · Live Photo 转 GIF · 断点续跑</string>
+    <string name="crawl_dir_title">保存到相册目录</string>
+    <string name="crawl_dir_empty">未选择（点击右边按钮选择）</string>
+    <string name="crawl_pick_dir">选择目录</string>
+    <string name="crawl_dir_saved">相册目录已保存</string>
+    <string name="crawl_targets_title">抓取目标</string>
+    <string name="crawl_add_title">添加抓取目标</string>
+    <string name="crawl_target_empty">还没有目标，点上方按钮添加</string>
+    <string name="crawl_remove_title">移除目标 %1$s?</string>
+    <string name="crawl_remove_msg">已下载的文件不受影响；进度保留，重新添加后继续增量。</string>
+    <string name="crawl_auto_after_checkin">每次签到完成后自动增量抓取</string>
+    <string name="crawl_start">开始抓取（增量）</string>
+    <string name="crawl_stop">停止</string>
+    <string name="crawl_log_title">抓取日志</string>
+    <string name="crawl_need_target">请先添加抓取目标</string>
+    <string name="crawl_need_dir">请先选择相册目录</string>
+    <string name="crawl_busy">已有抓取任务在运行，等它结束或先停止</string>
+    <string name="crawl_since_btn">起始日期</string>
+    <string name="crawl_since_title">抓取起始日期 · %1$s</string>
+    <string name="crawl_since_saved">起始日期 → %1$s</string>
+    <string name="crawl_progress_fmt">已覆盖 %1$s ~ %2$s</string>
+    <string name="crawl_progress_none">尚未抓取</string>
+    <string name="crawl_progress_from">起始 %1$s</string>
+    <string name="crawl_progress_bottom"> · 已到底</string>
+
+    <!-- 单条抓取 -->
+    <string name="single_title">单条抓取</string>
+    <string name="single_input_hint">微博链接 / bid，或博主 UID</string>
+    <string name="single_input_note">粘贴微博链接直接抓取；填博主 UID 会列出其最近微博供选择。</string>
+    <string name="single_pick_title">选择要抓取的微博（最近 %1$d 条）</string>
+    <!-- 设置页 -->
+    <string name="settings_panel_title">面板同步</string>
+    <string name="settings_panel_url_hint">面板地址（公网必须 https://）</string>
+    <string name="settings_panel_token_hint">同步令牌（面板 → 设置 → 手机保活 → 生成）</string>
+    <string name="settings_save">保存</string>
+    <string name="settings_saved">已保存</string>
+    <string name="settings_panel_note">配置后 App 每 6 小时把最新 Cookie 推送到面板，自动覆盖同微博号账号；留空则只在本地签到。</string>
+    <string name="settings_behavior_title">行为</string>
+    <string name="settings_live_gif">Live Photo 转 GIF（关闭则保存原始视频）</string>
+    <string name="settings_about_title">关于</string>
+    <string name="settings_about_body">微博签到助手 v%1$s\n真机签到 · 登录态同步 · 原图抓取 · 图库预览\n权限：网络 · 局域网（面板）· 后台保活（WorkManager 注入）</string>
+    <string name="settings_lan_granted">已允许访问局域网，面板同步可用</string>
+    <string name="settings_lan_denied">未允许访问局域网，Android 17 及以上系统将无法连接自建面板</string>
+
+    <!-- 图库（v0.4.0） -->
+    <string name="gallery_card_title">图库预览</string>
+    <string name="gallery_count_none">目录里还没有图片（抓取后在此浏览）</string>
+    <string name="gallery_count_fmt">%1$d 张图片</string>
+    <string name="gallery_open">打开图库</string>
+    <string name="gallery_need_dir">请先选择相册目录</string>
+    <string name="gallery_browse_title">图库</string>
+    <string name="gallery_empty">目录里还没有图片\n先在下方配置目标并开始抓取</string>
+    <string name="gallery_refresh">刷新</string>
+    <string name="gallery_item_desc">图片</string>
+    <string name="preview_share">分享</string>
+    <string name="preview_share_fail">没有可用的分享目标</string>
+    <string name="preview_open">系统打开</string>
+    <string name="preview_open_fail">没有应用能打开该图片</string>
+    <string name="preview_delete">删除</string>
+    <string name="preview_delete_title">删除这张图片?</string>
+    <string name="preview_delete_msg">将从相册目录删除，无法恢复。</string>
+    <string name="preview_delete_fail">删除失败（文件可能正被占用）</string>
+    <string name="preview_index_fmt">%1$d / %2$d</string>
+    <string name="preview_load_fail">目录里没有图片</string>
+
+    <!-- 超话状态 / 补签（v0.4.0） -->
+    <string name="home_uid_fmt">UID %1$s</string>
+    <string name="home_name_unknown">（未获取到昵称）</string>
+    <string name="home_status_idle">尚未签到</string>
+    <string name="home_topics_idle">超话状态：点右上角「刷新超话」或点按本行查看</string>
+    <string name="home_topics_loading">超话状态刷新中…</string>
+    <string name="home_topics_failed">超话状态获取失败：%1$s</string>
+    <string name="home_topic_list_summary">共 %1$d 个超话 · 已签 %2$d · 待签 %3$d</string>
+    <string name="home_topic_item_done">%1$s　—　已签</string>
+    <string name="home_topic_item_pending">%1$s　—　待签</string>
+    <string name="home_topic_none_selected">没有选择要补签的超话</string>
+    <string name="btn_refresh_topics">刷新超话</string>
+    <string name="home_topic_title">%1$s 的超话</string>
+    <string name="home_topic_none">该账号没有关注超话</string>
+    <string name="home_topic_resign">补签选中</string>
+    <string name="home_resign_done_fmt">补签完成：%1$d 成功 / %2$d 失败</string>
+
+    <!-- ===== v0.6 UI 刷新：首页 ===== -->
+    <!-- 账号卡标题带数量，一眼知道有几个账号 -->
+    <string name="accounts_count_fmt">账号 (%1$d)</string>
+    <string name="cd_add_account">添加账号</string>
+    <string name="account_more">更多操作</string>
+    <string name="account_action_topics">查看超话清单</string>
+    <string name="account_action_delete">删除账号</string>
+    <!-- 状态 chip：已签 / 待签，替代原来的纯文本逗号拼接 -->
+    <string name="account_chip_done_fmt">已签 %1$d</string>
+    <string name="account_chip_pending_fmt">待签 %1$d</string>
+    <string name="account_chip_level_fmt">Lv.%1$d</string>
+    <string name="home_topics_updated_fmt">超话状态更新于 %1$s</string>
+    <!-- 日志卡头的无障碍文案：展开/收起状态必须播报出来。
+         注意这些 contentDescription 挂在「可点的卡头容器」上，不是挂在装饰性箭头上。 -->
+    <string name="cd_log_collapsed">运行日志，已收起，点按展开</string>
+    <string name="cd_log_expanded">运行日志，已展开，点按收起</string>
+    <string name="cd_crawl_log_collapsed">抓取日志，已收起，点按展开</string>
+    <string name="cd_crawl_log_expanded">抓取日志，已展开，点按收起</string>
+
+    <!-- ===== v0.6 UI 刷新：图片页 ===== -->
+    <string name="crawl_targets_count_fmt">抓取目标 (%1$d)</string>
+    <string name="cd_add_target">添加抓取目标</string>
+    <string name="crawl_remove_short">移除</string>
+    <string name="crawl_add_hint">UID 数字 / 主页链接 / 个性域名</string>
+    <string name="crawl_add_example">示例：1234567890 或 https://m.weibo.cn/u/1234567890 或博主个性域名</string>
+    <string name="crawl_run_title">抓取运行</string>
+    <string name="crawl_target_more">目标操作</string>
+    <string name="gallery_empty_action">去配置抓取目标</string>
+    <string name="login_waiting">等待微博登录…</string>
+    <!-- 登录轮询的三段状态与结果提示（v0.9.1：从代码里的中文字面量提取，便于统一维护 / 翻译） -->
+    <string name="login_found_verifying">已检测到登录，正在验证…</string>
+    <string name="login_found_waiting">已检测到 Cookie，等待微博确认登录态…</string>
+    <string name="login_added_fmt">已添加账号：%1$s</string>
+    <string name="login_uid_missing">登录验证成功但未取到 uid，请重试</string>
+    <string name="gallery_gif_badge">GIF</string>
+
+    <!-- ===== v0.6 UI 刷新：设置页 ===== -->
+    <string name="settings_auto_on_open_desc">打开应用时为全部账号自动签到（6 小时内不重复）</string>
+    <string name="settings_live_gif_desc">关闭后 Live Photo 直接保存原始视频，不再转 GIF</string>
+    <string name="settings_appearance_note">界面配色跟随系统深浅色模式；Android 12 及以上支持跟随壁纸取色。</string>
+
+    <!-- ===== v2.0：应用栏问候与 Hero 指标 ===== -->
+    <string name="greeting_morning">早上好</string>
+    <string name="greeting_noon">中午好</string>
+    <string name="greeting_afternoon">下午好</string>
+    <string name="greeting_evening">晚上好</string>
+    <string name="home_ring_label">今日已签</string>
+    <string name="home_ring_value_empty">0/0</string>
+    <string name="home_metric_empty">—</string>
+    <string name="home_pending_label">待签超话</string>
+    <string name="home_row_hint_short">点按行查看超话</string>
+    <string name="home_today_fmt">%1$s · %2$d 个账号</string>
+    <string name="home_today_no_account_fmt">%1$s · 还没有账号</string>
+    <string name="home_pill_accounts_fmt">%1$d 个账号</string>
+    <string name="home_pill_panel_on">面板已配置</string>
+    <string name="home_pill_panel_off">面板未配置</string>
+    <string name="crawl_target_hint_short">点按 ⋮ 管理目标</string>
+    <string name="settings_panel_tag">可选</string>
+    <string name="home_ring_value_fmt">%1$d/%2$d</string>
+
+    <!-- ===== v0.9.0 超话页 ===== -->
+    <string name="nav_topics">超话</string>
+    <string name="topic_title">超话</string>
+    <string name="topic_subtitle_idle">关注超话的等级、签到状态与详情</string>
+    <string name="topic_subtitle_loading">正在加载…</string>
+    <string name="topic_subtitle_updated">更新于 %1$s</string>
+    <string name="topic_subtitle_failed">刷新失败：%1$s</string>
+
+    <!-- 账号选择器 -->
+    <string name="topic_account_all">全部</string>
+
+    <!-- Hero 三列指标 -->
+    <string name="topic_metric_total">关注超话</string>
+    <string name="topic_metric_done">今日已签</string>
+    <string name="topic_metric_pending">待签</string>
+    <string name="topic_metric_empty">—</string>
+
+    <!-- 筛选 / 排序 -->
+    <string name="topic_filter_all">全部</string>
+    <string name="topic_filter_pending">待签</string>
+    <string name="topic_filter_done">已签</string>
+    <string name="topic_filter_level">Lv7+</string>
+    <string name="topic_sort_label">排序</string>
+    <string name="topic_sort_default">待签优先</string>
+    <string name="topic_sort_level">等级降序</string>
+    <string name="topic_sort_name">名称</string>
+
+    <!-- 列表项 -->
+    <string name="topic_state_done">已签</string>
+    <string name="topic_state_pending">待签</string>
+    <string name="topic_meta_hint">点按查看详情</string>
+    <string name="topic_detail_loading">详情加载中…</string>
+    <string name="topic_detail_failed">详情加载失败，点按重试</string>
+    <string name="topic_detail_none">接口未返回详情</string>
+    <string name="topic_detail_fetched">详情更新于 %1$s</string>
+    <string name="topic_id_fmt">超话 ID %1$s</string>
+
+    <!-- 行菜单 -->
+    <string name="topic_action_checkin">立即签到</string>
+    <string name="topic_action_copy">复制签到链接</string>
+    <string name="topic_action_json">查看原始 JSON</string>
+    <string name="topic_action_open">在微博打开</string>
+    <string name="topic_open_fail">没有应用能打开这个链接</string>
+    <string name="topic_copied">已复制</string>
+    <string name="topic_copied_none">当前没有可复制的签到链接（可能已签或缺少字段）</string>
+    <string name="topic_json_title">%1$s · 原始字段</string>
+    <string name="topic_json_empty">这条超话没有可展示的原始字段（数据来自本地缓存）</string>
+    <string name="topic_checkin_ok_fmt">签到成功 · %1$s</string>
+    <string name="topic_checkin_ok_plain">签到成功</string>
+    <string name="topic_checkin_fail_fmt">签到失败：%1$s</string>
+
+    <!-- 状态 -->
+    <string name="topic_empty_no_account">还没有账号\n先到「首页」添加账号</string>
+    <string name="topic_empty_no_topic">该账号还没有关注任何超话</string>
+    <string name="topic_empty_filter">当前筛选条件下没有超话</string>
+    <string name="topic_retry">重试</string>
+    <string name="topic_go_home">去首页添加账号</string>
+    <string name="topic_view_all">查看全部</string>
+
+    <!-- 字段说明（回答「接口能读到哪些信息」） -->
+    <string name="topic_field_title">超话字段说明</string>
+    <string name="topic_field_entry">字段说明</string>
+    <string name="topic_field_body">一、关注超话列表（containerid=100803_-_followsuper）\n· title_sub 超话名称\n· desc1 等级（Lv.N）\n· desc2 次要描述\n· scheme 内含超话 ID（100808 后的 hash）\n· buttons[0].name 签到状态\n· buttons[0].scheme 签到链接\n· cardlistInfo.since_id 翻页游标\n\n二、超话主页（containerid=100808&lt;hash&gt;，点开时才拉）\n· pageInfo.title_top 超话标题\n· pageInfo.desc 简介\n· pageInfo.desc_more 关注数 / 帖子数 / 阅读数\n· pageInfo.portrait_sub_text 头部副文案\n· pageInfo.oid 原始 ID\n\n三、签到响应\n· data.alert_title 签到第 N 名\n· data.alert_subtitle 经验 +X\n· msg 失败原因</string>
+
+    <string name="cd_topic_expand">展开详情</string>
+    <string name="cd_topic_collapse">收起详情</string>
+    <string name="cd_level_badge">超话等级 %1$d</string>
+    <string name="cd_topic_more">更多操作</string>
+
+    <!-- ===== v0.9.0 图库增强 ===== -->
+    <string name="gallery_search_hint">搜索文件名 / 博主</string>
+    <string name="gallery_search_clear">清除搜索</string>
+    <string name="gallery_filter_all">全部</string>
+    <string name="gallery_filter_still">静图</string>
+    <string name="gallery_filter_gif">动图</string>
+    <string name="gallery_filter_mov">视频</string>
+    <string name="gallery_sort_label">排序方式</string>
+    <string name="gallery_sort_newest">最新在前</string>
+    <string name="gallery_sort_oldest">最早在前</string>
+    <string name="gallery_sort_name">按名称</string>
+    <string name="gallery_sort_size_desc">占用最大</string>
+    <string name="gallery_sort_size_asc">占用最小</string>
+    <string name="gallery_group_by_date">按日期</string>
+    <string name="gallery_group_by_author">按博主</string>
+    <string name="gallery_group_none">不分组</string>
+    <string name="gallery_group_label">分组方式</string>
+    <string name="gallery_group_other">更早</string>
+    <string name="gallery_group_title_fmt">%1$s · %2$d 张</string>
+    <string name="gallery_author_chip_fmt">%1$s · %2$d</string>
+    <string name="gallery_filter_empty">没有符合当前筛选条件的图片</string>
+    <string name="gallery_summary_fmt">%1$d 张 · 显示 %2$d 张</string>
+    <string name="gallery_read_error">目录不可访问，请重新选择相册目录</string>
+    <string name="gallery_selected_fmt">已选 %1$d</string>
+    <string name="gallery_select_cancel">取消</string>
+    <string name="gallery_batch_share">分享</string>
+    <string name="gallery_batch_delete">删除</string>
+    <string name="gallery_batch_delete_title">删除 %1$d 张图片?</string>
+    <string name="gallery_batch_delete_msg">将从相册目录删除，无法恢复；抓取索引会同步回退，下一轮可重新抓回。</string>
+    <string name="gallery_batch_deleted_fmt">已删除 %1$d 张</string>
+    <string name="gallery_batch_delete_fail_fmt">%1$d 张删除失败</string>
+    <string name="gallery_share_empty">没有选中图片</string>
+    <string name="gallery_cd_check">选择</string>
+
+    <!-- ===== v0.9.0 抓取增强 ===== -->
+    <string name="crawl_phase_prepare">准备</string>
+    <string name="crawl_phase_retry">补失败</string>
+    <string name="crawl_phase_new">补新</string>
+    <string name="crawl_phase_history">补历史</string>
+    <string name="crawl_phase_done">完成</string>
+    <string name="crawl_stage_fmt">%1$s · %2$d/%3$d</string>
+    <string name="crawl_counts_fmt">已下载 %1$d · 跳过 %2$d · 待重试 %3$d</string>
+    <string name="crawl_target_step_fmt">目标 %1$d/%2$d · %3$s</string>
+    <string name="crawl_retry_title">待重试 %1$d 帖</string>
+    <string name="crawl_retry_action">立即重试</string>
+    <string name="crawl_retry_none">没有待重试的帖子</string>
+    <string name="crawl_retry_running">正在重试失败的帖子…</string>
+    <string name="crawl_saf_lost">目录授权已失效，抓取会失败</string>
+    <string name="crawl_saf_lost_action">重新选择</string>
+    <string name="crawl_saf_readonly">只有只读权限，可能无法写入新图片</string>
+</resources>

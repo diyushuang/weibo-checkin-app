@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  抓取目标行（v2.0）。
+
+  两行密排：目标名 13.5sp + 副行（UID / 增量进度），行底 1dp 发丝线
+  由 foreground 画；所有操作收进行尾 ⋮ 菜单，避免一行三个可点目标互相误触。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/Widget.Wcm.ListRow"
+    android:paddingTop="@dimen/sp_3"
+    android:paddingBottom="@dimen/sp_3"
+    android:foreground="@drawable/fg_row_divider">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvTargetName"
+            style="@style/Widget.Wcm.Text.RowTitle" />
+
+        <TextView
+            android:id="@+id/tvTargetUid"
+            style="@style/Widget.Wcm.Text.Hint"
+            android:layout_marginTop="1dp" />
+
+        <!-- 增量进度：已覆盖的时间区间 + 待重试数 -->
+        <TextView
+            android:id="@+id/tvTargetProgress"
+            style="@style/Widget.Wcm.Text.Hint"
+            android:layout_marginTop="1dp" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/btnTargetMore"
+        style="@style/Widget.Wcm.IconButton.Row"
+        android:contentDescription="@string/crawl_target_more"
+        android:src="@drawable/ic_more_vert"
+        app:tint="@color/ink_3" />
+</LinearLayout>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  桌面模式 / 12 英寸以上（w840dp 及以上，v2.0）。
+
+  此时瓶颈是"行太长"而不是"屏不够大"：
+    · 留白拉到 32dp，正文自然收窄到易读行宽；
+    · 卡片间距 14dp、内边距 20dp，观感与平板一致；
+    · 进度环 104dp，关键数字在大屏上不显得小气。
+  仍保持单列：本 App 的操作是线性流程，分栏只会让视线左右跳。
+-->
+<resources>
+    <dimen name="page_padding_horizontal">32dp</dimen>
+    <dimen name="page_padding_bottom">40dp</dimen>
+    <dimen name="card_padding">20dp</dimen>
+    <dimen name="card_padding_hero">24dp</dimen>
+    <dimen name="card_gap">14dp</dimen>
+    <dimen name="log_window_height">340dp</dimen>
+    <dimen name="crawl_log_window_height">320dp</dimen>
+    <dimen name="topic_list_height">480dp</dimen>
+    <dimen name="ring_size">104dp</dimen>
+    <dimen name="gallery_gutter">8dp</dimen>
+</resources>
