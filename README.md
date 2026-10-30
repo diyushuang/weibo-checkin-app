@@ -17,9 +17,9 @@
   名称、签到状态，可按待签/已签/Lv7+ 筛选、按待签优先/等级/名称排序；
   点开某条才懒加载简介、关注数、帖子数与超话 ID（缓存 30 分钟），
   行菜单可单独签到 / 复制签到链接 / 查看该条原始 JSON；⋮ →「字段说明」列出全部可读字段
-- **超话状态与补签**：**每次打开首页自动刷新**各账号的超话签到状态，也可点「刷新超话」手动重拉；
-  点按账号行会列出该账号**关注的全部超话并逐条标注已签/待签**，勾选漏签的一键补签，
-  弹窗里的「查看全部」直接跳到超话页；账号行额外显示该账号的最高超话等级，
+- **超话状态与补签**：**打开 App 时自动刷新一次**各账号的超话签到状态（切 Tab 回来不再重拉，
+  需要最新状态时点「刷新超话」）；点按账号行会列出该账号**关注的全部超话并逐条标注已签/待签**，
+  勾选漏签的一键补签，弹窗里的「查看全部」直接跳到超话页；账号行额外显示该账号的最高超话等级，
   Hero 卡可点进超话页，底栏「超话」上挂着待签数角标
 - **原图抓取**：添加博主（UID / 主页链接 / 个性域名）并选择相册目录后，一键增量
   抓取其全部原创微博原图（`/large/` 原始分辨率）；Live Photo 端内转 GIF
@@ -37,15 +37,28 @@
   五种排序，可按日期或博主分组（跨行分组头显示每组的张数）；
   长按进入多选，批量分享与批量删除（删除同步回退抓取索引，下一轮可重新抓回）
 - **单条抓取**：粘贴微博链接直接抓该条，或输入 UID 列出最近微博点选抓取
+- **相册抓图模式（v0.9.8）**：图片页可切换「相册模式 / 时间线模式」。
+  相册模式走 Web 端相册墙，**默认用游客身份**（不需要登录账号、不占账号频次），
+  只枚举有图微博；逐帖取详情时优先游客、失败或有缺图再回落账号。
+  游客 cookie 走护照端的**两步握手**（`genvisitor2` → `visitor?a=crossdomain`），
+  失效时自动刷新重试一次；确实拿不到时回退时间线模式，不会「点了没反应」
+- **18 图补全（v0.9.8）**：超 9 图帖的列表卡片会把 `pic_num`/`pics` 截断
+  （实测有 9/18 与 0/18 两种形态）。抓取以详情里的 `pic_ids` 为准，
+  并在张数少于自述值时补拉账号详情；仍不足则告警但不中断本轮
 - **后台每 6 小时保活轮换**：WorkManager 静默探活收下换发的新 Cookie，
   跨重启持久化，无需开机自启权限
-- **同步面板**：配置面板地址 + 同步令牌后，定期把 Cookie 推送到面板
-  `POST /api/mobile/sync`，覆盖同微博号账号并重置生命周期基准
+- **同步面板（与签到解耦）**：配置面板地址 + 同步令牌后，由「仅同步面板」与后台保活
+  把 Cookie 推送到面板 `POST /api/mobile/sync`，覆盖同微博号账号并重置生命周期基准。
+  **签到 / 补签不再顺带同步** —— 两件事的失败语义分开，签到成功不会再因为面板 5xx 被显示成失败
 
 Material 3 界面（底部导航：首页 / 超话 / 图片 / 设置，Android 12+ 跟随系统取色）。
 
 超话字段（列表 / 详情 / 签到响应各有哪些可用字段、怎么解析）见
 [`docs/design/topic-fields.md`](docs/design/topic-fields.md)。
+
+微博各端**免登录（游客态）端口**的清点、档位划分（L0 零凭据 / L1 游客 cookie / L2 账号）、
+GitHub 同类项目盘点与改造路线见
+[`docs/research/weibo-guest-endpoint-audit.md`](docs/research/weibo-guest-endpoint-audit.md)。
 
 界面自 v2.0 起对齐面板端 UI 系统（`微博签到/docs/ui-redesign/tokens.css`）：
 冷灰底 + 纯白微描边卡 + 玫红只占小面积，颜色 / 字体 / 间距 / 圆角全部令牌化；
@@ -127,6 +140,8 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
 ├── gradle.properties
 ├── gradlew / gradlew.bat
 ├── gradle/wrapper/
+├── CHANGELOG.md             # 版本变更（发版时与 versionName 同步）
+├── docs/                    # design / research / review
 ├── .github/workflows/build-apk.yml   # 单测 + assembleDebug + 上传 APK 产物
 └── app/                     # 唯一模块
     ├── build.gradle.kts     # namespace / applicationId / 签名 / 依赖
@@ -136,30 +151,54 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
         │   ├── AndroidManifest.xml
         │   ├── java/com/wcm/checkin/
         │   │   ├── WcmApp.kt / MainActivity.kt            # 应用与主壳（4 Tab）
+        │   │   ├── AppScope.kt                            # 长任务的应用级协程作用域
         │   │   ├── HomeFragment.kt / SettingsFragment.kt  # 首页签到 / 设置
         │   │   ├── TopicFragment.kt / TopicStore.kt       # 超话面板 / 超话快照缓存
         │   │   ├── GalleryFragment.kt / GalleryBrowseActivity.kt
         │   │   ├── ImagePreviewActivity.kt / ZoomableImageView.kt
         │   │   ├── LoginWebViewActivity.kt                # 微博官方页登录取 Cookie
-        │   │   ├── CheckInWorker.kt                       # WorkManager 定时签到/保活
-        │   │   ├── AccountStore.kt                        # 账号 / 配置 / 抓取游标持久化
+        │   │   ├── CheckInWorker.kt                       # WorkManager 定时保活/同步
+        │   │   ├── AccountStore.kt / SafePrefs.kt         # 账号 / 配置 / 游标持久化
         │   │   ├── WeiboApi.kt / Crawler.kt               # 超话签到 / 原图抓取
+        │   │   ├── GuestSession.kt / WebAjax.kt           # 游客身份（两步握手）/ Web ajax
+        │   │   ├── WeiboThrottle.kt                       # 请求间隔闸门
         │   │   ├── CrawlPlanner.kt / CrawlCursor.kt       # 增量规划（纯函数）/ 游标模型
         │   │   ├── CrawlIndex.kt / CrawlRunner.kt         # 去重索引（NDJSON）/ 抓取单闸门
         │   │   ├── CrawlProgress.kt / SafAccess.kt        # 进度模型（纯函数）/ 目录授权自检
         │   │   ├── AssetName.kt / Takeover.kt             # 命名规范化 / 相册已有文件接管
         │   │   ├── Hashing.kt                             # 内容哈希（SHA-256 前 128bit）
-        │   │   ├── PanelApi.kt                            # 面板 /api/mobile/sync 同步
+        │   │   ├── PanelApi.kt / PanelUrl.kt              # 面板同步 / 面板地址安全策略
         │   │   ├── GalleryFiles.kt / ThumbLoader.kt       # 相册文件 / 筛选分组 / 缩略图
         │   │   ├── GifEncoder.kt / LivePhotoConverter.kt  # Live Photo → GIF
-        │   │   └── ...
+        │   │   └── LogPanel.kt / UiExt.kt                 # 日志面板 / 小 UI 辅助（共用）
         │   └── res/           # layout / drawable / values / xml
         └── test/java/com/wcm/checkin/                     # JVM 单测
 ```
 
-## 抓取机制（v0.5）
+近一次全项目审查的问题清单与修复情况见
+[`docs/review/code-review-2026-10-30.md`](docs/review/code-review-2026-10-30.md)。
 
-### 推进顺序
+## 抓取机制
+
+两条链路共用一个闸门、一套索引与三层去重，只有「怎么枚举帖子」不同：
+
+| 模式 | 枚举方式 | 身份 | 适用 |
+| --- | --- | --- | --- |
+| 时间线（`runIncremental`，v0.5） | `107603<uid>` 分页列表，逐条拉详情 | **必须账号** | 兜底；能拿到帖级 `live_photo` |
+| 相册（`runAlbum`，v0.9.8，默认） | `weibo.com/ajax/profile/getImageWall` 相册墙 | **游客优先** | 只枚举有图微博；不占账号频次 |
+
+### 相册模式（v0.9.8 默认）
+
+- **枚举**：相册墙一页约 20 张图（5–8 帖），天然跳过纯文字帖；游标是服务端下发的
+  `since_id`，按 `treeTag + uid` 隔离存档。每轮「补新」从第 1 页扫 2 页、
+  「补历史」从存档游标扫 8 页，单目标 40 帖 / 单轮 20 分钟为上限。
+- **取详情**：优先游客走 `weibo.com/ajax/statuses/show`（扁平 status，`pic_ids` 全量），
+  游客失败或张数少于自述 `pic_num` 时回落账号 + m 站详情（那里有帖级 `live_photo`）。
+- **身份**：游客 cookie 由护照端两步握手签发（`genvisitor2` → `visitor?a=crossdomain`），
+  缓存一年；遇到「身份可疑」失败会刷新一次再重试，仍失败则本轮后续直接走账号详情。
+- **回退**：游客拿不到 / 相册墙枚举失败 → 整轮回退时间线模式，不会「点了没反应」。
+
+### 推进顺序（时间线）
 
 每轮对每个目标依次跑三个阶段，**不再每轮从第 1 页重扫**：
 
@@ -205,7 +244,7 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
 | 微博接口 / 图片 CDN | **只允许 https**，且 host 必须在 `weibo.cn / weibo.com / weibocdn.com / sinaimg.cn` 白名单内 |
 | 面板地址 | 公网**必须 https**；只有私有网段（10/8、172.16/12、192.168/16、127/8、169.254/16、`.local`、`.lan`）才允许 http |
 | 明文流量 | `network-security-config` 仍整体放行（面板地址构建期无法枚举），但应用层已把明文收敛到内网；换 https 反代后把 `cleartextTrafficPermitted` 改成 `false` 即可彻底关闭 |
-| WebView | 只允许「https + 微博域名」导航，其余一律拦截；关闭 `file://`/`content://` 访问与混合内容 |
+| WebView | 只允许「https + 微博域 + 新浪护照域（`*.sina.com.cn` / `*.sina.cn`，登录链路的跨域分发必经 `passport.sina.cn`）」导航，其余一律拦截；`http` 的 302 升级为 https 后重载，不整跳丢弃；关闭 `file://`/`content://` 访问与混合内容 |
 | 备份 | `allowBackup=false` + `dataExtractionRules` 全量排除，Cookie 不会被云备份带走 |
 | 局域网 | Android 17+ 保存局域网面板时申请 `ACCESS_LOCAL_NETWORK`，低版本无此概念直接跳过 |
 

@@ -38,7 +38,9 @@ Cookie: <登录态>   UA: iPhone   Referer: https://m.weibo.cn/   X-Requested-Wi
   也兼容 `https://m.weibo.cn/p/100808<hash>/super_index` 这种路径写法。
 - 已签判定：按钮名 ∈ `{已签, 已簽, 已签到, 已簽到}` **或** 按钮 scheme 为空。
 - 身份键：优先 `topicId`，缺失时退化为 `n:<名称>`，用于跨页去重（后页覆盖前页）。
-- 翻页：每页 10 条，页间 `Thread.sleep(500)`，最多 20 页（约 200 个超话）。
+- 翻页：每页 10 条，页间经 `WeiboThrottle.await(KEY_TOPIC_PAGE, 500)` 限速
+  （`kotlinx.coroutines.delay`，切页/退出能立刻取消；早期实现是 `Thread.sleep`），
+  最多 20 页（约 200 个超话）。
 
 ## 二、超话主页详情（点开某条才请求）
 
@@ -78,7 +80,7 @@ GET <buttons[0].scheme>[&st=<data.st>]
 | `data.login` | 是否已登录 | 探活 |
 | `data.st` | 签到签名 | 拼到签到 URL 上 |
 | `data.uid` / `data.user_id` | 账号 UID | 账号主键 |
-| `data.screen_name` | 昵称 | 账号显示名（缺失时走 `containerid=100803` 兜底补拉） |
+| `data.screen_name` | 昵称 | 账号显示名（缺失时用 `getIndex?type=uid&value=<uid>` 的 `userinfo.screen_name` 兜底补拉） |
 | `Set-Cookie` 响应头 | 换发的新 `SUB` 等 | 合并回本地账号（登录态轮换） |
 
 ## 五、本地缓存（`SharedPreferences: wcm_topics`）
