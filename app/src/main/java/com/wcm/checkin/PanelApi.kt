@@ -16,6 +16,18 @@ object PanelApi {
         val detail: String,
     )
 
+    /**
+     * 同步专用 client：**不跟随重定向**。
+     *
+     * 这里带的是 `X-Panel-Token`（自定义头）。OkHttp 跟随跨域 302 时只会摘掉
+     * `Authorization`，自定义头是原样转发的 —— 面板地址配错 / 面板被劫持时，
+     * 令牌与 cookie 会被送到跳转目标去。
+     */
+    private val client = WeiboApi.client.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+
     fun sync(panelUrl: String, token: String, cookie: String, uid: String): SyncResult {
         // 地址策略收口在 PanelUrl：公网必须 https，只有内网才允许 http
         val base = PanelUrl.parse(panelUrl).base
@@ -29,8 +41,12 @@ object PanelApi {
             .header("X-Panel-Token", token)
             .post(body)
             .build()
-        WeiboApi.client.newCall(request).execute().use { resp ->
+        client.newCall(request).execute().use { resp ->
             val text = resp.body?.string() ?: "{}"
+            if (resp.isRedirect) {
+                // 不跟随重定向：把「面板地址指错了」直接说出来，比静默 302 更好排查
+                return SyncResult(false, false, "", "bad_url", "面板返回跳转（HTTP ${resp.code}），请检查面板地址")
+            }
             if (resp.code == 429) {
                 // 面板限流（多账号连续同步叠加保活时会触顶）：明确提示而非笼统的 HTTP 429
                 val retry = resp.header("Retry-After")?.toIntOrNull()

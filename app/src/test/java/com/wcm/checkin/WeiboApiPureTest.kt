@@ -127,4 +127,117 @@ class WeiboApiPureTest {
         assertFalse(r.ok)
         assertTrue(r.msg.contains("blocked"))
     }
+
+    // ---------- 登录页导航白名单（v0.9.2：补新浪 SSO 域） ----------
+
+    @Test
+    fun isLoginHost_allowsWeiboAndSinaSso() {
+        // 微博自家域
+        assertTrue(WeiboApi.isLoginHost("passport.weibo.com"))
+        assertTrue(WeiboApi.isLoginHost("m.weibo.cn"))
+        assertTrue(WeiboApi.isLoginHost("weibo.com"))
+        // 新浪 SSO：wapsso 把登录态写回 .weibo.cn 的必经一跳，拦掉会停在半登录态
+        assertTrue(WeiboApi.isLoginHost("login.sina.com.cn"))
+        assertTrue(WeiboApi.isLoginHost("passport.sina.com.cn"))
+        assertTrue(WeiboApi.isLoginHost("sina.com.cn"))
+        // .cn 护照域：实测漏掉它就会卡在「已拦截跳转：passport.sina.cn」
+        assertTrue(WeiboApi.isLoginHost("passport.sina.cn"))
+        assertTrue(WeiboApi.isLoginHost("login.sina.cn"))
+        assertTrue(WeiboApi.isLoginHost("sina.cn"))
+        // 大小写 / 结尾点号不影响判定
+        assertTrue(WeiboApi.isLoginHost("Login.Sina.Com.CN."))
+    }
+
+    @Test
+    fun isLoginHost_rejectsLookalikesAndOthers() {
+        assertFalse(WeiboApi.isLoginHost(""))
+        assertFalse(WeiboApi.isLoginHost("example.com"))
+        assertFalse(WeiboApi.isLoginHost("evil-sina.com.cn"))     // 前缀伪装
+        assertFalse(WeiboApi.isLoginHost("sina.com.cn.evil.com")) // 后缀伪装
+        assertFalse(WeiboApi.isLoginHost("weibo.com.evil.com"))
+        assertFalse(WeiboApi.isLoginHost("notweibo.cn"))
+    }
+
+    @Test
+    fun isWeiboHost_staysStrictForOutboundApi() {
+        // 出口白名单不能被登录白名单放宽：cookie 只允许发往微博自家人域名
+        assertFalse(WeiboApi.isWeiboHost("login.sina.com.cn"))
+        assertTrue(WeiboApi.isWeiboHost("m.weibo.cn"))
+    }
+
+    // ---------- data.login 宽松解析（v0.9.2） ----------
+
+    @Test
+    fun parseLoginFlag_acceptsBooleanNumberAndString() {
+        assertTrue(WeiboApi.parseLoginFlag(true))
+        assertTrue(WeiboApi.parseLoginFlag(1))
+        assertTrue(WeiboApi.parseLoginFlag(1L))
+        assertTrue(WeiboApi.parseLoginFlag("1"))
+        assertTrue(WeiboApi.parseLoginFlag("true"))
+        assertTrue(WeiboApi.parseLoginFlag(" TRUE "))
+    }
+
+    @Test
+    fun parseLoginFlag_treatsEverythingElseAsNotLoggedIn() {
+        assertFalse(WeiboApi.parseLoginFlag(null))
+        assertFalse(WeiboApi.parseLoginFlag(false))
+        assertFalse(WeiboApi.parseLoginFlag(0))
+        assertFalse(WeiboApi.parseLoginFlag("false"))
+        assertFalse(WeiboApi.parseLoginFlag("0"))
+        assertFalse(WeiboApi.parseLoginFlag(org.json.JSONObject()))
+    }
+
+    // ---------- 签到响应判定（v0.9.6：对齐面板口径） ----------
+
+    @Test
+    fun parseSignResponse_countsFlagSuccess() {
+        assertTrue(WeiboApi.parseSignResponse("""{"ok":1}""").ok)
+        assertTrue(WeiboApi.parseSignResponse("""{"ok":"1"}""").ok)
+        assertTrue(WeiboApi.parseSignResponse("""{"result":1}""").ok)
+        assertTrue(WeiboApi.parseSignResponse("""{"code":"100000"}""").ok)
+    }
+
+    @Test
+    fun parseSignResponse_countsSuccessCopy() {
+        // 微博对「今天已经签过」常回 ok=0 + 文案写着已签到：这是成功，不是失败
+        assertTrue(WeiboApi.parseSignResponse("""{"ok":0,"msg":"今天已签到"}""").ok)
+        assertTrue(WeiboApi.parseSignResponse("""{"ok":0,"msg":"签到成功，经验 +8"}""").ok)
+        assertTrue(WeiboApi.parseSignResponse("""{"ok":0,"msg":"今天已簽到"}""").ok)
+    }
+
+    @Test
+    fun parseSignResponse_plainFailureStaysFailure() {
+        val r = WeiboApi.parseSignResponse("""{"ok":0,"msg":"系统繁忙，请稍后再试"}""")
+        assertFalse(r.ok)
+        assertEquals("系统繁忙，请稍后再试", r.msg)
+        assertFalse(r.needsVerifyRetry)
+    }
+
+    @Test
+    fun parseSignResponse_flagsVerifyRetry() {
+        val r = WeiboApi.parseSignResponse("""{"ok":0,"errno":100015,"msg":"验签失败"}""")
+        assertFalse(r.ok)
+        assertEquals(100015, r.errno)
+        assertTrue(r.needsVerifyRetry)
+
+        // errno 可能是字符串，也可能嵌在 data 里
+        val nested = WeiboApi.parseSignResponse("""{"ok":0,"data":{"errno":"100015"}}""")
+        assertEquals(100015, nested.errno)
+        assertTrue(nested.needsVerifyRetry)
+
+        // 已成功 / 其它错误码都不该触发重试
+        assertFalse(WeiboApi.parseSignResponse("""{"ok":1}""").needsVerifyRetry)
+        assertFalse(
+            WeiboApi.parseSignResponse("""{"ok":0,"errno":100001,"msg":"系统繁忙"}""").needsVerifyRetry
+        )
+    }
+
+    @Test
+    fun parseSignResponse_readsAlertCopy() {
+        val r = WeiboApi.parseSignResponse(
+            """{"ok":1,"data":{"alert_title":"签到第 12 名","alert_subtitle":"经验 +8"}}"""
+        )
+        assertTrue(r.ok)
+        assertEquals("签到第 12 名 · 经验 +8", r.summary)
+    }
 }

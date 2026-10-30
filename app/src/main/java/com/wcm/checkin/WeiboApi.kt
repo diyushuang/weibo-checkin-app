@@ -9,16 +9,32 @@ import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
 /**
- * m.weibo.cn 客户端：与面板 app/weibo_client.py 同一套接口与判定逻辑的 Kotlin 移植。
+ * 微博接口客户端：m 站（`m.weibo.cn`）为主，Web 端（`weibo.com/ajax`）为辅。
  *
- * - verify: /api/config 探活并回收 Set-Cookie（登录态轮换的入口）
- * - listTopics: 关注超话列表（分页 + 已签检测）
- * - sign: 超话签到（执行按钮 scheme + st）
- * 所有出站 URL 只允许微博自家域名（对齐服务端 validate_weibo_url 语义）。
+ * 按用途分四块：
+ * - **身份**：`verify`（/api/config 探活 + 回收轮换的 Set-Cookie）、`fetchProfile`；
+ * - **超话**：`listTopics`（关注列表，分页 + 已签检测）、`fetchTopicDetail`、`signDetailed`；
+ * - **抓图**：`fetchUserPosts` / `fetchPostDetail` / `originalImageUrl` / `resolveUid` / `fetchUserName`；
+ * - **纯解析**（可随 CI 做 JVM 单测）：`parseTopicPage` / `parseTopicDetail` /
+ *   `parseSignResponse` / `parseLoginFlag` / `parseWeiboTime` / `cardPicNum` / `summarize`。
+ *
+ * 所有出站 URL 只允许微博自家域名（对齐服务端 `validate_weibo_url` 语义）；
+ * 登录 WebView 另有一套更宽的白名单，见 [isLoginHost]。
  */
 object WeiboApi {
 
-    class WeiboException(message: String) : Exception(message)
+    class WeiboException(
+        message: String,
+        /** HTTP 状态码；非 HTTP 层错误为 0。 */
+        val httpCode: Int = 0,
+        /**
+         * 这次失败是否「像身份问题」（风控 432/403/429、`ok=-100`、返回的不是 JSON）。
+         *
+         * 只有这种失败才值得换一份游客 cookie 重试一次；接口结构变了、参数错了
+         * 换身份也没用，重试只会多打一次请求。
+         */
+        val identitySuspect: Boolean = false,
+    ) : Exception(message)
 
     data class Topic(
         val name: String,
@@ -56,12 +72,26 @@ object WeiboApi {
         val alertTitle: String = "",
         val alertSubtitle: String = "",
         val msg: String = "",
+        /** 微博的错误码：`100015` = 验签失败（st 过期），需要重新探活换新 st 再试一次。 */
+        val errno: Int = 0,
+        /** 是否是「重新探活后重试」得到的结果（日志/文案据此区分一次成功与二次成功）。 */
+        val retried: Boolean = false,
     ) {
         /** 「签到第 12 名 · 经验 +8」这样的单行摘要，无内容时为空串。 */
         val summary: String
             get() = listOf(alertTitle, alertSubtitle)
                 .filter { it.isNotEmpty() }
                 .joinToString(" · ")
+
+        /**
+         * 是否值得「换一份 st 再试一次」。
+         *
+         * 面板侧（`weibo_client.run_account_checkin`）对这种情况的处理是：重新探活拿新 st，
+         * 再原样请求一次。缺了这一步，st 一过期整轮签到就全 ✗，而列表里明明还是待签 ——
+         * 表现就是「状态显示待签、点签到却失败」。
+         */
+        val needsVerifyRetry: Boolean
+            get() = !ok && (errno == 100015 || msg.contains("验签") || msg.contains("驗簽"))
     }
 
     /** 超话列表接口的一页解析结果。 */
@@ -72,19 +102,55 @@ object WeiboApi {
         val msg: String = "",
     )
 
-    data class Verify(val login: Boolean, val st: String?, val cookie: String)
+    data class Verify(
+        val login: Boolean,
+        val st: String?,
+        val cookie: String,
+        /** 配置接口顺带回的 UID（部分响应缺这个字段，由调用方兜底补拉）。 */
+        val uid: String = "",
+    )
 
     private const val BASE = "https://m.weibo.cn"
-    private const val UA =
+
+    /** Web 端（weibo.com 下的 ajax 接口族）的基址：游客身份只在这一侧成立。 */
+    private const val WEB_BASE = "https://weibo.com"
+
+    /** m 站 UA。GuestSession 复用同一份，保持两处请求口径一致。 */
+    internal const val UA =
         "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) " +
             "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+
+    /** Web 端 UA：ajax 接口按桌面浏览器口径下发数据，用移动 UA 会被当异常客户端。 */
+    internal const val WEB_UA =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
     private val WEIBO_HOSTS = listOf("weibo.cn", "weibo.com", "weibocdn.com", "sinaimg.cn")
+
+    /** 登录页额外放行的新浪域（护照 / SSO / 跨域分发都在这些域下）。 */
+    private val LOGIN_SINA_HOSTS = listOf("sina.com.cn", "sina.cn", "sina.com")
     private val DONE_BUTTONS = setOf("已签", "已簽", "已签到", "已簽到")
+
+    /** 签到成功文案（接口偶发 `ok=0` 但文案写着成功，与面板同口径）。 */
+    private val SUCCESS_WORDS = listOf("成功", "已签到", "已簽到")
 
     /** 连续两次超话详情请求的最小间隔：详情只在用户点开时触发，仍要防连点打卡。 */
     private const val DETAIL_MIN_GAP_MS = 1200L
-    private val detailGate = Any()
-    private var lastDetailAt = 0L
+
+    /** 超话列表翻页间隔（每页 10 条）。与面板口径一致：500ms。 */
+    private const val TOPIC_PAGE_GAP_MS = 500L
+
+    /**
+     * 探活结果的缓存时长。
+     *
+     * 只有 `login=true` 的结果才会被缓存：登录页轮询依赖「未登录」的实时反馈，
+     * 一旦把 `false` 缓存 90 秒，用户登录成功后还会卡在「等待微博确认」。
+     * 而登录态的重复探活（刷新/签到/详情前各一次）正是请求量翻倍的主因，缓存它能直接减半。
+     */
+    private const val VERIFY_TTL_MS = 90_000L
+
+    @Volatile private var verifyCache: CachedVerify? = null
+
+    private data class CachedVerify(val cookie: String, val at: Long, val value: Verify)
 
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -122,16 +188,46 @@ object WeiboApi {
         Request.Builder().url(url)
             .header("User-Agent", UA)
             .header("Referer", "$BASE/")
-            .header("X-Requested-With", "XMLHttpRequest")
             .header("Accept", "application/json, text/plain, */*")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .header("X-Requested-With", "XMLHttpRequest")
+            // 面板侧（app/weibo_client.py 的 HEADERS）长期带这个头：m 站按 PWA 口径
+            // 下发卡片，`buttons` 才是「签到 / 已签」的按钮语义。少了它拿到的是另一套
+            // 卡片结构，超话列表里的签到状态就会对不上。
+            .header("MWeibo-Pwa", "1")
             .header("Cookie", cookie)
             .build()
 
-    /** 出站白名单：只允许微博自家域，防 cookie 被发往任意外部主机。 */
-    /** 是否是微博自家域名（含子域）。WebView 导航白名单复用同一份口径。 */
+    /**
+     * 是否是微博自家域名（含子域）。出站白名单与 WebView 导航白名单复用同一份口径。
+     */
     fun isWeiboHost(host: String): Boolean {
         val h = host.lowercase().trimEnd('.')
         return h.isNotEmpty() && WEIBO_HOSTS.any { h == it || h.endsWith(".$it") }
+    }
+
+    /**
+     * 登录页导航白名单 = 微博自家域 + 新浪护照/SSO 域（`sina.com.cn` 与 `sina.cn` 全量）。
+     *
+     * 登录链路有两处必须放行的「非微博域」：
+     * - `.cn` 护照：`passport.weibo.cn/signin/login` 302 到 `passport.weibo.com/sso/signin`，
+     *   登录成功后前端再跳到服务端下发的 `location`（新浪 SSO 跨域分发）；
+     * - **`passport.sina.cn`**：sinawap 通道的跨域桥，负责把会话写回 `.weibo.cn`。
+     *   实测漏掉它会直接卡在「已拦截跳转：passport.sina.cn」。
+     *
+     * 为什么整域放行：新浪与微博同属一家，护照域散落在 `passport./login./sso./visitor.`
+     * 等多个子域、且会随活动调整；本 WebView 不带 JS 桥、不开 file:// / content://，
+     * 微博的会话 Cookie 又受域限制、不会发往 sina 域名，放行它们不扩大凭据暴露面。
+     * 面板侧登录域白名单同样是「微博域 + sina.com.cn」（`微博签到/app/security.py`），
+     * 这里按同一口径再加 `.cn`。
+     *
+     * 只给登录页用；所有出站接口请求仍走 [isWeiboHost] 的严格口径。
+     */
+    fun isLoginHost(host: String): Boolean {
+        val h = host.lowercase().trimEnd('.')
+        if (h.isEmpty()) return false
+        if (isWeiboHost(h)) return true
+        return LOGIN_SINA_HOSTS.any { h == it || h.endsWith(".$it") }
     }
 
     fun weiboUrl(raw: String): String {
@@ -150,25 +246,95 @@ object WeiboApi {
         return url
     }
 
-    // ---------- 接口 ----------
+    // ---------- 身份选择 ----------
 
-    /** 探活 + 轮换：返回是否登录、st 与合并轮换后的完整 cookie。 */
-    fun verify(cookie: String): Verify {
-        val jar = parseCookieString(cookie)
-        client.newCall(request("$BASE/api/config", cookie)).execute().use { resp ->
-            if (!resp.isSuccessful) {
-                throw WeiboException("探活请求失败：HTTP ${resp.code}")
-            }
-            mergeSetCookies(jar, resp)
-            val payload = JSONObject(resp.body?.string() ?: "{}")
-            val data = payload.optJSONObject("data") ?: JSONObject()
-            val stRaw = data.optString("st", "")
-            return Verify(
-                login = data.optBoolean("login", false),
-                st = stRaw.ifEmpty { null },
-                cookie = cookieToString(jar),
+    /**
+     * JSON 解析失败统一标记：访客拦截页 / 风控页都是 HTML 或空串，正常接口不会走到这里。
+     */
+    private fun parseJson(body: String, what: String): JSONObject =
+        try {
+            JSONObject(body)
+        } catch (e: Exception) {
+            throw WeiboException(
+                "$what 响应不是 JSON（前 60 字：${body.trim().take(60)}）",
+                identitySuspect = true,
             )
         }
+
+    /** HTTP 层失败的统一出口：432/403/429 归为身份可疑（风控）。 */
+    private fun httpFailure(what: String, code: Int): WeiboException = WeiboException(
+        "$what 请求失败：HTTP $code" + httpHint(code),
+        httpCode = code,
+        identitySuspect = code == 432 || code == 403 || code == 429,
+    )
+
+    // ---------- 接口 ----------
+
+    /**
+     * 探活 + 轮换：返回是否登录、st、uid 与合并轮换后的完整 cookie。
+     *
+     * 登录态结果缓存 [VERIFY_TTL_MS]：[force] 可跳过缓存。签到验签重试、登录轮询这类
+     * 必须看到实时状态的场景要显式传 `force = true`。
+     */
+    fun verify(cookie: String, force: Boolean = false): Verify {
+        if (!force) {
+            val c = verifyCache
+            if (c != null && c.cookie == cookie &&
+                System.currentTimeMillis() - c.at < VERIFY_TTL_MS
+            ) {
+                return c.value
+            }
+        }
+        val jar = parseCookieString(cookie)
+        val result = client.newCall(request("$BASE/api/config", cookie)).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw httpFailure("探活", resp.code)
+            }
+            mergeSetCookies(jar, resp)
+            val body = resp.body?.string().orEmpty()
+            val payload = try {
+                JSONObject(body)
+            } catch (e: Exception) {
+                // 风控页 / HTML 不是「未登录」：抛出去让调用方显示原因，别静默当成没登录
+                throw WeiboException(
+                    "探活响应不是 JSON（前 60 字：${body.trim().take(60)}）",
+                    identitySuspect = true,
+                )
+            }
+            val data = payload.optJSONObject("data") ?: JSONObject()
+            val stRaw = data.optString("st", "")
+            Verify(
+                login = parseLoginFlag(data.opt("login")),
+                st = stRaw.ifEmpty { null },
+                cookie = cookieToString(jar),
+                uid = (data.optString("uid", "").ifEmpty { data.optString("user_id", "") }).trim(),
+            )
+        }
+        // 只缓存「已登录」的结果：把 false 缓存住会让登录页卡在「等待微博确认」。
+        if (result.login) {
+            verifyCache = CachedVerify(cookie, System.currentTimeMillis(), result)
+        }
+        return result
+    }
+
+    /**
+     * `data.login` 的宽松解析：布尔 / 数字 / 字符串都认。
+     *
+     * 微博把 `true` 写成 `1`（或被序列化成 `"true"`）时，`optBoolean` 只会返回
+     * false —— 登录页就会永久停在「等待微博确认登录态」，所以这里显式放宽。
+     */
+    fun parseLoginFlag(raw: Any?): Boolean = when (raw) {
+        null -> false
+        is Boolean -> raw
+        is Number -> raw.toInt() == 1
+        is String -> raw.trim().let { it == "1" || it.equals("true", ignoreCase = true) }
+        else -> false
+    }
+
+    private fun httpHint(code: Int): String = when (code) {
+        429, 432 -> "（微博风控拦截，稍等再试）"
+        403 -> "（请求被拒绝）"
+        else -> ""
     }
 
     /** 取当前账号 uid 与昵称（登录成功后调用）。 */
@@ -314,7 +480,13 @@ object WeiboApi {
         )
     }
 
-    /** 签到响应：兼容 `ok=1` / `result=1` / `code=100000` 三种成功口径。 */
+    /**
+     * 签到响应：成功判定对齐面板（`weibo_client.run_account_checkin`）。
+     *
+     * `ok=1` / `result=1` / `code=100000` 之外，还要认「文案里写着成功」：
+     * 微博对「今天已经签过」的场景常回 `ok=0` + `msg="今天已签到"`，
+     * 只按 ok 判定会把它报成**失败** —— 用户看到的就是「明明签了却说签到失败」。
+     */
     fun parseSignResponse(body: String): SignResult {
         val payload = try {
             JSONObject(body)
@@ -323,15 +495,19 @@ object WeiboApi {
             return SignResult(false, msg = body.trim().take(120))
         }
         val code = payload.opt("code")?.toString() ?: ""
-        val ok = payload.optInt("ok", 0) == 1 ||
-            payload.optInt("result", 0) == 1 ||
-            code == "100000"
         val data = payload.optJSONObject("data") ?: JSONObject()
+        val msg = payload.optString("msg", "").trim()
+        val ok = parseLoginFlag(payload.opt("ok")) ||
+            parseLoginFlag(payload.opt("result")) ||
+            code == "100000" ||
+            SUCCESS_WORDS.any { msg.contains(it) }
         return SignResult(
             ok = ok,
             alertTitle = data.optString("alert_title", "").trim(),
             alertSubtitle = data.optString("alert_subtitle", "").trim(),
-            msg = payload.optString("msg", "").trim(),
+            msg = msg,
+            errno = (payload.opt("errno")?.toString() ?: data.opt("errno")?.toString() ?: "")
+                .toIntOrNull() ?: 0,
         )
     }
 
@@ -344,7 +520,7 @@ object WeiboApi {
      * 超话的账号截断，导致「列表不全 / 状态漏报」。
      * [onPage] 每页解析完后回调已累计条数（页面上显示「已加载 N 个」）。
      */
-    fun listTopics(
+    suspend fun listTopics(
         cookie: String,
         maxPages: Int = 20,
         onPage: (Int) -> Unit = {},
@@ -358,15 +534,17 @@ object WeiboApi {
             page++
             var url = "$BASE/api/container/getIndex?containerid=100803_-_followsuper"
             if (sinceId.isNotEmpty()) url += "&since_id=$sinceId"
+            // 页间间隔交给统一闸门：用 delay 而不是 Thread.sleep，切页/退出能立刻取消
+            WeiboThrottle.await(WeiboThrottle.KEY_TOPIC_PAGE, TOPIC_PAGE_GAP_MS)
             val parsed = client.newCall(request(url, cookie)).execute().use { resp ->
                 if (!resp.isSuccessful) {
-                    throw WeiboException("超话列表请求失败：HTTP ${resp.code}")
+                    throw httpFailure("超话列表", resp.code)
                 }
-                parseTopicPage(JSONObject(resp.body?.string() ?: "{}"))
+                parseTopicPage(parseJson(resp.body?.string() ?: "{}", "超话列表"))
             }
             if (parsed.ok != "1") {
                 if (parsed.ok == "-100") {
-                    throw WeiboException("Cookie 已失效（微博要求重新登录）")
+                    throw WeiboException("Cookie 已失效（微博要求重新登录）", identitySuspect = true)
                 }
                 if (byKey.isEmpty()) {
                     throw WeiboException("微博未返回超话列表：${parsed.msg}")
@@ -377,7 +555,6 @@ object WeiboApi {
             onPage(byKey.size)
             sinceId = parsed.sinceId
             if (sinceId.isEmpty() || !seenPages.add(sinceId)) break
-            Thread.sleep(500)
         }
         return byKey.values.toList()
     }
@@ -387,34 +564,47 @@ object WeiboApi {
      *
      * 只在用户点开某条超话时调用，并做 [DETAIL_MIN_GAP_MS] 节流：
      * 连点多个超话不会打出并发请求。
+     *
+     * 必须账号身份：实测 m 站 `100808` 在游客 cookie 下同样返回 `ok:-100`。
      */
-    fun fetchTopicDetail(cookie: String, topicId: String): TopicDetail {
+    suspend fun fetchTopicDetail(cookie: String, topicId: String): TopicDetail {
         val url = "$BASE/api/container/getIndex?containerid=" + topicDetailContainerId(topicId)
-        throttleDetail()
+        WeiboThrottle.await(WeiboThrottle.KEY_TOPIC_DETAIL, DETAIL_MIN_GAP_MS)
         client.newCall(request(url, cookie)).execute().use { resp ->
             if (!resp.isSuccessful) {
-                throw WeiboException("超话详情请求失败：HTTP ${resp.code}")
+                throw httpFailure("超话详情", resp.code)
             }
-            val payload = JSONObject(resp.body?.string() ?: "{}")
+            val payload = parseJson(resp.body?.string() ?: "{}", "超话详情")
             val ok = payload.opt("ok")?.toString() ?: "?"
             if (ok != "1") {
-                if (ok == "-100") throw WeiboException("Cookie 已失效（微博要求重新登录）")
+                if (ok == "-100") {
+                    throw WeiboException("Cookie 已失效（微博要求重新登录）", identitySuspect = true)
+                }
                 throw WeiboException("超话详情接口 ok=$ok ${payload.optString("msg", "")}".trim())
             }
             return parseTopicDetail(topicId, payload)
         }
     }
 
-    private fun throttleDetail() {
-        synchronized(detailGate) {
-            val wait = DETAIL_MIN_GAP_MS - (System.currentTimeMillis() - lastDetailAt)
-            if (wait > 0) Thread.sleep(wait)
-            lastDetailAt = System.currentTimeMillis()
-        }
-    }
-
     /** 签到一个超话，返回结构化结果（成功时带「签到第 N 名 · 经验 +X」）。 */
     fun signDetailed(cookie: String, scheme: String, st: String?): SignResult {
+        val first = signOnce(cookie, scheme, st)
+        if (!first.needsVerifyRetry) return first
+        // 验签失败（errno=100015）：st 过期了。重新探活拿一份新的 st（顺带收下换发的
+        // Cookie）再原样请求一次 —— 与面板 run_account_checkin 的处理一致。
+        // 这里必须 force：缓存里的那份探活结果很可能正是过期 st 的来源。
+        // 探测失败就直接返回首次结果，把真实原因留给调用方展示。
+        val fresh = try {
+            verify(cookie, force = true)
+        } catch (e: Exception) {
+            return first
+        }
+        if (!fresh.login) return first
+        return signOnce(fresh.cookie, scheme, fresh.st).copy(retried = true)
+    }
+
+    /** 单次签到请求（不含验签重试）。 */
+    private fun signOnce(cookie: String, scheme: String, st: String?): SignResult {
         if (scheme.isEmpty()) throw WeiboException("缺少签到链接")
         var url = if (scheme.startsWith("http")) scheme else BASE + scheme
         url = weiboUrl(url)
@@ -423,7 +613,7 @@ object WeiboApi {
         }
         client.newCall(request(url, cookie)).execute().use { resp ->
             if (!resp.isSuccessful) {
-                throw WeiboException("HTTP ${resp.code}")
+                throw WeiboException("HTTP ${resp.code}" + httpHint(resp.code))
             }
             return parseSignResponse(resp.body?.string() ?: "")
         }
@@ -468,7 +658,13 @@ object WeiboApi {
         )
     }
 
-    /** 用户微博列表（每页 10 条）。返回 (lifetime 总数, 本页帖列表)。 */
+    /**
+     * 用户微博列表（每页 10 条）。返回 (lifetime 总数, 本页帖列表)。
+     *
+     * **必须账号身份**：实测游客 cookie 调 m 站 `107603` 与 Web 端 `ajax/statuses/mymblog`
+     * 分别返回 `ok:-100` 与 403「请登录后使用」，这条链路没有免登录替代。抓图必须登录，
+     * 与签到共用同一份账号凭据 —— 这是现状，不是可以省掉的依赖。
+     */
     fun fetchUserPosts(cookie: String, uid: String, page: Int): Pair<Int, List<RawPost>> {
         val url = "$BASE/api/container/getIndex?containerid=107603$uid&page=$page"
         val req = Request.Builder().url(url)
@@ -479,10 +675,11 @@ object WeiboApi {
             .header("Cookie", cookie)
             .build()
         client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) throw WeiboException("列表请求失败：HTTP ${resp.code}")
-            val payload = JSONObject(resp.body?.string() ?: "{}")
-            if (payload.optInt("ok", 0) != 1) {
-                throw WeiboException("列表接口 ok=${payload.opt("ok")}")
+            if (!resp.isSuccessful) throw httpFailure("列表", resp.code)
+            val payload = parseJson(resp.body?.string() ?: "{}", "列表")
+            val ok = payload.optInt("ok", 0)
+            if (ok != 1) {
+                throw WeiboException("列表接口 ok=${payload.opt("ok")}", identitySuspect = ok == -100)
             }
             val data = payload.optJSONObject("data") ?: JSONObject()
             val total = data.optJSONObject("cardlistInfo")?.optInt("total", 0) ?: 0
@@ -492,6 +689,9 @@ object WeiboApi {
                 val card = cards.optJSONObject(i) ?: continue
                 if (card.optInt("card_type") != 9) continue   // 156 等运营位跳过
                 val mb = card.optJSONObject("mblog") ?: continue
+                // 超 9 图帖的时间线卡片会把 pics / pic_num 截断（真机见过 9/18 与 0/18 两种形态）。
+                // 取三处最大值当粗筛信号：只要有一处透出「有图」，CrawlPlanner 就不会把这条
+                // 当成纯文字帖跳过 —— 真正的张数以详情里的 pic_ids 为准。
                 posts.add(
                     RawPost(
                         id = mb.optString("id", ""),
@@ -499,7 +699,7 @@ object WeiboApi {
                         createdAt = mb.optString("created_at", ""),
                         pinned = mb.optInt("mblogtype", 0) == 1,
                         isRetweet = mb.optJSONObject("retweeted_status") != null,
-                        picNum = mb.optInt("pic_num", 0),
+                        picNum = cardPicNum(mb),
                         text = summarize(mb.optString("text", "")),
                     )
                 )
@@ -507,6 +707,19 @@ object WeiboApi {
             return total to posts
         }
     }
+
+    /**
+     * 时间线卡片上的「这条帖有几张图」粗筛值。
+     *
+     * 超 9 图帖的卡片会截断：`pic_num`、`pics`、`pic_ids` 三处都可能只给一部分
+     * （真机见过 9/18 与 0/18 两种形态）。取三者最大值，只要任一处透出「有图」，
+     * 抓取规划就不会把这条当纯文字帖跳过；真正的张数以详情里的 `pic_ids` 为准。
+     */
+    internal fun cardPicNum(mblog: JSONObject): Int = maxOf(
+        mblog.optInt("pic_num", 0),
+        mblog.optJSONArray("pics")?.length() ?: 0,
+        mblog.optJSONArray("pic_ids")?.length() ?: 0,
+    )
 
     /** 正文去 HTML 标签与常见实体，截断到 90 字（列表选择器展示口径）。 */
     fun summarize(raw: String): String {
@@ -532,7 +745,13 @@ object WeiboApi {
         return ""
     }
 
-    /** 微博详情（含完整 pic_ids 与帖级 live_photo，列表接口拿不到）。 */
+    /**
+     * 微博详情（含完整 pic_ids 与帖级 live_photo，列表接口拿不到）。
+     *
+     * **必须账号身份**。Web 端 `ajax/statuses/show` 游客可用，但返回的是扁平 status 对象：
+     * 没有 `pics` 的 Live 配对信息、也没有帖级 `live_photo`，切过去会让 Live 动图退化成静图，
+     * 所以这里坚持 m 站口径。
+     */
     fun fetchPostDetail(cookie: String, bid: String): JSONObject {
         val url = "$BASE/statuses/show?id=$bid"
         val req = Request.Builder().url(url)
@@ -543,28 +762,63 @@ object WeiboApi {
             .header("Cookie", cookie)
             .build()
         client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) throw WeiboException("详情请求失败：HTTP ${resp.code}")
-            val payload = JSONObject(resp.body?.string() ?: "{}")
-            if (payload.optInt("ok", 0) != 1) {
-                throw WeiboException("详情接口 ok=${payload.opt("ok")}")
+            if (!resp.isSuccessful) throw httpFailure("详情", resp.code)
+            val payload = parseJson(resp.body?.string() ?: "{}", "详情")
+            val ok = payload.optInt("ok", 0)
+            if (ok != 1) {
+                throw WeiboException("详情接口 ok=${payload.opt("ok")}", identitySuspect = ok == -100)
             }
             return payload.optJSONObject("data") ?: JSONObject()
         }
     }
 
-    /** 任意 uid 的昵称（抓图目标显示用）。 */
-    fun fetchUserName(cookie: String, uid: String): String {
+    /**
+     * 任意 uid 的昵称（抓图目标显示用）。
+     *
+     * 两级：
+     * 1. **游客身份走 Web 端 `ajax/profile/info`** —— 实测免登录可用，不消耗账号频次；
+     *    添加抓图目标时即使一个账号都没有，也能把博主名显示出来。
+     * 2. 游客不可用时回落 m 站 `type=uid`（要账号）。
+     *
+     * 失败一律返回空串：调用方只用来做展示兜底，不该因为它中断抓取。
+     */
+    fun fetchUserName(cookie: String?, uid: String): String {
+        GuestSession.cookie()?.let { guest ->
+            webUserName(guest, uid)?.let { return it }
+        }
+        val acc = cookie?.trim().orEmpty()
+        if (acc.isEmpty()) return ""
         return try {
             val url = "$BASE/api/container/getIndex?type=uid&value=$uid"
-            client.newCall(request(url, cookie)).execute().use { resp ->
+            client.newCall(request(url, acc)).execute().use { resp ->
                 if (!resp.isSuccessful) return ""
-                JSONObject(resp.body?.string() ?: "{}")
+                parseJson(resp.body?.string() ?: "{}", "用户信息")
                     .optJSONObject("data")?.optJSONObject("userinfo")
                     ?.optString("screen_name", "") ?: ""
             }
         } catch (e: Exception) {
             ""
         }
+    }
+
+    /** Web 端用户信息（游客可用）。返回 null 表示「这条路拿不到」，交给调用方回落。 */
+    private fun webUserName(identity: String, uid: String): String? = try {
+        val req = Request.Builder().url("$WEB_BASE/ajax/profile/info?uid=$uid")
+            .header("User-Agent", WEB_UA)
+            .header("Referer", "$WEB_BASE/u/$uid")
+            .header("Accept", "application/json, text/plain, */*")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Cookie", identity)
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return null
+            val payload = parseJson(resp.body?.string() ?: "{}", "用户信息")
+            if (payload.optInt("ok", 0) != 1) return null
+            payload.optJSONObject("data")?.optJSONObject("user")
+                ?.optString("screen_name", "")?.trim()?.ifEmpty { null }
+        }
+    } catch (e: Exception) {
+        null
     }
 
     /** 原图 URL：/large/ 才是原始分辨率（接口给的 mw2000 是缩图）。host 按 pid 轮转。 */
