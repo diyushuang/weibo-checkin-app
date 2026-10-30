@@ -12,7 +12,7 @@ import kotlin.random.Random
 /**
  * 游客身份（免登录会话）。
  *
- * 微博的 `weibo.com/ajax/*` 读取类接口不要求账号，只要求一份「访客 cookie」。
+ * 微博的 `weibo.com/ajax/…` 读取类接口不要求账号，只要求一份「访客 cookie」。
  * 访客 cookie 的签发入口在护照端，**必须走两步握手**：
  *
  * ```text

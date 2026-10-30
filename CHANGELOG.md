@@ -79,6 +79,10 @@
 - 清理未使用接口：`TopicStore.prune`、`CrawlDate.today`、`WeiboThrottle.reset`、
   `CrawlProgress.message`。
 - `Crawler.RunState` 更名为 `CrawlContext`（与 `CrawlRunner.RunState` 区分）。
+- **修掉一处编译不过**：`GuestSession` 的 KDoc 里写了接口路径通配 `weibo.com/ajax/*`，
+  Kotlin 的块注释是**可嵌套**的，那个 `/*` 又开了一层注释，把整个 `object GuestSession`
+  吞了进去；编译器却在 200 行之后某个 `*/` 处才报错，位置与真实原因完全错位。
+  文档里改掉该写法，并顺带修正一处过时的测试断言（`prune` 保留 `.retry` 旁挂文件）。
 
 ---
 

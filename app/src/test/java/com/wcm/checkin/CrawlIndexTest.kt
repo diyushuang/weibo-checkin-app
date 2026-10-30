@@ -256,6 +256,8 @@ class CrawlIndexTest {
         open("tagC").apply { onVoid("p", 1L); close() }
         CrawlIndex.prune(tmp.root, setOf("tagA", "tagC"))
         val dir = File(tmp.root, "crawl/index")
-        assertEquals(setOf("tagA.ndjson", "tagC.ndjson"), dir.list()!!.toSet())
+        // 一个 tag 不止一个文件（`.ndjson` 正文 + `.retry` 待重试提示，v0.9.9 起），
+        // 所以只断言「剩下哪些 tag」，不绑定具体后缀，免得再加旁挂文件又炸一次。
+        assertEquals(setOf("tagA", "tagC"), dir.list()!!.map { it.substringBefore('.') }.toSet())
     }
 }
