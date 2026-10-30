@@ -105,4 +105,24 @@ class TopicStoreTest {
         )
         assertTrue(TopicStore.orphanKeys(emptySet(), setOf("a")).isEmpty())
     }
+
+    // ---------- 跨天失效（签到状态按天重置） ----------
+
+    @Test
+    fun isToday_comparesCalendarDayNotElapsedTime() {
+        val zone = java.time.ZoneId.systemDefault()
+        val today = java.time.LocalDate.now(zone)
+        fun at(date: java.time.LocalDate, hour: Int, minute: Int): Long =
+            date.atTime(hour, minute).atZone(zone).toInstant().toEpochMilli()
+
+        val noon = at(today, 12, 0)
+        assertTrue(TopicStore.isToday(noon, now = noon))
+
+        // 今天 00:05 与今天 23:55 同属一天（哪怕相差近 24 小时也算「今天」）
+        assertTrue(TopicStore.isToday(at(today, 0, 5), now = at(today, 23, 55)))
+        // 昨天 23:55 即使在 12 小时以内，也已经是另一天 —— 昨天的「已签」今天不成立
+        assertFalse(TopicStore.isToday(at(today.minusDays(1), 23, 55), now = at(today, 0, 5)))
+        // 没有时间戳一律不算今天
+        assertFalse(TopicStore.isToday(0L, now = noon))
+    }
 }

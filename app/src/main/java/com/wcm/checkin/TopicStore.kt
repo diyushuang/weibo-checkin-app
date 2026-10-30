@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
+import java.time.ZoneId
 
 /**
  * 超话快照与详情缓存（v0.9.0）。
@@ -105,15 +107,6 @@ object TopicStore {
         _state.value = _state.value - uid
     }
 
-    /** 账号被删后清掉孤儿快照。 */
-    fun prune(ctx: Context, validUids: Set<String>) {
-        ensureLoaded(ctx)
-        val orphans = orphanKeys(_state.value.keys, validUids)
-        if (orphans.isEmpty()) return
-        prefs(ctx).edit { orphans.forEach { remove(SNAP_PREFIX + it) } }
-        _state.value = _state.value - orphans
-    }
-
     // ---- 超话详情 ----
 
     fun detail(ctx: Context, topicId: String): WeiboApi.TopicDetail? {
@@ -136,6 +129,22 @@ object TopicStore {
     /** 详情是否还在新鲜期内（[now] 可注入，便于单测）。 */
     fun isFresh(at: Long, now: Long = System.currentTimeMillis(), ttlMs: Long = DETAIL_TTL_MS): Boolean =
         at > 0L && now - at in 0 until ttlMs
+
+    /**
+     * 快照是否属于「今天」。
+     *
+     * **签到状态是按天的**：微博每天重置「已签」，昨天的 `done=true` 今天完全不成立。
+     * 快照没有跨天失效时，界面会把昨天的「已签」当成今天的结论 —— 既显示错状态，
+     * 又让待签数变成 0（于是「明明没签，却一个都不签」）。
+     * 按本地时区比较日历日，而不是用时间差（24 小时 ≠ 一天）。
+     */
+    fun isToday(at: Long, now: Long = System.currentTimeMillis()): Boolean {
+        if (at <= 0L) return false
+        val zone = ZoneId.systemDefault()
+        val snapshotDay = Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        return snapshotDay == today
+    }
 
     // ---- 纯函数（不依赖 Android，JVM 单测覆盖） ----
 
@@ -226,7 +235,11 @@ object TopicStore {
         }
     }
 
-    /** 有快照但账号已不存在 → 该删的 uid 集合。 */
+    /**
+     * 有快照但账号已不存在 → 该删的 uid 集合。
+     *
+     * 纯函数，供「清理孤儿快照」的场景使用（账号删除本身走精确的 [clear]）。
+     */
     fun orphanKeys(existing: Set<String>, validUids: Set<String>): Set<String> =
         existing.filter { it.isNotEmpty() && it !in validUids }.toSet()
 }

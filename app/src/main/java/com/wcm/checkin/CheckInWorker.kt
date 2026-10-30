@@ -8,6 +8,8 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
@@ -27,28 +29,34 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
         val panelToken = AccountStore.panelToken(ctx)
         var alive = 0
 
-        for (acc in accounts) {
-            try {
-                val verify = WeiboApi.verify(acc.cookie)
-                if (verify.login) {
-                    acc.cookie = verify.cookie
-                    acc.lastResult = acc.lastResult.ifEmpty { "后台保活 ✓" }
-                    alive++
-                    if (panelUrl.isNotEmpty() && panelToken.isNotEmpty()) {
-                        try {
-                            PanelApi.sync(panelUrl, panelToken, acc.cookie, acc.uid)
-                        } catch (e: Exception) {
-                            // 面板同步失败不影响本地保活
+        // OkHttp 的 execute() 是阻塞调用：CoroutineWorker 默认跑在 Dispatchers.Default 上，
+        // 直接在里面阻塞会占住计算线程池（账号多时更明显），显式切到 IO。
+        withContext(Dispatchers.IO) {
+            for (acc in accounts) {
+                try {
+                    val verify = WeiboApi.verify(acc.cookie)
+                    if (verify.login) {
+                        acc.cookie = verify.cookie
+                        acc.lastResult = acc.lastResult.ifEmpty { "后台保活 ✓" }
+                        alive++
+                        if (panelUrl.isNotEmpty() && panelToken.isNotEmpty()) {
+                            try {
+                                PanelApi.sync(panelUrl, panelToken, acc.cookie, acc.uid)
+                            } catch (e: Exception) {
+                                // 面板同步失败不影响本地保活
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    // 网络抖动/风控：下一轮再说
                 }
-            } catch (e: Exception) {
-                // 网络抖动/风控：下一轮再说
             }
         }
         // 合并式写回：整轮跑下来要几分钟，期间用户新增/删除的账号不被旧快照覆盖
         AccountStore.mergeSave(ctx, accounts)
-        return Result.success()
+        // 一个都没保住（离线 / 全部失效）→ 交给 WorkManager 退避重试，
+        // 否则要等满 6 小时才轮到下一次。
+        return if (accounts.isNotEmpty() && alive == 0) Result.retry() else Result.success()
     }
 
     companion object {
