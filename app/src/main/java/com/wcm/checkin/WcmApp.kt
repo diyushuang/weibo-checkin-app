@@ -8,5 +8,7 @@ class WcmApp : Application() {
     override fun onCreate() {
         super.onCreate()
         DynamicColors.applyToActivitiesIfAvailable(this)
+        // 游客身份要把 cookie 缓存到磁盘，必须先拿到 applicationContext
+        GuestSession.init(this)
     }
 }

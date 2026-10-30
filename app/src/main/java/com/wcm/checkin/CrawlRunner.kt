@@ -42,19 +42,49 @@ object CrawlRunner {
 
     val isRunning: Boolean get() = _state.value is RunState.Running
 
-    /** 全量增量抓取（签到后自动 / 图库页手动共用）。 */
+    /**
+     * 全量增量抓取（签到后自动 / 图库页手动共用）。
+     *
+     * 按 [AccountStore.crawlMode] 分派：
+     * - `album`（默认）：游客身份走相册墙，只抓有图微博；拿不到游客身份时
+     *   **自动回退**到时间线模式，用户不会因为风控/接口变化而「点了没反应」。
+     * - `timeline`：原实现。
+     */
     suspend fun runAll(
         ctx: Context,
         log: (String) -> Unit,
         auto: Boolean = false,
-    ): RunResult = guarded("增量抓取") { emit, stopped ->
-        Crawler.runIncremental(
-            ctx = ctx,
-            log = log,
-            autoMode = auto,
-            onEvent = emit,
-            isStopped = stopped,
-        )
+    ): RunResult {
+        val album = AccountStore.crawlMode(ctx) == AccountStore.MODE_ALBUM
+        return guarded(if (album) "相册抓取" else "增量抓取") { emit, stopped ->
+            if (!album) {
+                Crawler.runIncremental(
+                    ctx = ctx,
+                    log = log,
+                    autoMode = auto,
+                    onEvent = emit,
+                    isStopped = stopped,
+                )
+                return@guarded
+            }
+            val ok = Crawler.runAlbum(
+                ctx = ctx,
+                log = log,
+                autoMode = auto,
+                onEvent = emit,
+                isStopped = stopped,
+            )
+            if (!ok) {
+                log("相册模式没跑起来（游客身份不可用或相册为空），回退到时间线模式")
+                Crawler.runIncremental(
+                    ctx = ctx,
+                    log = log,
+                    autoMode = auto,
+                    onEvent = emit,
+                    isStopped = stopped,
+                )
+            }
+        }
     }
 
     /** 只跑失败重试（跳过 A/B 两个翻页阶段），用于「待重试 N 帖 → 立即重试」。 */
