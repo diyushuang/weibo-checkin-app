@@ -194,6 +194,26 @@
                         android:text="@string/crawl_run_title" />
                 </LinearLayout>
 
+                <!-- 抓取模式：相册（游客优先，默认）/ 时间线（原实现，兜底） -->
+                <LinearLayout
+                    android:id="@+id/rowCrawlMode"
+                    style="@style/Widget.Wcm.ListRow"
+                    android:foreground="@drawable/fg_row_divider">
+
+                    <TextView
+                        android:id="@+id/tvCrawlMode"
+                        style="@style/Widget.Wcm.Text.Body"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/crawl_mode_album" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switchCrawlMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/sp_2" />
+                </LinearLayout>
+
                 <!-- 签到后自动抓图：整行可点，开关在右 -->
                 <LinearLayout
                     android:id="@+id/rowCrawlAuto"

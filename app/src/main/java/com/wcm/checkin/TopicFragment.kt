@@ -58,10 +58,17 @@ class TopicFragment : Fragment() {
     private var sort = Sort.PENDING_FIRST
     private var loading = false
 
-    /** 已展开的超话（key 同 [WeiboApi.Topic.key]）。 */
+    /**
+     * 展开态 / 详情加载态，键是 `uid + \u0000 + topic.key`。
+     *
+     * 只按超话 key 存会在「全部账号」模式下串号：同一个超话被两个账号关注时，
+     * 展开一条会把另一条也展开，详情加载态也会互相覆盖。
+     */
     private val expanded = HashSet<String>()
     private val detailBusy = HashSet<String>()
     private val detailErrors = HashMap<String, String>()
+
+    private fun rowKey(uid: String, key: String): String = uid + "\u0000" + key
 
     /** 从首页跳进来时暂存的账号；视图还没建好就先记着。 */
     private var pendingUid: String? = null
@@ -156,10 +163,19 @@ class TopicFragment : Fragment() {
     private fun maybeAutoRefresh() {
         if (!isAdded || loading) return
         val ctx = requireContext()
-        if (AccountStore.load(ctx).isEmpty()) return
-        val newest = TopicStore.all(ctx).values.maxOfOrNull { it.at } ?: 0L
-        if (System.currentTimeMillis() - newest < AUTO_REFRESH_AFTER_MS) return
-        if (System.currentTimeMillis() - lastAutoRefreshAt < 5_000L) return
+        val accounts = AccountStore.load(ctx)
+        if (accounts.isEmpty()) return
+        val snaps = TopicStore.all(ctx)
+        val now = System.currentTimeMillis()
+        // 需要刷新的三种情况，按账号逐个判断（不能只看最新那份）：
+        // 没有快照 / 快照跨天 / 快照超过 10 分钟。
+        // 跨天是硬条件：签到状态每天重置，沿用昨天的「已签」就是把错误结论当事实。
+        val need = accounts.any { acc ->
+            val snap = snaps[acc.uid]
+            snap == null || !TopicStore.isToday(snap.at, now) || now - snap.at >= AUTO_REFRESH_AFTER_MS
+        }
+        if (!need) return
+        if (now - lastAutoRefreshAt < 5_000L) return
         refresh(manual = false)
     }
 
@@ -227,9 +243,29 @@ class TopicFragment : Fragment() {
         AccountStore.save(ctx, accounts)
     }
 
+    /**
+     * 刷新中的视觉反馈。
+     *
+     * **不置灰刷新按钮**：禁用的按钮连点击事件都不派发，用户点下去既没有 toast
+     * 也看不到任何变化（首页「立即签到」就踩过这个坑）。重入由 [refresh] 里的
+     * `loading` 闸门 + toast「正在运行中…」兜住。
+     */
     private fun setRefreshing(on: Boolean) {
-        view?.findViewById<View>(R.id.btnTopicRefresh)?.isEnabled = !on
-        if (on) progress.visibility = View.VISIBLE
+        // 与 render() 里 `progress.visibility = if (loading) …` 保持同一口径：
+        // 两处都按「是否正在刷新」决定可见性，谁先跑都不会留下一条卡住的进度条。
+        progress.visibility = if (on) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * 状态时间标签：今天只给 `HH:mm`，跨天补日期。
+     *
+     * 签到状态是按天的，只显示时分会让「昨天 20:15」和「今天 20:15」看起来一样，
+     * 用户无法判断这份「已签」到底是哪天的。
+     */
+    private fun topicStateTime(at: Long): String = when {
+        at <= 0L -> ""
+        TopicStore.isToday(at) -> timeFmt.format(Date(at))
+        else -> SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(at))
     }
 
     // ========================= 渲染 =========================
@@ -253,28 +289,39 @@ class TopicFragment : Fragment() {
 
         adapter.submit(shown)
 
-        // 概览永远统计「全部已加载的超话」，不受筛选影响 —— 筛选是看的方式，不是事实
-        val total = rows.size
-        val done = rows.count { it.topic.done }
-        host.findViewById<TextView>(R.id.tvMetricTotal).text = total.toString()
-        host.findViewById<TextView>(R.id.tvMetricDone).text = done.toString()
-        host.findViewById<TextView>(R.id.tvMetricPending).text = (total - done).toString()
-        progress.setProgressCompat(if (total > 0) done * 100 / total else 0, true)
-        progress.visibility = if (loading) View.VISIBLE else View.GONE
-
-        // 副标题：加载中 > 错误 > 更新时间
+        // 概览永远统计「全部已加载的超话」，不受筛选影响 —— 筛选是看的方式，不是事实。
+        // 但「今日已签 / 待签」是按天的结论：快照跨天时这里必须显示占位符，
+        // 否则会把昨天的已签数当成今天的结果（待签还会变成 0）。
         val error = errorOf(snaps)
         val at = updatedAt(snaps)
+        val atLabel = topicStateTime(at)
+        val staleDay = anyStaleDay(accounts, snaps)
+
+        val total = rows.size
+        val done = rows.count { it.topic.done }
+        val dash = getString(R.string.topic_metric_empty)
+        host.findViewById<TextView>(R.id.tvMetricTotal).text =
+            if (total > 0) total.toString() else dash
+        host.findViewById<TextView>(R.id.tvMetricDone).text =
+            if (staleDay || total == 0) dash else done.toString()
+        host.findViewById<TextView>(R.id.tvMetricPending).text =
+            if (staleDay || total == 0) dash else (total - done).toString()
+        progress.setProgressCompat(if (total > 0 && !staleDay) done * 100 / total else 0, true)
+        progress.visibility = if (loading) View.VISIBLE else View.GONE
+
+        // 副标题：加载中 > 错误 > 跨天失效 > 更新时间
         host.findViewById<TextView>(R.id.tvTopicSubtitle).text = when {
             loading -> getString(R.string.topic_subtitle_loading)
             error.isNotEmpty() -> getString(R.string.topic_subtitle_failed, error)
-            at > 0L -> getString(R.string.topic_subtitle_updated, timeFmt.format(Date(at)))
+            staleDay -> getString(R.string.topic_subtitle_stale, atLabel)
+            at > 0L -> getString(R.string.topic_subtitle_updated, atLabel)
             else -> getString(R.string.topic_subtitle_idle)
         }
         host.findViewById<TextView>(R.id.tvTopicStatus).text = when {
             accounts.isEmpty() -> getString(R.string.topic_empty_no_account)
             error.isNotEmpty() -> getString(R.string.topic_subtitle_failed, error)
-            at > 0L -> getString(R.string.topic_subtitle_updated, timeFmt.format(Date(at)))
+            staleDay -> getString(R.string.topic_subtitle_stale, atLabel)
+            at > 0L -> getString(R.string.topic_subtitle_updated, atLabel)
             else -> getString(R.string.topic_subtitle_idle)
         }
 
@@ -309,6 +356,23 @@ class TopicFragment : Fragment() {
             snaps[currentUid]?.at ?: 0L
         }
 
+    /**
+     * 当前选择里是否有「不是今天」的快照。
+     *
+     * 不能只看最新的那份：全部账号模式下 A 是今天的、B 是昨天的，B 那几行显示的
+     * 「已签」其实是昨天的结论 —— 只要有一份跨天就得提示，否则错的那半看不出来。
+     */
+    private fun anyStaleDay(
+        accounts: List<AccountStore.Account>,
+        snaps: Map<String, TopicStore.Snapshot>,
+    ): Boolean {
+        val picked = if (currentUid.isNotEmpty()) listOf(currentUid) else accounts.map { it.uid }
+        return picked.any { uid ->
+            val at = snaps[uid]?.at ?: 0L
+            at > 0L && !TopicStore.isToday(at)
+        }
+    }
+
     private fun buildRows(
         accounts: List<AccountStore.Account>,
         snaps: Map<String, TopicStore.Snapshot>,
@@ -319,11 +383,18 @@ class TopicFragment : Fragment() {
             val label = nameOf[currentUid] ?: currentUid
             return snap.topics.map { TopicRow(currentUid, label, it) }
         }
+        // 按「账号 + 超话」去重，而不是只按超话去重：
+        // 同一个超话被两个账号关注时，只留先遍历到的那条会**拿错账号的签到状态**
+        // （A 已签、B 未签 → 列表只有一条「已签」，B 根本看不到该签的），
+        // 行上的 uid 也决定了点签到用谁的 cookie。适配器的身份判定同样是 (uid, key)。
         val merged = LinkedHashMap<String, TopicRow>()
         accounts.forEach { acc ->
             val snap = snaps[acc.uid] ?: return@forEach
             snap.topics.forEach { topic ->
-                merged.putIfAbsent(topic.key, TopicRow(acc.uid, nameOf[acc.uid] ?: acc.uid, topic))
+                merged.putIfAbsent(
+                    acc.uid + "\u0000" + topic.key,
+                    TopicRow(acc.uid, nameOf[acc.uid] ?: acc.uid, topic),
+                )
             }
         }
         return merged.values.toList()
@@ -385,28 +456,20 @@ class TopicFragment : Fragment() {
         }
     }
 
-    private fun paintChip(chip: TextView, selected: Boolean) {
-        val ctx = requireContext()
-        if (selected) {
-            chip.setBackgroundResource(R.drawable.bg_pill_brand)
-            chip.setTextColor(ContextCompat.getColor(ctx, R.color.brand_strong))
-        } else {
-            chip.setBackgroundResource(R.drawable.bg_pill_line)
-            chip.setTextColor(ContextCompat.getColor(ctx, R.color.ink_2))
-        }
-    }
+    private fun paintChip(chip: TextView, selected: Boolean) = chip.applyChipStyle(selected)
 
     // ========================= 展开详情 =========================
 
     private fun toggleDetail(row: TopicRow) {
         val key = row.topic.key
-        if (expanded.contains(key)) {
-            expanded.remove(key)
-            adapter.notifyKeyChanged(key)
+        val stateKey = rowKey(row.uid, key)
+        if (expanded.contains(stateKey)) {
+            expanded.remove(stateKey)
+            adapter.notifyKeyChanged(row.uid, key)
             return
         }
-        expanded.add(key)
-        adapter.notifyKeyChanged(key)
+        expanded.add(stateKey)
+        adapter.notifyKeyChanged(row.uid, key)
         val topicId = row.topic.topicId
         if (topicId.isEmpty()) return
 
@@ -418,9 +481,10 @@ class TopicFragment : Fragment() {
 
     /** 懒加载详情：只有用户点开时才发这一次请求（自带 1.2s 节流在 API 层）。 */
     private fun loadDetail(ctx: Context, uid: String, topicId: String, key: String) {
-        if (!detailBusy.add(key)) return
-        detailErrors.remove(key)
-        adapter.notifyKeyChanged(key)
+        val stateKey = rowKey(uid, key)
+        if (!detailBusy.add(stateKey)) return
+        detailErrors.remove(stateKey)
+        adapter.notifyKeyChanged(uid, key)
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             var error = ""
             try {
@@ -440,9 +504,9 @@ class TopicFragment : Fragment() {
                 error = e.message ?: "详情加载失败"
             }
             withContext(Dispatchers.Main + NonCancellable) {
-                detailBusy.remove(key)
-                if (error.isNotEmpty()) detailErrors[key] = error
-                if (isAdded) adapter.notifyKeyChanged(key)
+                detailBusy.remove(stateKey)
+                if (error.isNotEmpty()) detailErrors[stateKey] = error
+                if (isAdded) adapter.notifyKeyChanged(uid, key)
             }
         }
     }
@@ -555,7 +619,9 @@ class TopicFragment : Fragment() {
     private fun markDone(ctx: Context, uid: String, key: String) {
         val snap = TopicStore.snapshot(ctx, uid) ?: return
         val updated = snap.topics.map { if (it.key == key) it.copy(done = true) else it }
-        TopicStore.save(ctx, uid, updated, at = snap.at)
+        // 时间戳用「现在」：沿用旧快照的时间会让刚签的这一条仍被判成「非今日」，
+        // 指标区继续显示占位符 —— 用户明明刚签成功，界面却说没有今天的数据。
+        TopicStore.save(ctx, uid, updated, at = System.currentTimeMillis())
     }
 
     // ========================= 菜单 / 弹窗 =========================
@@ -667,8 +733,8 @@ class TopicFragment : Fragment() {
         }
 
         /** 按 key 定位后局部刷新（展开/收起、详情回填都只动一行）。 */
-        fun notifyKeyChanged(key: String) {
-            val index = items.indexOfFirst { it.topic.key == key }
+        fun notifyKeyChanged(uid: String, key: String) {
+            val index = items.indexOfFirst { it.uid == uid && it.topic.key == key }
             if (index >= 0) notifyItemChanged(index)
         }
 
@@ -716,7 +782,8 @@ class TopicFragment : Fragment() {
                 card.setOnClickListener { toggleDetail(row) }
                 more.setOnClickListener { showRowMenu(it, row) }
 
-                val isExpanded = expanded.contains(key)
+                val stateKey = rowKey(row.uid, key)
+                val isExpanded = expanded.contains(stateKey)
                 detailBox.visibility = if (isExpanded) View.VISIBLE else View.GONE
                 // 整卡一句话播报：名称 + 等级 + 状态 + 可执行动作，
                 // 比让读屏把 4 个 TextView 逐条念一遍更容易理解
@@ -731,7 +798,7 @@ class TopicFragment : Fragment() {
                 if (!isExpanded) return
 
                 val detail = if (topic.topicId.isEmpty()) null else TopicStore.detail(ctx, topic.topicId)
-                val busy = detailBusy.contains(key)
+                val busy = detailBusy.contains(stateKey)
                 when {
                     busy -> {
                         intro.visibility = View.GONE
@@ -766,7 +833,7 @@ class TopicFragment : Fragment() {
                         stats.visibility = View.GONE
                         detailHint.visibility = View.VISIBLE
                         detailHint.text = when {
-                            detailErrors[key] != null -> getString(R.string.topic_detail_failed)
+                            detailErrors[stateKey] != null -> getString(R.string.topic_detail_failed)
                             topic.topicId.isEmpty() -> getString(R.string.topic_detail_none)
                             else -> getString(R.string.topic_detail_failed)
                         }

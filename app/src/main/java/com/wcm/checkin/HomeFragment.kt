@@ -8,19 +8,17 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.PopupMenu
-import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -45,15 +43,50 @@ import kotlin.random.Random
  */
 class HomeFragment : Fragment() {
 
-    private var busy = false
-    private var topicBusy = false
+    /**
+     * 签到 / 同步的运行态与日志缓冲。
+     *
+     * **刻意放在 companion（进程级）而不是实例字段**：Fragment 会在旋转、切深浅色、
+     * 页面重建时换一个实例，实例字段会把「正在跑」这件事丢掉 —— 新页面看起来空闲，
+     * 用户再点一次就成了同一批账号被并发签到两轮。
+     */
+    private companion object {
+        /** 本次进程只自动签到一次（切 Tab 不重复触发）。 */
+        @Volatile private var autoHandled = false
+
+        /** 本次进程只自动刷新一次超话状态（打开 App 时那一次），切回首页不再重拉。 */
+        @Volatile private var topicsAutoHandled = false
+
+        @Volatile private var busy = false
+        @Volatile private var topicBusy = false
+
+        /**
+         * 当前正在跑的签到 / 同步协程（挂在 [AppScope] 上，不随视图销毁而取消）。
+         *
+         * [busy] 只是**界面态**，真实「有没有在跑」以这个 Job 为准：协程在真正开始执行前
+         * 就被取消（视图销毁、旋转、用户切走）时，`try/finally` 一次都不会执行，
+         * `busy` 会永久停在 true。旧实现据此把「立即签到」置灰，于是按钮彻底静默 ——
+         * 点下去不弹 toast、不展开日志、什么都不发生，正是「点了没反应」的成因。
+         */
+        @Volatile private var taskJob: Job? = null
+
+        /** 正在跑的「刷新超话状态」协程，作用同 [taskJob]。 */
+        @Volatile private var topicJob: Job? = null
+
+        /** 日志行缓冲：放进程级，旋转后日志不丢。 */
+        private val logLines = ArrayDeque<String>()
+
+        private const val LOG_MAX_LINES = 500
+    }
+
     private var pendingAutoRefresh = false
-    private var lastAutoRefreshAt = 0L
+
 
     /** 日志卡是否展开（默认收起，把首屏让给签到主行动）。 */
     private var logExpanded = false
 
-    private val logLines = ArrayDeque<String>()
+    /** 日志面板：与图片页共用同一份实现（[LogPanel]），这里只负责绑定资源 id。 */
+    private var panel: LogPanel? = null
 
     /**
      * 时间格式化：`SimpleDateFormat` **不是线程安全的**。
@@ -71,24 +104,54 @@ class HomeFragment : Fragment() {
         return fmt.format(Date(at))
     }
 
-    /** 各账号最近一次超话状态（key = uid）。打开页面会自动重拉覆盖。 */
-    private val topicStates = HashMap<String, TopicState>()
+    /**
+     * 超话状态时间的人类可读标签：今天只给 `HH:mm`，跨天补上日期。
+     *
+     * 只给时分时，昨天 20:15 与今天 20:15 长得一模一样，用户没法判断这份状态是不是
+     * 昨天的（而签到状态恰恰是按天的）。
+     */
+    private fun topicStateTime(atMs: Long): String = when {
+        atMs <= 0L -> ""
+        TopicStore.isToday(atMs) -> formatTime(atMs).take(5)
+        else -> SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(atMs))
+    }
+
+    /**
+     * 各账号最近一次超话状态（key = uid）。
+     *
+     * 用**不可变 Map + 整体替换**，而不是 HashMap 原地改：写入方是 IO 线程（刷新 / 签到），
+     * 读取方是主线程（render、进度环、账号行、Hero 卡遍历）。HashMap 并发扩容会丢条目，
+     * 遍历时还可能抛 `ConcurrentModificationException` —— Hero 卡点击恰好在遍历 entries。
+     * 换成 volatile 引用之后，读到的永远是某一份完整快照。
+     */
+    @Volatile private var topicStates: Map<String, TopicState> = emptyMap()
+
+    /** 单条更新：`volatile` 引用 + 新建 map，不会打断正在被遍历的旧快照。 */
+    private fun setTopicState(uid: String, state: TopicState) {
+        synchronized(this) { topicStates = topicStates + (uid to state) }
+    }
+
+    private fun removeTopicState(uid: String) {
+        synchronized(this) { topicStates = topicStates - uid }
+    }
 
     private data class TopicState(
         val topics: List<WeiboApi.Topic> = emptyList(),
-        val at: String = "",
+        /**
+         * 这份状态的取得时刻（epoch ms；0 = 没有时间戳）。
+         *
+         * 存时间戳而不是格式化好的 "HH:mm"：签到状态是**按天**的，界面上要能判断
+         * 「这是今天的结论，还是昨天的」。只留 HH:mm 就永远分不出跨天。
+         */
+        val atMs: Long = 0L,
         val error: String = "",
         val loading: Boolean = false,
     ) {
         val total: Int get() = topics.size
         val done: Int get() = topics.count { it.done }
-    }
 
-    companion object {
-        /** 本次进程只自动签到一次（切 Tab 不重复触发）。 */
-        private var autoHandled = false
-        private const val LOG_MAX_LINES = 500
-        private const val AUTO_REFRESH_DEBOUNCE_MS = 3_000L
+        /** 是否是「今天」取得的状态（false 时不能拿来当今日已签/待签的结论）。 */
+        val freshToday: Boolean get() = TopicStore.isToday(atMs)
     }
 
     override fun onCreateView(
@@ -115,15 +178,33 @@ class HomeFragment : Fragment() {
             jumpToTopics(uid)
         }
         // 日志卡：卡头整行可点，收起时只显示一行摘要
+        panel = LogPanel(
+            host = view,
+            lines = logLines,
+            scrollId = R.id.logScroll,
+            textId = R.id.logView,
+            summaryId = R.id.tvLogSummary,
+            toggleId = R.id.btnLogToggle,
+            headerId = R.id.logHeader,
+            emptyTextRes = R.string.log_empty,
+            cdExpandedRes = R.string.cd_log_expanded,
+            cdCollapsedRes = R.string.cd_log_collapsed,
+            maxLines = LOG_MAX_LINES,
+        )
         view.findViewById<View>(R.id.logHeader).setOnClickListener {
             setLogExpanded(!logExpanded)
         }
-        setLogExpanded(false)
-        renderLog()
+        // 视图重建时恢复上一次的展开态（默认收起），并把历史日志重新贴上去
+        setLogExpanded(logExpanded)
+        panel?.render()
         syncFromStore(requireContext())
         render()
+        // 视图是新建的（刚进页面 / 旋转重建）：上一次的 busy latch 不代表现在真在跑，
+        // 按 Job 的真实状态校正一次，避免按钮一进来就是「已置灰」的假运行态。
+        settleBusy()
 
         val ctx = requireContext()
+        var autoCheckinStarted = false
         if (!autoHandled) {
             autoHandled = true
             val lastAuto = AccountStore.lastAutoAt(ctx)
@@ -132,24 +213,53 @@ class HomeFragment : Fragment() {
             ) {
                 AccountStore.setLastAutoAt(ctx, System.currentTimeMillis())
                 runAll(true)
+                autoCheckinStarted = true
             }
         }
+        // 签到本身就会把每个账号的超话列表拉一遍并写入 TopicStore，这时不必再单独刷新一次
+        if (!autoCheckinStarted) autoRefreshTopicsOnOpen()
     }
 
     override fun onResume() {
         super.onResume()
         syncFromStore(requireContext())
         render()
-        maybeAutoRefreshTopics()
+        settleBusy()
     }
 
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
         if (!hidden) {
+            // 只做内存重绘（从超话页签到后切回来能立刻看到新状态），**不触发网络刷新** ——
+            // 超话状态的自动刷新只发生在打开 App 那一次，见 [autoRefreshTopicsOnOpen]。
             syncFromStore(requireContext())
             render()
-            maybeAutoRefreshTopics()
+            settleBusy()
         }
+    }
+
+    /**
+     * 视图销毁时收干净视图相关的东西。
+     *
+     * **不取消 [taskJob] / [topicJob]**：签到与抓取是「不能半途而废」的长任务，旋转屏幕
+     * 或进出页面就砍掉一半，用户既看不到结果也无从补救。它们跑在 [AppScope] 上，
+     * 进度通过 [AccountStore] 与 `TopicStore` 落盘，回到页面重新读即可。
+     */
+    override fun onDestroyView() {
+        panel = null
+        super.onDestroyView()
+    }
+
+    /** 只在「latch 说在跑、但没有活着的 Job」时把界面态归位；真在跑就保持不动。 */
+    private fun settleBusy() {
+        if (topicBusy && topicJob?.isActive != true) {
+            topicBusy = false
+        }
+        if (busy && taskJob?.isActive != true) {
+            setBusy(false)
+            return
+        }
+        setBusy(busy)
     }
 
     /**
@@ -164,11 +274,14 @@ class HomeFragment : Fragment() {
         TopicStore.all(ctx).forEach { (uid, snap) ->
             if (topicStates[uid]?.loading == true) return@forEach
             if (snap.topics.isEmpty() && snap.error.isEmpty()) return@forEach
-            topicStates[uid] = TopicState(
-                topics = snap.topics,
-                at = if (snap.at > 0L) formatTime(snap.at) else "",
-                error = snap.error,
-                loading = false,
+            setTopicState(
+                uid,
+                TopicState(
+                    topics = snap.topics,
+                    atMs = snap.at,
+                    error = snap.error,
+                    loading = false,
+                ),
             )
         }
     }
@@ -228,7 +341,7 @@ class HomeFragment : Fragment() {
         val container = view?.findViewById<ViewGroup>(R.id.accountList) ?: return
         container.removeAllViews()
         if (accounts.isEmpty()) {
-            container.addView(buildEmptyHint(getString(R.string.home_account_empty)))
+            container.addView(requireContext().emptyHintView(getString(R.string.home_account_empty)))
             // 空账号时进度环也要回到占位态，否则会留着上一次的百分比
             renderTopicProgress()
             return
@@ -280,7 +393,11 @@ class HomeFragment : Fragment() {
      * 一个都没拿到时显示占位值 —— 宁可显示「—」，也不显示一个假 0%。
      */
     private fun renderTopicProgress() {
-        val known = topicStates.values.filter { !it.loading && it.error.isEmpty() && it.total > 0 }
+        // 只统计**今天**取得的状态：跨天快照里的「已签」是昨天的结论，算进来会
+        // 让进度环与待签角标都失真（最坏情况是待签 0，看起来"今天已经全签完了"）
+        val known = topicStates.values.filter {
+            !it.loading && it.error.isEmpty() && it.total > 0 && it.freshToday
+        }
         val total = known.sumOf { it.total }
         val done = known.sumOf { it.done }
 
@@ -336,12 +453,6 @@ class HomeFragment : Fragment() {
         return String(Character.toChars(first))
     }
 
-    /** 空态提示：套统一文本样式，避免代码里写死字号/颜色（深色主题下同样可读）。 */
-    private fun buildEmptyHint(text: String): TextView = TextView(requireContext()).apply {
-        setTextAppearance(R.style.Widget_Wcm_Text_Empty)
-        this.text = text
-    }
-
     /** 账号行溢出菜单：查看超话清单 / 删除账号（删除不再常驻在行尾）。 */
     private fun showAccountMenu(anchor: View, acc: AccountStore.Account) {
         val popup = PopupMenu(requireContext(), anchor)
@@ -371,7 +482,7 @@ class HomeFragment : Fragment() {
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 AccountStore.remove(ctx, acc.uid)
-                topicStates.remove(acc.uid)
+                removeTopicState(acc.uid)
                 TopicStore.clear(ctx, acc.uid)
                 render()
             }
@@ -392,7 +503,9 @@ class HomeFragment : Fragment() {
     private fun bindAccountStatus(row: View, acc: AccountStore.Account) {
         val st = topicStates[acc.uid]
         val chipRow = row.findViewById<View>(R.id.chipRow)
-        val loaded = st != null && !st.loading && st.error.isEmpty() && st.total > 0
+        // 「已签 / 待签」是**今天**的结论：跨天的快照不参与（否则会把昨天的已签
+        // 显示成今天已签，待签数还会变成 0）
+        val loaded = st != null && !st.loading && st.error.isEmpty() && st.total > 0 && st.freshToday
         chipRow.visibility = if (loaded) View.VISIBLE else View.GONE
         if (st != null && loaded) {
             row.findViewById<TextView>(R.id.chipDone).text =
@@ -414,7 +527,8 @@ class HomeFragment : Fragment() {
             st.loading -> getString(R.string.home_topics_loading)
             st.error.isNotEmpty() -> getString(R.string.home_topics_failed, st.error)
             st.total == 0 -> getString(R.string.home_topic_none)
-            else -> getString(R.string.home_topics_updated_fmt, st.at)
+            !st.freshToday -> getString(R.string.home_topics_stale_fmt, topicStateTime(st.atMs))
+            else -> getString(R.string.home_topics_updated_fmt, topicStateTime(st.atMs))
         }
         row.findViewById<TextView>(R.id.tvStatus).text = buildString {
             append(acc.lastResult.ifEmpty { getString(R.string.home_status_idle) })
@@ -425,100 +539,61 @@ class HomeFragment : Fragment() {
 
     // ========================= 日志（可滚动，不打断阅读） =========================
 
-    /**
-     * 追加一行日志。**只有用户本来就贴着底部时才自动滚到底**，
-     * 这样往上翻看旧日志时不会被新日志拽回去。
-     */
+    /** 追加一行日志（实现见 [LogPanel]：只有本来就贴底时才自动滚到底）。 */
     private fun log(line: String) {
-        val host = view ?: return
-        host.post {
-            synchronized(logLines) {
-                logLines.addLast(line)
-                while (logLines.size > LOG_MAX_LINES) logLines.removeFirst()
-            }
-            renderLog()
-        }
+        val p = panel ?: return
+        p.append(line)
     }
 
-    private fun renderLog() {
-        val host = view ?: return
-        val tv = host.findViewById<TextView>(R.id.logView) ?: return
-        val scroll = host.findViewById<ScrollView>(R.id.logScroll) ?: return
-        // 先取「是否贴底」，再赋新文本 —— 赋值会 requestLayout，若反过来读，
-        // 结果就依赖"此刻还没重新测量"这一时序巧合，日后插入任何同步测量都会反转语义。
-        val wasAtBottom = !scroll.canScrollVertically(1)
-        tv.text = synchronized(logLines) { logLines.joinToString("\n") }
-            .ifEmpty { getString(R.string.log_empty) }
-        // 收起状态下也要能看到「最近发生了什么」：卡头下方保持一行摘要
-        host.findViewById<TextView>(R.id.tvLogSummary)?.text = synchronized(logLines) {
-            logLines.lastOrNull { it.isNotBlank() } ?: getString(R.string.log_empty)
-        }
-        // 收起时窗口高度为 0，canScrollVertically 恒为 false，此时不要滚（等展开时再滚到底）；
-        // 展开时仍只在「原本就贴着底部」才自动滚，不打断用户翻看旧日志。
-        if (scroll.visibility != View.VISIBLE) return
-        if (wasAtBottom) {
-            scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
-        }
-    }
-
-    /**
-     * 展开 / 收起日志区。
-     *
-     * 默认收起：日志是排查用信息，不该在首屏和签到行动抢位置；
-     * 运行任务开始时自动展开，让用户看得到进度。
-     *
-     * 无障碍：展开/收起的状态文案挂在**可点的卡头容器**上（`logHeader`），
-     * 而不是右边的箭头 —— 箭头设了 `importantForAccessibility="no"`，
-     * 写在它身上的 contentDescription 读屏根本不会播报。
-     */
+    /** 展开 / 收起日志区；[logExpanded] 记住用户选择，视图重建后恢复。 */
     private fun setLogExpanded(expanded: Boolean) {
         logExpanded = expanded
-        val host = view ?: return
-        val scroll = host.findViewById<ScrollView>(R.id.logScroll) ?: return
-        scroll.visibility = if (expanded) View.VISIBLE else View.GONE
-        host.findViewById<View>(R.id.tvLogSummary)?.visibility =
-            if (expanded) View.GONE else View.VISIBLE
-        val arrow = host.findViewById<View>(R.id.btnLogToggle)
-        arrow?.rotation = if (expanded) 180f else 0f
-        host.findViewById<View>(R.id.logHeader)?.contentDescription = getString(
-            if (expanded) R.string.cd_log_expanded else R.string.cd_log_collapsed
-        )
-        if (expanded) {
-            scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
-        }
+        panel?.setExpanded(expanded)
     }
 
     private fun now(): String = formatTime(System.currentTimeMillis())
 
-    private fun toast(text: String) =
-        Toast.makeText(requireContext(), text, Toast.LENGTH_SHORT).show()
+    private fun toast(text: String) = toastShort(text)
 
+    /**
+     * 运行态切换。
+     *
+     * **刻意不置灰「立即签到」**：MaterialButton 被 `isEnabled=false` 后连点击事件都不派发，
+     * 用户点下去不弹 toast、不展开日志、什么都不发生 —— 正是「点了没反应」的观感，
+     * 而且看不出是被禁用还是 App 卡住了。现在主按钮始终可点，按钮文案直接改成
+     * 「正在签到…」说明状态；重复点按由 busy 闸门 + toast 兜住。
+     * 其余按钮同理不置灰：它们的入口自带闸门与新账号合并逻辑，无需靠禁用防重入。
+     */
     private fun setBusy(value: Boolean) {
         busy = value
-        view?.findViewById<View>(R.id.btnCheckin)?.isEnabled = !value
-        view?.findViewById<View>(R.id.btnSync)?.isEnabled = !value
-        view?.findViewById<View>(R.id.btnAdd)?.isEnabled = !value
-        view?.findViewById<View>(R.id.btnRefreshTopics)?.isEnabled = !value && !topicBusy
+        val host = view ?: return
+        host.findViewById<MaterialButton>(R.id.btnCheckin)?.apply {
+            text = getString(if (value) R.string.btn_checkin_running else R.string.btn_checkin)
+            isEnabled = true
+        }
     }
 
     private fun setTopicBusy(value: Boolean) {
         topicBusy = value
-        view?.findViewById<View>(R.id.btnRefreshTopics)?.isEnabled = !value && !busy
     }
 
     // ========================= 超话状态刷新 =========================
 
-    /** 页面打开时自动调用；[force] 用于签到刚结束时补一次。 */
-    private fun maybeAutoRefreshTopics(force: Boolean = false) {
-        if (!isAdded) return
-        val ctx = requireContext()
-        if (AccountStore.load(ctx).isEmpty()) return
-        val now = System.currentTimeMillis()
-        if (!force && now - lastAutoRefreshAt < AUTO_REFRESH_DEBOUNCE_MS) return
-        if (busy || topicBusy) {
-            pendingAutoRefresh = true
-            return
-        }
+    /**
+     * 打开 App 时自动刷新一次超话状态。
+     *
+     * **只在进程内第一次进入首页时触发**：以前每次 `onResume` / 切回 Tab 都会重拉，
+     * 一个账号一次列表请求（关注 60+ 超话要翻 6 页），来回切几次就是几十个请求，
+     * 既慢又白白消耗账号频次。现在切 Tab 只重绘内存快照，需要最新状态时点「刷新超话」。
+     *
+     * 跨天场景仍会被覆盖：进程重启后这里的闸门归零，会重新拉一次。
+     */
+    private fun autoRefreshTopicsOnOpen() {
+        if (topicsAutoHandled) return
+        topicsAutoHandled = true
+        if (AccountStore.load(requireContext()).isEmpty()) return
+        // 有任务在跑就不必再刷：签到会顺带把超话列表拉一遍（见 runAccount）
+        if (busy || topicBusy) return
         refreshTopics(manual = false)
     }
 
@@ -541,14 +616,13 @@ class HomeFragment : Fragment() {
         setTopicBusy(true)
         // 手动刷新才展开日志；页面打开时的自动刷新不打扰首屏
         if (manual) setLogExpanded(true)
-        lastAutoRefreshAt = System.currentTimeMillis()
         accounts.forEach { acc ->
-            topicStates[acc.uid] = (topicStates[acc.uid] ?: TopicState()).copy(loading = true, error = "")
+            setTopicState(acc.uid, (topicStates[acc.uid] ?: TopicState()).copy(loading = true, error = ""))
         }
         render()
         log("==== 刷新超话状态 · ${now()} ====")
 
-        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        topicJob = AppScope.launch {
             try {
                 accounts.forEachIndexed { index, acc ->
                     if (index > 0) delay(800)
@@ -559,7 +633,7 @@ class HomeFragment : Fragment() {
                         null
                     }
                     if (verify == null || !verify.login) {
-                        topicStates[acc.uid] = TopicState(at = now(), error = ctx.getString(R.string.home_cookie_dead))
+                        setTopicState(acc.uid, TopicState(atMs = System.currentTimeMillis(), error = ctx.getString(R.string.home_cookie_dead)))
                         TopicStore.saveError(ctx, acc.uid, ctx.getString(R.string.home_cookie_dead))
                         log("  ✗ $label：${ctx.getString(R.string.home_cookie_dead)}")
                         postRender()
@@ -569,13 +643,13 @@ class HomeFragment : Fragment() {
                     val topics = try {
                         WeiboApi.listTopics(verify.cookie)
                     } catch (e: Exception) {
-                        topicStates[acc.uid] = TopicState(at = now(), error = e.message ?: "超话列表失败")
+                        setTopicState(acc.uid, TopicState(atMs = System.currentTimeMillis(), error = e.message ?: "超话列表失败"))
                         TopicStore.saveError(ctx, acc.uid, e.message ?: "超话列表失败")
                         log("  ✗ $label：${e.message}")
                         postRender()
                         return@forEachIndexed
                     }
-                    topicStates[acc.uid] = TopicState(topics = topics, at = now())
+                    setTopicState(acc.uid, TopicState(topics = topics, atMs = System.currentTimeMillis()))
                     TopicStore.save(ctx, acc.uid, topics)
                     log(
                         "  $label：${topics.size} 个超话，已签 ${topics.count { it.done }}，" +
@@ -585,16 +659,15 @@ class HomeFragment : Fragment() {
                 }
             } finally {
                 withContext(Dispatchers.Main + NonCancellable) {
+                    setTopicBusy(false)
                     if (isAdded) {
-                        setTopicBusy(false)
                         render()
-                        // 刷新期间又被要求刷新（例如签到刚结束）→ 补一轮
+                        // 刷新期间被推迟的请求（例如自动刷新撞上签到）→ 补一轮，仍只补一次
                         if (pendingAutoRefresh) {
                             pendingAutoRefresh = false
-                            maybeAutoRefreshTopics(force = true)
+                            topicsAutoHandled = true
+                            if (!busy) refreshTopics(manual = false)
                         }
-                    } else {
-                        topicBusy = false
                     }
                 }
             }
@@ -606,46 +679,47 @@ class HomeFragment : Fragment() {
         view?.post { if (isAdded) render() }
     }
 
-    /** 顺手把轮换后的 cookie 写回，并在昵称仍是占位值时补拉真实用户名。 */
+    /**
+     * 顺手把轮换后的 cookie 写回，并在昵称仍是占位值时补拉真实用户名。
+     *
+     * 写回走 [AccountStore.patchAccount]（内部持锁），不再「load 一份旧表 → 改 → save 覆盖」：
+     * 这里跑在 IO 线程，两步之间随时可能被签到收尾的 mergeSave 插进来，旧写法会把
+     * 刚轮换的 cookie 又写回去。
+     */
     private fun updateCookieAndName(ctx: Context, uid: String, cookie: String) {
-        val list = AccountStore.load(ctx)
-        val index = list.indexOfFirst { it.uid == uid }
-        if (index < 0) return
-        var acc = list[index]
-        var changed = false
-        if (cookie.isNotEmpty() && cookie != acc.cookie) {
-            acc = acc.copy(cookie = cookie)      // name/uid 是 val，只能 copy
-            changed = true
+        var name = ""
+        val current = AccountStore.load(ctx).firstOrNull { it.uid == uid } ?: return
+        if (AccountStore.needsNameResolve(current)) {
+            name = WeiboApi.fetchProfile(cookie).first
         }
-        if (AccountStore.needsNameResolve(acc)) {
-            val (name, _) = WeiboApi.fetchProfile(cookie)
-            if (name.isNotEmpty()) {
-                acc = acc.copy(name = name)
-                changed = true
-            }
-        }
-        if (changed) {
-            list[index] = acc
-            AccountStore.save(ctx, list)
-        }
+        AccountStore.patchAccount(ctx, uid, cookie = cookie, name = name)
     }
 
     // ========================= 签到 / 同步 =========================
 
     private fun runAll(auto: Boolean) {
         if (busy) {
-            toast(getString(R.string.busy))
-            return
+            // busy 只是界面态：真在跑才拦，否则（协程被取消后残留的 latch）归位后照常开跑
+            if (taskJob?.isActive == true) {
+                toast(getString(R.string.busy))
+                return
+            }
+            setBusy(false)
         }
         val ctx = requireContext()
         val accounts = AccountStore.load(ctx)
         if (accounts.isEmpty()) {
+            // 空账号是「点了没反应」的另一条静默出口：日志卡默认收起，
+            // 只写日志等于什么都没说 —— 展开日志并弹一句可读的提示。
+            setLogExpanded(true)
             log(getString(R.string.home_no_account))
+            toast(getString(R.string.home_no_account))
             return
         }
         setBusy(true)
         setLogExpanded(true)            // 运行时自动展开日志，进度可见
-        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        // 挂在 AppScope：一整轮签到可能几分钟，旋转 / 切页都不该把它砍断
+        taskJob = AppScope.launch {
             try {
                 log("==== ${if (auto) "打开自动" else "手动"}签到 · ${now()} ====")
                 accounts.forEachIndexed { index, acc ->
@@ -664,14 +738,21 @@ class HomeFragment : Fragment() {
                     }
                 }
             } finally {
-                AccountStore.mergeSave(ctx, accounts)
+                // finally 里先做「必须完成」的事：落盘失败也绝不能连带跳过下面的状态复位，
+                // 否则 busy 会永久为 true，按钮从此对点击无反应。
+                try {
+                    AccountStore.mergeSave(ctx, accounts)
+                } catch (e: Exception) {
+                    log("保存账号失败：${e.message}")
+                }
                 withContext(Dispatchers.Main + NonCancellable) {
                     setBusy(false)
-                    render()
-                    // 签到过程中被推迟的状态刷新，现在补上
-                    if (pendingAutoRefresh) {
-                        pendingAutoRefresh = false
-                        maybeAutoRefreshTopics(force = true)
+                    if (isAdded) {
+                        render()
+                        if (pendingAutoRefresh) {
+                            pendingAutoRefresh = false
+                            if (!topicBusy) refreshTopics(manual = false)
+                        }
                     }
                 }
             }
@@ -705,7 +786,7 @@ class HomeFragment : Fragment() {
             val topics = WeiboApi.listTopics(acc.cookie)
             val pending = topics.filter { !it.done }
             log("  ${topics.size} 个超话，${topics.size - pending.size} 已签，待签 ${pending.size}")
-            topicStates[acc.uid] = TopicState(topics = topics, at = now())
+            setTopicState(acc.uid, TopicState(topics = topics, atMs = System.currentTimeMillis()))
             TopicStore.save(ctx, acc.uid, topics)
             postRender()
             var ok = 0
@@ -729,9 +810,12 @@ class HomeFragment : Fragment() {
             acc.lastResult = "超话列表失败：${e.message}"
             log("  ✗ ${e.message}")
         }
-        syncToPanel(ctx, acc)
+        // 签到**不再顺带同步面板**：两件事各有各的开关与失败语义，混在一起会让
+        // 「签到成功但面板 5xx」看起来像签到失败。需要推送时点「仅同步面板」，
+        // 后台保活（CheckInWorker）也会按自己的节奏同步。
     }
 
+    /** 把一路账号的 cookie 推送到面板（只由「仅同步面板」与后台保活触发）。 */
     private suspend fun syncToPanel(ctx: Context, acc: AccountStore.Account) {
         val url = AccountStore.panelUrl(ctx)
         val token = AccountStore.panelToken(ctx)
@@ -764,7 +848,7 @@ class HomeFragment : Fragment() {
         setTopicBusy(true)
         setLogExpanded(true)
         log("── 查询 ${acc.name.ifEmpty { acc.uid }} 的超话 ──")
-        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        topicJob = AppScope.launch {
             try {
                 val verify = try {
                     WeiboApi.verify(acc.cookie)
@@ -786,7 +870,7 @@ class HomeFragment : Fragment() {
                 }
                 updateCookieAndName(ctx, uid, verify.cookie)
                 val topics = WeiboApi.listTopics(verify.cookie)
-                topicStates[uid] = TopicState(topics = topics, at = now())
+                setTopicState(uid, TopicState(topics = topics, atMs = System.currentTimeMillis()))
                 TopicStore.save(ctx, uid, topics)
                 log("  ${topics.size} 个超话，已签 ${topics.count { it.done }}")
                 withContext(Dispatchers.Main + NonCancellable) {
@@ -867,18 +951,24 @@ class HomeFragment : Fragment() {
         builder.show()
     }
 
-    /** 勾选补签：与主签到同节奏（3-8 秒随机间隔），完成后同步面板并刷新状态。 */
+    /**
+     * 勾选补签：与主签到同节奏（3-8 秒随机间隔）。补完只重拉超话状态，
+     * **不同步面板**（同步是独立动作，见 [syncOnly]）。
+     */
     private fun resignTopics(uid: String, st: String?, topics: List<WeiboApi.Topic>) {
         if (topics.isEmpty()) return
         if (busy) {
-            toast(getString(R.string.busy))
-            return
+            if (taskJob?.isActive == true) {
+                toast(getString(R.string.busy))
+                return
+            }
+            setBusy(false)
         }
         val ctx = requireContext()
         setBusy(true)
         setLogExpanded(true)
         log("── 补签 ${topics.size} 个超话 ──")
-        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        taskJob = AppScope.launch {
             try {
                 val acc = AccountStore.load(ctx).firstOrNull { it.uid == uid }
                 if (acc == null) {
@@ -904,44 +994,44 @@ class HomeFragment : Fragment() {
                     (if (fail > 0) "（失败 $fail）" else "") + " · ${now()}"
                 saveLastResult(ctx, uid, summary)
                 log("  小结：$summary")
-                acc.lastResult = summary
-                syncToPanel(ctx, acc)
                 // 补签后立刻重拉一次状态，让清单不再显示旧的「待签」
-                topicStates[uid] = (topicStates[uid] ?: TopicState()).copy(loading = true)
+                setTopicState(uid, (topicStates[uid] ?: TopicState()).copy(loading = true))
             } finally {
                 withContext(Dispatchers.Main + NonCancellable) {
+                    setBusy(false)
                     if (isAdded) {
-                        setBusy(false)
                         render()
                         refreshTopics(manual = false)
-                    } else {
-                        busy = false
                     }
                 }
             }
         }
     }
 
+    /** 只写一行「上次结果」，不整表覆盖（整表写会把并发轮换的 cookie 顶掉）。 */
     private fun saveLastResult(ctx: Context, uid: String, result: String) {
-        val list = AccountStore.load(ctx)
-        list.firstOrNull { it.uid == uid }?.let { it.lastResult = result }
-        AccountStore.save(ctx, list)
+        AccountStore.setLastResult(ctx, uid, result)
     }
 
     private fun syncOnly() {
         if (busy) {
-            toast(getString(R.string.busy))
-            return
+            if (taskJob?.isActive == true) {
+                toast(getString(R.string.busy))
+                return
+            }
+            setBusy(false)
         }
         val ctx = requireContext()
         val accounts = AccountStore.load(ctx)
         if (accounts.isEmpty()) {
+            setLogExpanded(true)
             log(getString(R.string.home_no_account))
+            toast(getString(R.string.home_no_account))
             return
         }
         setBusy(true)
         setLogExpanded(true)
-        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        taskJob = AppScope.launch {
             try {
                 log("==== 仅同步面板 · ${now()} ====")
                 for (acc in accounts) {
@@ -960,10 +1050,14 @@ class HomeFragment : Fragment() {
                     }
                 }
             } finally {
-                AccountStore.mergeSave(ctx, accounts)
+                try {
+                    AccountStore.mergeSave(ctx, accounts)
+                } catch (e: Exception) {
+                    log("保存账号失败：${e.message}")
+                }
                 withContext(Dispatchers.Main + NonCancellable) {
                     setBusy(false)
-                    render()
+                    if (isAdded) render()
                 }
             }
         }

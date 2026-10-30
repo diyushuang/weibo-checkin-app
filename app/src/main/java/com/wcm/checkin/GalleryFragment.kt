@@ -8,9 +8,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
-import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
@@ -43,41 +41,58 @@ import java.util.Locale
  */
 class GalleryFragment : Fragment() {
 
-    private var crawlJob: Job? = null
-    private var busy = false
+    /**
+     * 运行态与日志放进程级：Fragment 在旋转 / 深浅色切换时会换实例，
+     * 实例字段会让「正在抓取」凭空消失（用户可以再点一次，两轮并发写同一目录）。
+     */
+    private companion object {
+        const val LOG_MAX_LINES = 500
+
+        @Volatile private var busy = false
+        @Volatile private var crawlJob: Job? = null
+
+        /** 日志行缓冲：进程级，旋转后不丢。 */
+        private val logLines = ArrayDeque<String>()
+    }
+
     private var logExpanded = false
-    private val logLines = ArrayDeque<String>()
-    private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.CHINA)
+
+    /** 日志面板（与首页共用实现，见 [LogPanel]）。 */
+    private var panel: LogPanel? = null
+
+    /** 日志时间戳格式化：`SimpleDateFormat` 非线程安全，按线程各持一份。 */
+    private val timeFmt: ThreadLocal<SimpleDateFormat> =
+        ThreadLocal.withInitial { SimpleDateFormat("HH:mm:ss", Locale.CHINA) }
 
     /** 最近一次的进度快照：任务结束后仍留着，让用户看得到「这轮干了什么」。 */
     private var lastProgress: CrawlProgress? = null
 
-    private companion object {
-        const val LOG_MAX_LINES = 500
-    }
+    private fun stamp(line: String): String =
+        "[${timeFmt.get()?.format(Date()) ?: ""}] $line"
 
     private val pickDir =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+            val ctx = context ?: return@registerForActivityResult
             if (uri != null) {
                 // 部分第三方 provider 不支持持久化写权限，直接抛 SecurityException；
                 // 这里降级为「能拿到的权限」而不是崩掉整个页面。
                 runCatching {
-                    requireContext().contentResolver.takePersistableUriPermission(
+                    ctx.contentResolver.takePersistableUriPermission(
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                     )
                 }.onFailure {
                     runCatching {
-                        requireContext().contentResolver.takePersistableUriPermission(
+                        ctx.contentResolver.takePersistableUriPermission(
                             uri,
                             Intent.FLAG_GRANT_READ_URI_PERMISSION,
                         )
                     }
                 }
-                AccountStore.setCrawlTreeUri(requireContext(), uri.toString())
+                AccountStore.setCrawlTreeUri(ctx, uri.toString())
                 renderDir()
                 refreshGalleryCount()
-                toast(getString(R.string.crawl_dir_saved))
+                toastShort(getString(R.string.crawl_dir_saved))
             }
         }
 
@@ -103,6 +118,24 @@ class GalleryFragment : Fragment() {
         view.findViewById<View>(R.id.tvDirStatus).setOnClickListener { pickDir.launch(null) }
         view.findViewById<View>(R.id.btnOpenGallery).setOnClickListener { openGallery() }
 
+        val switchMode = view.findViewById<MaterialSwitch>(R.id.switchCrawlMode)
+        val modeLabel = view.findViewById<TextView>(R.id.tvCrawlMode)
+        // 先渲染初值再挂监听：否则 `isChecked = ...` 会立刻回调一次，把默认值写回存储
+        switchMode.isChecked = AccountStore.crawlMode(requireContext()) == AccountStore.MODE_ALBUM
+        modeLabel.text = getString(
+            if (switchMode.isChecked) R.string.crawl_mode_album else R.string.crawl_mode_timeline
+        )
+        switchMode.setOnCheckedChangeListener { _, checked ->
+            AccountStore.setCrawlMode(
+                requireContext(),
+                if (checked) AccountStore.MODE_ALBUM else AccountStore.MODE_TIMELINE,
+            )
+            modeLabel.text = getString(
+                if (checked) R.string.crawl_mode_album else R.string.crawl_mode_timeline
+            )
+        }
+        view.findViewById<View>(R.id.rowCrawlMode).setOnClickListener { switchMode.toggle() }
+
         val switchAuto = view.findViewById<MaterialSwitch>(R.id.switchCrawlAuto)
         switchAuto.isChecked = AccountStore.crawlAuto(requireContext())
         switchAuto.setOnCheckedChangeListener { _, checked ->
@@ -112,16 +145,29 @@ class GalleryFragment : Fragment() {
         view.findViewById<View>(R.id.rowCrawlAuto).setOnClickListener { switchAuto.toggle() }
 
         // 日志卡：卡头整行可点，收起时只显示一行摘要
+        panel = LogPanel(
+            host = view,
+            lines = logLines,
+            scrollId = R.id.crawlLogScroll,
+            textId = R.id.crawlLog,
+            summaryId = R.id.tvCrawlLogSummary,
+            toggleId = R.id.btnCrawlLogToggle,
+            headerId = R.id.crawlLogHeader,
+            emptyTextRes = R.string.log_empty,
+            cdExpandedRes = R.string.cd_crawl_log_expanded,
+            cdCollapsedRes = R.string.cd_crawl_log_collapsed,
+            maxLines = LOG_MAX_LINES,
+        )
         view.findViewById<View>(R.id.crawlLogHeader).setOnClickListener {
             setLogExpanded(!logExpanded)
         }
-        setLogExpanded(false)
+        setLogExpanded(logExpanded)
+        panel?.render()
 
         renderDir()
         renderTargets()
         refreshGalleryCount()
         refreshRetryCount()
-        renderLog()
 
         // 订阅抓取状态：首页自动抓图时本页也能看到进度，且能正确显示「停止」
         viewLifecycleOwner.lifecycleScope.launch {
@@ -130,6 +176,11 @@ class GalleryFragment : Fragment() {
             }
         }
         renderRunState(CrawlRunner.state.value)
+    }
+
+    override fun onDestroyView() {
+        panel = null
+        super.onDestroyView()
     }
 
     override fun onHiddenChanged(hidden: Boolean) {
@@ -143,7 +194,7 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun toast(text: String) = Toast.makeText(requireContext(), text, Toast.LENGTH_SHORT).show()
+    private fun toast(text: String) = toastShort(text)
 
     private fun renderDir() {
         // 先取 view：本方法会从 onHiddenChanged / 授权回调里调用，页面可能已在销毁中。
@@ -251,7 +302,13 @@ class GalleryFragment : Fragment() {
 
     // ---------- 失败清单 / 重试（v0.9.0） ----------
 
-    /** 索引里有待重试的帖就把入口亮出来；这里只读一次索引计数，开销很小。 */
+    /**
+     * 索引里有待重试的帖就把入口亮出来。
+     *
+     * 走索引旁的**计数提示文件**（几字节）：旧实现为此把整份 NDJSON 读进内存
+     * （10 万张 ≈ 17MB 文件 / 25MB 内存），而本方法每次进页面都会跑。
+     * 老版本还没有提示文件时才会解析一次，解析完 `close()` 会把它写出来。
+     */
     private fun refreshRetryCount() {
         // 先取 view 再取 context：本方法会被「抓取结束 / 停止」的收尾块调用，
         // 那时用户可能已经退出页面，requireContext() 会抛 IllegalStateException。
@@ -263,17 +320,21 @@ class GalleryFragment : Fragment() {
             row.visibility = View.GONE
             return
         }
-        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            val count = try {
-                val idx = CrawlIndex.open(ctx.filesDir, CrawlIndex.treeTagOf(raw))
-                try {
-                    idx.load()
-                    idx.pendingRetryCount()
-                } finally {
-                    idx.close()
+        val tag = CrawlIndex.treeTagOf(raw)
+        AppScope.launch {
+            var count = CrawlIndex.retryHintOf(ctx.filesDir, tag)
+            if (count < 0) {
+                count = try {
+                    val idx = CrawlIndex.open(ctx.filesDir, tag)
+                    try {
+                        idx.load()
+                        idx.pendingRetryCount()
+                    } finally {
+                        idx.close()
+                    }
+                } catch (e: Exception) {
+                    0
                 }
-            } catch (e: Exception) {
-                0
             }
             withContext(Dispatchers.Main) {
                 if (!isAdded) return@withContext
@@ -331,7 +392,7 @@ class GalleryFragment : Fragment() {
         busy = true
         setLogExpanded(true)
         log("==== ${getString(R.string.crawl_retry_running)} ====")
-        crawlJob = viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        crawlJob = AppScope.launch {
             try {
                 if (CrawlRunner.runRetryOnly(ctx, ::log) == CrawlRunner.RunResult.Busy) {
                     log(ctx.getString(R.string.crawl_busy))
@@ -426,10 +487,7 @@ class GalleryFragment : Fragment() {
     }
 
     /** 空态提示：套统一文本样式，避免代码里写死字号/颜色。 */
-    private fun buildEmptyHint(text: String): TextView = TextView(requireContext()).apply {
-        setTextAppearance(R.style.Widget_Wcm_Text_Empty)
-        this.text = text
-    }
+    private fun buildEmptyHint(text: String): TextView = requireContext().emptyHintView(text)
 
     /**
      * 目标行溢出菜单：起始日期 / 移除。
@@ -524,14 +582,16 @@ class GalleryFragment : Fragment() {
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val input = et.text?.toString() ?: ""
-                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                AppScope.launch {
                     val uid = WeiboApi.resolveUid(input)
                     if (uid.isEmpty()) {
                         log("✗ 无法解析 UID：$input")
                         return@launch
                     }
-                    val cookie = Crawler.pickCrawlCookie(AccountStore.load(ctx), ::log)
-                    val name = if (cookie.isNullOrEmpty()) "" else WeiboApi.fetchUserName(cookie, uid)
+                    // 昵称走游客身份也能拿到：没有登录账号时依然能把博主名显示出来
+                    val accounts = AccountStore.load(ctx)
+                    val cookie = if (accounts.isEmpty()) null else Crawler.pickCrawlCookie(accounts, ::log)
+                    val name = WeiboApi.fetchUserName(cookie, uid)
                     AccountStore.addCrawlTarget(ctx, AccountStore.CrawlTarget(uid, name))
                     withContext(Dispatchers.Main) { renderTargets() }
                     log("✓ 已添加：${name.ifEmpty { uid }}（$uid）")
@@ -540,62 +600,17 @@ class GalleryFragment : Fragment() {
             .show()
     }
 
-    /**
-     * 追加一行日志（带时间戳）。**只有本来就贴着底部时才自动滚到底**，
-     * 往上翻看旧日志时不会被新日志拽回去。
-     */
+    // ========================= 日志 =========================
+
+    /** 追加一行日志（带时间戳）；实现见 [LogPanel]。 */
     private fun log(line: String) {
-        val host = view ?: return
-        host.post {
-            synchronized(logLines) {
-                logLines.addLast("[${timeFmt.format(Date())}] $line")
-                while (logLines.size > LOG_MAX_LINES) logLines.removeFirst()
-            }
-            renderLog()
-        }
+        panel?.append(stamp(line))
     }
 
-    private fun renderLog() {
-        val host = view ?: return
-        val tv = host.findViewById<TextView>(R.id.crawlLog) ?: return
-        val scroll = host.findViewById<ScrollView>(R.id.crawlLogScroll) ?: return
-        // 先取「是否贴底」再赋文本：赋值会 requestLayout，顺序反过来就变成依赖
-        // "此刻尚未重新测量"的时序巧合（与基线语义不再显式等价）。
-        val wasAtBottom = !scroll.canScrollVertically(1)
-        tv.text = synchronized(logLines) { logLines.joinToString("\n") }
-            .ifEmpty { getString(R.string.log_empty) }
-        host.findViewById<TextView>(R.id.tvCrawlLogSummary)?.text = synchronized(logLines) {
-            logLines.lastOrNull { it.isNotBlank() } ?: getString(R.string.log_empty)
-        }
-        // 收起时窗口高度为 0，不要去滚动（展开时会滚到底）；
-        // 展开后仍只在「原本就贴着底部」才自动滚，不打断用户翻看旧日志。
-        if (scroll.visibility != View.VISIBLE) return
-        if (wasAtBottom) {
-            scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
-        }
-    }
-
-    /**
-     * 展开 / 收起抓取日志（默认收起，运行时自动展开）。
-     *
-     * 无障碍：状态文案挂在可点的卡头容器 `crawlLogHeader` 上（箭头被设为装饰性，
-     * 写在它身上的 contentDescription 读屏不会播报）。
-     */
+    /** 展开 / 收起抓取日志（默认收起，运行时自动展开）。 */
     private fun setLogExpanded(expanded: Boolean) {
         logExpanded = expanded
-        val host = view ?: return
-        val scroll = host.findViewById<ScrollView>(R.id.crawlLogScroll) ?: return
-        scroll.visibility = if (expanded) View.VISIBLE else View.GONE
-        host.findViewById<View>(R.id.tvCrawlLogSummary)?.visibility =
-            if (expanded) View.GONE else View.VISIBLE
-        val arrow = host.findViewById<View>(R.id.btnCrawlLogToggle)
-        arrow?.rotation = if (expanded) 180f else 0f
-        host.findViewById<View>(R.id.crawlLogHeader)?.contentDescription = getString(
-            if (expanded) R.string.cd_crawl_log_expanded else R.string.cd_crawl_log_collapsed
-        )
-        if (expanded) {
-            scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
-        }
+        panel?.setExpanded(expanded)
     }
 
     /**
@@ -631,9 +646,10 @@ class GalleryFragment : Fragment() {
         busy = true
         setRunningUi(true)
         setLogExpanded(true)            // 运行时自动展开日志
-        crawlJob = viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        crawlJob = AppScope.launch {
             try {
-                log("==== 抓取开始（Live→${if (AccountStore.crawlGif(ctx)) "GIF" else "MOV"}） ====")
+                val modeName = if (AccountStore.crawlMode(ctx) == AccountStore.MODE_ALBUM) "相册" else "时间线"
+                log("==== 抓取开始（$modeName · Live→${if (AccountStore.crawlGif(ctx)) "GIF" else "MOV"}） ====")
                 // 与首页自动抓图共用一个闸门：拿不到锁立即返回，不排队、不并发写同一目录
                 if (CrawlRunner.runAll(ctx, ::log) == CrawlRunner.RunResult.Busy) {
                     log(ctx.getString(R.string.crawl_busy))
@@ -672,7 +688,7 @@ class GalleryFragment : Fragment() {
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val input = et.text?.toString() ?: ""
-                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                AppScope.launch {
                     val bid = WeiboApi.parseBidFromInput(input)
                     if (bid.isNotEmpty()) {
                         startSingle(ctx, bid)
@@ -731,7 +747,7 @@ class GalleryFragment : Fragment() {
                 dialog.dismiss()
                 val bid = posts[which].bid
                 val appCtx = requireContext().applicationContext
-                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) { startSingle(appCtx, bid) }
+                AppScope.launch { startSingle(appCtx, bid) }
             }
             .show()
     }

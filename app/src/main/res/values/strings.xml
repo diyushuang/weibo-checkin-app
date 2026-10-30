@@ -28,12 +28,13 @@
     <string name="home_delete_title">删除账号 %1$s?</string>
     <string name="home_delete_msg">只删除本机存储的登录态，不影响面板。</string>
     <string name="btn_checkin">立即签到</string>
+    <string name="btn_checkin_running">正在签到…</string>
     <string name="btn_sync">仅同步面板</string>
     <string name="accounts_label">账号</string>
     <string name="log_label">运行日志</string>
     <string name="auto_on_open">打开 App 即自动签到</string>
     <string name="login_hint">在下方页面登录微博（账密 / 验证码均在微博官方页面完成，本应用不经手）；登录成功后会自动返回。</string>
-    <string name="login_blocked_nav">已拦截跳转到非微博页面：%1$s</string>
+    <string name="login_blocked_nav">已拦截跳转：%1$s（域名不在登录白名单内）</string>
 
     <!-- 图片页 -->
     <string name="crawl_intro">批量抓原图 · Live Photo 转 GIF · 断点续跑</string>
@@ -47,6 +48,8 @@
     <string name="crawl_remove_title">移除目标 %1$s?</string>
     <string name="crawl_remove_msg">已下载的文件不受影响；进度保留，重新添加后继续增量。</string>
     <string name="crawl_auto_after_checkin">每次签到完成后自动增量抓取</string>
+    <string name="crawl_mode_album">相册模式（游客优先）</string>
+    <string name="crawl_mode_timeline">时间线模式（需登录账号）</string>
     <string name="crawl_start">开始抓取（增量）</string>
     <string name="crawl_stop">停止</string>
     <string name="crawl_log_title">抓取日志</string>
@@ -130,6 +133,7 @@
     <string name="account_chip_pending_fmt">待签 %1$d</string>
     <string name="account_chip_level_fmt">Lv.%1$d</string>
     <string name="home_topics_updated_fmt">超话状态更新于 %1$s</string>
+    <string name="home_topics_stale_fmt">超话状态是 %1$s 的，已跨天失效，正在重拉…</string>
     <!-- 日志卡头的无障碍文案：展开/收起状态必须播报出来。
          注意这些 contentDescription 挂在「可点的卡头容器」上，不是挂在装饰性箭头上。 -->
     <string name="cd_log_collapsed">运行日志，已收起，点按展开</string>
@@ -150,6 +154,10 @@
     <!-- 登录轮询的三段状态与结果提示（v0.9.1：从代码里的中文字面量提取，便于统一维护 / 翻译） -->
     <string name="login_found_verifying">已检测到登录，正在验证…</string>
     <string name="login_found_waiting">已检测到 Cookie，等待微博确认登录态…</string>
+    <string name="login_verify_login_false">接口判定未登录</string>
+    <string name="login_verify_failed_fmt">微博未确认登录态：%1$s（点这行立即重试）</string>
+    <string name="login_sync_sso">已拿到 Cookie，正在让微博把登录态同步到 m 站…</string>
+    <string name="login_uid_pending">登录态已确认，正在读取账号 UID…</string>
     <string name="login_added_fmt">已添加账号：%1$s</string>
     <string name="login_uid_missing">登录验证成功但未取到 uid，请重试</string>
     <string name="gallery_gif_badge">GIF</string>
@@ -184,6 +192,7 @@
     <string name="topic_subtitle_idle">关注超话的等级、签到状态与详情</string>
     <string name="topic_subtitle_loading">正在加载…</string>
     <string name="topic_subtitle_updated">更新于 %1$s</string>
+    <string name="topic_subtitle_stale">状态是 %1$s 的，已跨天失效，正在重拉…</string>
     <string name="topic_subtitle_failed">刷新失败：%1$s</string>
 
     <!-- 账号选择器 -->

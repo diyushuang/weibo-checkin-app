@@ -29,6 +29,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -74,6 +75,12 @@ class GalleryBrowseActivity : AppCompatActivity() {
     private val selected = LinkedHashSet<String>()
 
     private var loadJob: Job? = null
+
+    /** 当前正在跑的「过滤+排序+分组」计算；新的一次会取消上一次，避免旧结果覆盖新结果。 */
+    private var rebuildJob: Job? = null
+
+    /** 搜索输入防抖任务。 */
+    private var searchJob: Job? = null
 
     /** 单元格边长（px）：按列宽算成正方形，平板/横屏不再拉成细长条。0 = 还没测量。 */
     private var cellSizePx = 0
@@ -148,13 +155,29 @@ class GalleryBrowseActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnSelectShare).setOnClickListener { batchShare() }
         findViewById<View>(R.id.btnSelectDelete).setOnClickListener { confirmBatchDelete() }
         searchInput.addTextChangedListenerText { text ->
-            filter = filter.copy(query = text)
-            rebuild()
+            // 防抖 250ms：否则每敲一个字符就触发一次全量过滤（10 万张时直接卡顿）
+            searchJob?.cancel()
+            searchJob = lifecycleScope.launch {
+                delay(SEARCH_DEBOUNCE_MS)
+                filter = filter.copy(query = text)
+                rebuild()
+            }
         }
 
         onBackPressedDispatcher.addCallback(this, backCallback)
         applyInsets()
         load()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 从全屏预览删了图回来：目录内容变了，重读一次。
+        // 用「预览页置过的标记」而不是无条件重扫 —— 从分享/打开返回也会走 onResume，
+        // 每次都全量查一遍目录（10 万文件 ≈ 1s）会让返回动画后莫名其妙地卡一下。
+        if (ImagePreviewActivity.contentChanged) {
+            ImagePreviewActivity.contentChanged = false
+            load()
+        }
     }
 
     // ========================= 尺寸 / insets =========================
@@ -256,20 +279,53 @@ class GalleryBrowseActivity : AppCompatActivity() {
         }
     }
 
-    /** 过滤 → 排序 → 分组 → 摊平成「分组头 + 格子」的扁平列表。 */
-    private fun rebuild() {
-        val filtered = GalleryFiles.applyFilter(allRows, filter)
-        val sorted = GalleryFiles.sortRows(filtered, sort)
-        shownRows = sorted
+    /**
+     * 过滤 / 排序 / 分组的后台计算结果。
+     *
+     * 只带数据、不带文案：分组标题要用 `getString`，留到主线程拼（组数远小于图数）。
+     */
+    private class Computed(
+        val sorted: List<GalleryFiles.Row>,
+        val groups: List<GalleryFiles.Group>?,
+    )
 
-        val items = ArrayList<GridItem>()
-        when (groupMode) {
-            GroupMode.NONE -> sorted.forEach { items.add(GridItem.Cell(it)) }
-            GroupMode.DATE -> GalleryFiles.groupByDate(sorted).forEach { group ->
-                items.add(GridItem.Header(group.key, titleOf(group), group.count))
-                group.rows.forEach { items.add(GridItem.Cell(it)) }
+    /**
+     * 过滤 → 排序 → 分组 → 摊平成「分组头 + 格子」的扁平列表。
+     *
+     * 重活（过滤 O(n)、排序 O(n log n)、分组 O(n)）全部丢到 `Dispatchers.Default`：
+     * 旧实现整串跑在主线程，搜索框每敲一个字都要跑一遍，10 万张的库直接卡到掉帧/ANR。
+     * 主线程只做「摊平 + 上屏」，且摊平是 O(n) 的一次 ArrayList 追加，代价在毫秒级。
+     */
+    private fun rebuild() {
+        val source = allRows
+        val f = filter
+        val s = sort
+        val g = groupMode
+        rebuildJob?.cancel()
+        rebuildJob = lifecycleScope.launch {
+            val computed = withContext(Dispatchers.Default) {
+                val sorted = GalleryFiles.sortRows(GalleryFiles.applyFilter(source, f), s)
+                val groups = when (g) {
+                    GroupMode.NONE -> null
+                    GroupMode.DATE -> GalleryFiles.groupByDate(sorted)
+                    GroupMode.AUTHOR -> GalleryFiles.groupByLabel(sorted)
+                }
+                Computed(sorted, groups)
             }
-            GroupMode.AUTHOR -> GalleryFiles.groupByLabel(sorted).forEach { group ->
+            if (isFinishing || isDestroyed) return@launch
+            applyComputed(computed)
+        }
+    }
+
+    private fun applyComputed(page: Computed) {
+        shownRows = page.sorted
+
+        val items = ArrayList<GridItem>(page.sorted.size + (page.groups?.size ?: 0))
+        val groups = page.groups
+        if (groups == null) {
+            page.sorted.forEach { items.add(GridItem.Cell(it)) }
+        } else {
+            groups.forEach { group ->
                 items.add(GridItem.Header(group.key, titleOf(group), group.count))
                 group.rows.forEach { items.add(GridItem.Cell(it)) }
             }
@@ -277,15 +333,15 @@ class GalleryBrowseActivity : AppCompatActivity() {
         gridAdapter.submit(items)
         renderFilters()
 
-        toolbar.subtitle = if (sorted.size == allRows.size) {
+        toolbar.subtitle = if (page.sorted.size == allRows.size) {
             getString(R.string.gallery_count_fmt, allRows.size)
         } else {
-            getString(R.string.gallery_summary_fmt, allRows.size, sorted.size)
+            getString(R.string.gallery_summary_fmt, allRows.size, page.sorted.size)
         }
 
         when {
             allRows.isEmpty() -> showEmptyState(getString(R.string.gallery_empty))
-            sorted.isEmpty() -> showEmptyState(getString(R.string.gallery_filter_empty))
+            page.sorted.isEmpty() -> showEmptyState(getString(R.string.gallery_filter_empty))
             else -> {
                 emptyView.visibility = View.GONE
                 recycler.visibility = View.VISIBLE
@@ -355,15 +411,7 @@ class GalleryBrowseActivity : AppCompatActivity() {
         }
     }
 
-    private fun paintChip(chip: TextView, selected: Boolean) {
-        if (selected) {
-            chip.setBackgroundResource(R.drawable.bg_pill_brand)
-            chip.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.brand_strong))
-        } else {
-            chip.setBackgroundResource(R.drawable.bg_pill_line)
-            chip.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.ink_2))
-        }
-    }
+    private fun paintChip(chip: TextView, selected: Boolean) = chip.applyChipStyle(selected)
 
     private fun showSortMenu(anchor: View) {
         val popup = PopupMenu(this, anchor)
@@ -411,7 +459,8 @@ class GalleryBrowseActivity : AppCompatActivity() {
         popup.show()
     }
 
-    private fun toggleSearch(forceOpen: Boolean? = null) {        val open = forceOpen ?: (searchRow.visibility != View.VISIBLE)
+    private fun toggleSearch(forceOpen: Boolean? = null) {
+        val open = forceOpen ?: (searchRow.visibility != View.VISIBLE)
         searchRow.visibility = if (open) View.VISIBLE else View.GONE
         if (open) {
             searchInput.requestFocus()
@@ -707,6 +756,10 @@ class GalleryBrowseActivity : AppCompatActivity() {
     companion object {
         private const val TYPE_HEADER = 0
         private const val TYPE_CELL = 1
+
+        /** 搜索防抖：输入停止 250ms 后才真正过滤。 */
+        private const val SEARCH_DEBOUNCE_MS = 250L
+
         const val EXTRA_TREE = "tree"
 
         fun start(ctx: Context, treeUriRaw: String) {

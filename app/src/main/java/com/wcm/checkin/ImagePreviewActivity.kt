@@ -203,6 +203,7 @@ class ImagePreviewActivity : AppCompatActivity() {
                     Toast.makeText(this@ImagePreviewActivity, R.string.preview_delete_fail, Toast.LENGTH_SHORT).show()
                     return@withContext
                 }
+                contentChanged = true
                 items.removeAt(pos)
                 // 只删了这一页：精确通知单条移除，ViewPager2 会用它做删除动画，
                 // 也不会把其它页已加载好的大图丢掉重解
@@ -281,6 +282,14 @@ class ImagePreviewActivity : AppCompatActivity() {
         const val EXTRA_TREE = "tree"
         const val EXTRA_INDEX = "index"
         const val EXTRA_NAME = "name"
+
+        /**
+         * 本页删除过文件 → 图库页 `onResume` 据此重读目录。
+         *
+         * 用一个标记而不是让图库页每次都全量重扫：从分享 / 系统应用打开返回也会走
+         * `onResume`，而 10 万文件的目录查询要 1 秒左右。
+         */
+        @Volatile var contentChanged = false
 
         /**
          * [index] 是「图库页当前列表」里的下标；[name] 是该文件的名字。
