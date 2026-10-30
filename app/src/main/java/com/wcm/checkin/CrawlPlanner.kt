@@ -33,9 +33,24 @@ object CrawlPlanner {
     }
 
     data class PageSlice(val page: Int, val posts: List<PostRef>) {
-        /** at == 0 表示时间解析失败，不参与区间边界计算（否则会把边界拉到 0）。 */
-        val minAt: Long get() = posts.mapNotNull { p -> p.at.takeIf { it > 0L } }.minOrNull() ?: 0L
-        val maxAt: Long get() = posts.mapNotNull { p -> p.at.takeIf { it > 0L } }.maxOrNull() ?: 0L
+
+        /** 只保留时间可解析的帖：`at == 0` 参与边界计算会把边界拉到 0。 */
+        private val timed: List<PostRef> get() = posts.filter { it.at > 0L }
+
+        /**
+         * 参与「本页位于时间线的哪个位置」计算的帖。
+         *
+         * **必须排除置顶帖**：置顶帖是被置顶的**老帖**，它的时间不代表页面位置。
+         * 早先把它算进 `minAt` / `low`，会让「本页最老时间」退化成一个很深的虚假值 ——
+         * 覆盖下界被一路拉到置顶帖那天，配合起始日期就会让历史阶段永久停摆
+         * （`shouldRunHistory` 认为「已推到起始日期以下」），中间那段图再也抓不到。
+         * 整页都是置顶帖的极端情况下退回全量，避免算出 0。
+         */
+        private val positionHint: List<PostRef>
+            get() = timed.filter { !it.pinned }.ifEmpty { timed }
+
+        val minAt: Long get() = positionHint.minOfOrNull { it.at } ?: 0L
+        val maxAt: Long get() = positionHint.maxOfOrNull { it.at } ?: 0L
     }
 
     /** `slice == null` 且 `error != null` 表示这一页没取回（网络/接口错误）。 */
@@ -113,10 +128,11 @@ object CrawlPlanner {
             }
             lastPage = page
             for (p in slice.posts) {
-                if (p.at > 0L) {
+                // 置顶帖既不参与水线（新方向的判定），也不参与下界 —— 它的时间是被置顶
+                // 那一刻的旧时间，用它算覆盖区间等于谎报「这一段已经抓过」。
+                if (p.at > 0L && !p.pinned) {
                     if (p.at < low) low = p.at
-                    // 置顶帖永远出现在第 1 页，不能参与水位计算
-                    if (!p.pinned && p.at > high) high = p.at
+                    if (p.at > high) high = p.at
                 }
             }
 

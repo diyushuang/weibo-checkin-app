@@ -24,6 +24,13 @@ object GifEncoder {
         require(frames.isNotEmpty()) { "没有帧" }
         val w = frames[0].width
         val h = frames[0].height
+        // GIF 只有一张全局画布：像素索引数组按第一帧的尺寸分配，尺寸不一致会越界
+        // （小帧留下上一帧的残影、大帧直接 ArrayIndexOutOfBounds）。这里显式拦下，
+        // 让失败原因清楚地传到日志，而不是被上层 catch 成一句「转换失败」。
+        require(frames.all { it.width == w && it.height == h }) {
+            "帧尺寸不一致：需要 ${w}x$h，实际 " +
+                frames.map { "${it.width}x${it.height}" }.distinct().take(3)
+        }
         val palette = buildPalette(frames)
         val out = ByteArrayOutputStream(64 * 1024)
 

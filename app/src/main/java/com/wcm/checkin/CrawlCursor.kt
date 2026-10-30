@@ -122,9 +122,6 @@ object CrawlDate {
     fun isValid(date: String): Boolean =
         date.isEmpty() || runCatching { LocalDate.parse(date) }.isSuccess
 
-    /** 今天（+0800）的 "yyyy-MM-dd"。 */
-    fun today(): String = LocalDate.now(WEIBO_ZONE).toString()
-
     /** "2024-01-01" → MaterialDatePicker 需要的 UTC 毫秒。 */
     fun toPickerMillis(date: String): Long? = try {
         LocalDate.parse(date).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()

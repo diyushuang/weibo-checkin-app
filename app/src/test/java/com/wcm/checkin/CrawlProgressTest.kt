@@ -74,6 +74,49 @@ class CrawlProgressTest {
     }
 
     @Test
+    fun begin_keepsCountersWhenSameRunContinues() {
+        // 相册模式失败 → 回退时间线，会再发一次 Begin。计数不能归零，
+        // 否则用户看到进度条从 10% 掉回 0（旧实现就是这样）。
+        val p = step(
+            CrawlEvent.Begin("相册抓取", 1),
+            CrawlEvent.Phase(CrawlPhase.NEW, planned = 10, skipped = 0),
+            CrawlEvent.Post(saved = 1, failed = 0),
+            CrawlEvent.Begin("增量抓取", 1),
+        )
+        assertEquals("增量抓取", p.what)
+        assertEquals(10, p.discovered)
+        assertEquals(1, p.processed)
+    }
+
+    @Test
+    fun phase_neverLetsProcessedExceedDiscovered() {
+        val p = step(
+            CrawlEvent.Begin("x", 1),
+            CrawlEvent.Phase(CrawlPhase.NEW, planned = 2, skipped = 0),
+            CrawlEvent.Post(saved = 1, failed = 0),
+            CrawlEvent.Post(saved = 1, failed = 0),
+            CrawlEvent.Phase(CrawlPhase.HISTORY, planned = 1, skipped = 0),
+        )
+        assertTrue(p.processed <= p.discovered)
+        assertTrue(percent(p) <= 100)
+    }
+
+    @Test
+    fun target_resetsPerTargetProgressButKeepsRunTotals() {
+        val p = step(
+            CrawlEvent.Begin("x", 2),
+            CrawlEvent.Target("甲", 1, 2),
+            CrawlEvent.Phase(CrawlPhase.NEW, planned = 4, skipped = 0),
+            CrawlEvent.Post(saved = 2, failed = 0),
+            CrawlEvent.Target("乙", 2, 2),
+        )
+        assertEquals(0, p.discovered)
+        assertEquals(0, p.processed)
+        assertEquals(2, p.downloaded)   // 下载数仍是整轮累计
+        assertEquals("乙", p.targetLabel)
+    }
+
+    @Test
     fun finish_marksDoneAndNotRunning() {
         val p = step(CrawlEvent.Begin("x", 1), CrawlEvent.Finish)
         assertEquals(CrawlPhase.DONE, p.phase)

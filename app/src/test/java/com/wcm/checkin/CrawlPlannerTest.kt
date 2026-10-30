@@ -341,4 +341,67 @@ class CrawlPlannerTest {
         assertTrue(Budget.NEW.maxFiles > 0)
         assertTrue(Budget.NEW.maxWallClockMs > 0)
     }
+
+    // ========================= 置顶老帖的边界回归（v0.9.9） =========================
+
+    @Test
+    fun new_oldPinnedPostDoesNotPullCoverageLowDown() {
+        // 置顶帖是 2020 年的老帖：它的时间不能当成「本页最老」，
+        // 否则覆盖下界会被一路拉到那天，谎报「这段已抓过」。
+        val pages = mapOf(
+            1 to listOf(post("pin", 100, pinned = true), post("a", 3000), post("b", 2000)),
+            2 to emptyList<PostRef>(),
+        )
+        val plan = CrawlPlanner.planNew(cursor(), view("pin"), "", fetcher(pages))
+        assertEquals(2000L, plan.coverageLow)
+        assertEquals(3000L, plan.coverageHigh)
+    }
+
+    @Test
+    fun new_oldPinnedPostDoesNotTriggerSinceDateStop() {
+        // 置顶帖早于起始日期，但本页真实内容都在起始日期之后 → 不该立刻判「已推到起始日期」
+        val sinceSec = CrawlDate.dayStartSec("2026-01-01")!!
+        val pages = mapOf(
+            1 to listOf(
+                post("pin", 100, pinned = true),
+                post("a", sinceSec + 1000),
+                post("b", sinceSec + 500),
+            ),
+            2 to emptyList<PostRef>(),
+        )
+        val plan = CrawlPlanner.planNew(cursor(), view("pin", "a", "b"), "2026-01-01", fetcher(pages))
+        assertTrue(plan.stop != StopReason.SINCE_DATE)
+        assertTrue(plan.coverageLow >= sinceSec)
+    }
+
+    @Test
+    fun new_oldPinnedPostKeepsHistoryRunnable() {
+        // 老 bug 的直接后果：覆盖下界被写成置顶帖那天 → shouldRunHistory 永久 false。
+        // 修正后下界来自真实内容，历史方向仍然可跑。
+        val sinceSec = CrawlDate.dayStartSec("2026-01-01")!!
+        val pages = mapOf(
+            1 to listOf(post("pin", 100, pinned = true), post("a", sinceSec + 1000)),
+            2 to emptyList<PostRef>(),
+        )
+        val plan = CrawlPlanner.planNew(cursor(), view("pin", "a"), "2026-01-01", fetcher(pages))
+        val next = CursorLogic.afterNewPhase(CrawlCursor(uid = "u"), plan.coverageHigh, plan.coverageLow)
+        assertTrue(next.oldestCoveredAt > sinceSec)
+        assertTrue(CrawlPlanner.shouldRunHistory(next, "2026-01-01"))
+    }
+
+    @Test
+    fun history_pageWithOldPinnedPostKeepsSliceMinAt() {
+        // 历史阶段同样：第 1 页的置顶老帖不能把 minAt 拉到那天
+        val pages = mapOf(
+            1 to listOf(post("pin", 10, pinned = true), post("a", 3000), post("b", 2500)),
+            2 to emptyList<PostRef>(),
+        )
+        // 起点：已有覆盖到 3000，锚点也指向 3000
+        val c = CrawlCursor(
+            uid = "u", newestAt = 3000L, oldestCoveredAt = 3000L,
+            anchorAt = 3000L, anchorPageHint = 1,
+        )
+        val plan = CrawlPlanner.planHistory(c, view("pin"), "", fetcher(pages))
+        assertEquals(2500L, plan.coverageLow)
+    }
 }

@@ -73,6 +73,9 @@ class CrawlIndex private constructor(
 
     private val mainFile = File(dir, "$treeTag.ndjson")
 
+    /** 待重试帖数的旁挂提示文件（几字节），供图片页在不解析索引的情况下展示。 */
+    private val retryFile = File(dir, "$treeTag.retry")
+
     /** 延迟打开的追加句柄（compact 后需要重开，故用可变引用而非 lazy）。 */
     private var writer: BufferedWriter? = null
 
@@ -91,7 +94,25 @@ class CrawlIndex private constructor(
     val posts = HashMap<String, PostRec>()
     val filesByPic = HashMap<String, FileRec>()
     val filesByName = HashMap<String, FileRec>()
+
+    /**
+     * 内容哈希 → 文件记录，L3 去重的索引。
+     *
+     * 早先 `byHash` 是在 `filesByName.values` 上做线性扫描，**每保存一张图 O(n)**：
+     * 10 万文件时等于每张图都要比对十万条记录。这里维持一份哈希索引，查询退化成 O(1)。
+     */
+    val filesByHash = HashMap<String, FileRec>()
     val labels = HashMap<String, String>()
+
+    /**
+     * 索引最近一次写盘失败的原因（null = 正常）。
+     *
+     * 索引写失败不阻断抓取（文件已落盘，L1 仍能兜住），但**必须能被看见**：
+     * 磁盘满 / 目录被删时用户只会观察到「进度莫名回退、图片重复下载」，
+     * 没有这条记录就完全无从排查。
+     */
+    @Volatile var lastWriteError: String? = null
+        private set
 
     // ========================= 读取 =========================
 
@@ -179,6 +200,7 @@ class CrawlIndex private constructor(
                 )
                 if (pic.isNotEmpty()) filesByPic[pic] = rec
                 filesByName[name] = rec
+                if (rec.hash.isNotEmpty()) filesByHash[rec.hash] = rec
                 true
             }
             "d" -> {
@@ -217,7 +239,7 @@ class CrawlIndex private constructor(
     }
 
     fun byHash(hash: String): FileRec? = synchronized(LOCK) {
-        if (hash.isEmpty()) null else filesByName.values.firstOrNull { it.hash == hash }
+        if (hash.isEmpty()) null else filesByHash[hash]
     }
 
     fun fileCount(): Int = synchronized(LOCK) { filesByName.size }
@@ -244,6 +266,7 @@ class CrawlIndex private constructor(
             val rec = FileRec(postId, slot, kind.ordinal, picId, hash, size, name)
             if (picId.isNotEmpty()) filesByPic[picId] = rec
             filesByName[name] = rec
+            if (hash.isNotEmpty()) filesByHash[hash] = rec
             append(
                 JSONObject().put("t", "f").put("i", postId).put("k", slot).put("v", kind.ordinal)
                     .put("g", picId).put("h", hash).put("z", size).put("m", name).toString()
@@ -265,6 +288,7 @@ class CrawlIndex private constructor(
         synchronized(LOCK) {
             val rec = FileRec(postId, slot, kind.ordinal, picId, hash, size, storedName)
             filesByPic[picId] = rec
+            if (hash.isNotEmpty()) filesByHash[hash] = rec
             append(
                 JSONObject().put("t", "f").put("i", postId).put("k", slot).put("v", kind.ordinal)
                     .put("g", picId).put("h", hash).put("z", size).put("m", storedName).toString()
@@ -288,6 +312,7 @@ class CrawlIndex private constructor(
             rec.size = size
             if (hash.isNotEmpty()) rec.hash = hash
             filesByName[name] = rec
+            if (rec.hash.isNotEmpty()) filesByHash[rec.hash] = rec
             append(
                 JSONObject().put("t", "f").put("i", rec.postId).put("k", rec.slot)
                     .put("v", rec.kind).put("g", rec.picId).put("h", rec.hash)
@@ -324,6 +349,7 @@ class CrawlIndex private constructor(
             appendPost(p)
             dirtySinceFlush = 0
             flushLocked()
+            writeRetryHint()
         }
     }
 
@@ -336,6 +362,7 @@ class CrawlIndex private constructor(
             p.failed.clear()
             p.retryAt = 0L
             appendPost(p)
+            writeRetryHint()
         }
     }
 
@@ -395,6 +422,7 @@ class CrawlIndex private constructor(
             ?: filesByName.remove(AssetName.canonical(name))
             ?: return null
         if (filesByPic[rec.picId] === rec) filesByPic.remove(rec.picId)
+        if (rec.hash.isNotEmpty() && filesByHash[rec.hash] === rec) filesByHash.remove(rec.hash)
         return rec
     }
 
@@ -451,12 +479,30 @@ class CrawlIndex private constructor(
             dirtySinceFlush++
             if (dirtySinceFlush >= 8) flushLocked()
         } catch (e: Exception) {
-            // 索引写失败不能阻断抓取：文件已落盘，L1 仍能兜住
+            // 索引写失败不能阻断抓取：文件已落盘，L1 仍能兜住。
+            // 但要把原因留下来（Crawler 会写进日志），否则用户只能看到
+            // 「进度莫名回退 / 图片重复下载」，无从排查。
+            lastWriteError = e.message ?: e.javaClass.simpleName
         }
     }
 
     fun flush() {
         synchronized(LOCK) { flushLocked() }
+    }
+
+    /**
+     * 把「待重试帖数」写成一个几字节的提示文件。
+     *
+     * 图片页每次进入都要显示「待重试 N 帖」，旧实现为此把整份 NDJSON 读进内存
+     * （10 万张 ≈ 17MB 文件 / ≈25MB 内存），只为拿一个整数。这里落一份旁挂计数，
+     * 页面直接读它；只有真要展开清单时才解析索引。
+     */
+    private fun writeRetryHint() {
+        try {
+            retryFile.writeText(pendingRetryCount().toString())
+        } catch (e: Exception) {
+            // 提示文件写不出来只影响展示，不影响抓取
+        }
     }
 
     private fun flushLocked() {
@@ -545,6 +591,7 @@ class CrawlIndex private constructor(
     fun close() {
         synchronized(LOCK) {
             flushLocked()
+            writeRetryHint()
             reopenWriter()
             unregister(this)
         }
@@ -590,13 +637,31 @@ class CrawlIndex private constructor(
         fun treeTagOf(treeUri: String): String =
             Hashing.sha256Hex128(treeUri.toByteArray()).take(8)
 
+        /**
+         * 读「待重试帖数」提示文件。
+         *
+         * @return 计数；`-1` 表示还没有这份提示（老版本索引 / 首次运行），
+         *         调用方此时才需要退化成解析索引。
+         */
+        fun retryHintOf(filesDir: File, treeTag: String): Int {
+            val f = File(File(filesDir, "crawl/index"), "$treeTag.retry")
+            if (!f.isFile) return -1
+            return try {
+                f.readText().trim().toIntOrNull() ?: -1
+            } catch (e: Exception) {
+                -1
+            }
+        }
+
         /** 只保留指定 tag 的索引文件，其余清理（换目录后避免无限增长）。 */
         fun prune(filesDir: File, keep: Set<String>) {
             val dir = File(filesDir, "crawl/index")
             if (!dir.isDirectory) return
             dir.listFiles()?.forEach { f ->
-                val tag = f.name.removeSuffix(".new").removeSuffix(".ndjson")
-                if (tag.isNotEmpty() && tag !in keep && (f.name.endsWith(".ndjson") || f.name.endsWith(".new"))) {
+                val tag = f.name.removeSuffix(".new").removeSuffix(".ndjson").removeSuffix(".retry")
+                if (tag.isNotEmpty() && tag !in keep &&
+                    (f.name.endsWith(".ndjson") || f.name.endsWith(".new") || f.name.endsWith(".retry"))
+                ) {
                     f.delete()
                 }
             }

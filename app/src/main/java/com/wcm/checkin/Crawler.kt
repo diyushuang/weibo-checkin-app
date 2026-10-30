@@ -17,8 +17,15 @@ import java.io.IOException
  *    判定哪个 pid 是 Live（配对 videoSrc）；
  * 4. 原图 = wx{1..4}.sinaimg.cn/large/<PID>.jpg（接口给的 mw2000 是缩图）；
  * 5. Live 的 mov 内层直链 403，必须走 video.weibo.com/media/play?livephoto= 包装地址；
- * 6. 节流：下载间 600-900ms、详情间 ≥620ms、翻页间 ≥700ms；
+ * 6. 节流：下载间 600-900ms（唯一有固定间隔的阶段）；列表翻页与详情**没有**固定延时，
+ *    靠预算约束（`CrawlCursor.Budget`：补新 6 页 / 补历史 20 页 / 200 页硬墙 / 单轮 25 分钟）；
  * 7. 单文件下载失败自动重试 3 次（间隔递增），重试与失败原因写入日志。
+ * 8. 身份：**两条链路身份不同**
+ *    - 时间线模式（`runIncremental`）：列表与详情都必须账号登录（游客 cookie 在 m 站
+ *      `107603` 返回 `ok:-100`、Web 端 `mymblog` 返回 403）；
+ *    - 相册模式（`runAlbum`，v0.9.8 起）：枚举相册墙与取单帖详情都走游客身份
+ *      （`GuestSession` + `WebAjax`），游客失效或缺图时才回落账号。
+ *    下载阶段对 CDN 完全匿名。
  *
  * v0.5 相对 v0.4 的三处根本性改动：
  * - **推进**：由 [CrawlPlanner] 驱动，用 `(anchorAt, anchorPostId)` 断点续跑，
@@ -101,6 +108,9 @@ object Crawler {
     }
 
     private const val DOWNLOAD_ATTEMPTS = 3    // 单文件下载尝试次数（CDN 偶发 403/超时自动重试）
+
+    /** 单文件大小上限：Live mov 正常在 64MB 以内，超过直接放弃而不是撑爆内存。 */
+    private const val MAX_FILE_BYTES = 64L * 1024 * 1024
     private val LIVE_WRAPPER = "https://video.weibo.com/media/play?livephoto="
 
     /** 大文件下载专用 client：Live mov 可达 64MB，放宽全局 client 的 25s callTimeout。 */
@@ -190,8 +200,14 @@ object Crawler {
     // ========================= 抓图身份选择（多账号回退） =========================
 
     /**
-     * 选抓图用的 cookie：抓公开微博任一有效登录态都行，依次探活取第一个还活着的，
-     * 不再固定赌第一个账号。全部失效返回 null（原因写日志，调用方直接 return）。
+     * 选**时间线模式**抓图用的 cookie。
+     *
+     * 时间线链路实测必须账号登录 —— 游客 cookie 在 m 站 `107603` 返回 `ok:-100`、
+     * Web 端 `ajax/statuses/mymblog` 返回 403「请登录后使用」，这条链路没有免登录替代。
+     * 所以这里是「依次探活取第一个还活着的账号」。
+     *
+     * 相册模式（`runAlbum`）**不调本方法**：它优先走游客身份（`GuestSession`），
+     * 只有在游客失效或缺图时才用这里的结果做兜底。
      */
     fun pickCrawlCookie(
         accounts: List<AccountStore.Account>,
@@ -249,7 +265,7 @@ object Crawler {
 
             val liveCount = assets.liveByIndex.size + assets.liveExtras.size
             log("── 单条抓取 $prefix（${assets.picIds.size} 图 / $liveCount Live）──")
-            val outcome = savePost(ctx, cookie, state, prefix, postId, at, assets, null, log)
+            val outcome = savePost(ctx, state, prefix, postId, at, assets, null, log)
             log(
                 if (outcome.saved > 0) "✓ 完成，新增 ${outcome.saved} 个文件（目录累计 ${state.store.count()}）"
                 else "✓ 完成（文件均已存在，无新增）"
@@ -313,14 +329,361 @@ object Crawler {
         onEvent(CrawlEvent.Finish)
     }
 
-    /** 一次抓取运行共享的上下文：目录快照 + 索引。 */
-    private class RunState(val store: TreeStore, val index: CrawlIndex, val treeTag: String)
+    // ========================= 相册抓图模式（v0.9.8） =========================
+
+    /** 每轮「补新」最多翻几页相册墙（每页约 20 张图）。 */
+    private const val ALBUM_NEW_PAGES = 2
+
+    /** 每轮「补历史」最多翻几页相册墙。 */
+    private const val ALBUM_HISTORY_PAGES = 8
+
+    /** 每轮每目标最多处理几帖（一帖可能带 18 张图，按帖计数比按图更可控）。 */
+    private const val ALBUM_MAX_POSTS = 40
+
+    /** 单轮时间上限：一帖最多 18 张图，没有时间墙的话自动抓图会跑很久。 */
+    private const val ALBUM_MAX_MILLIS = 20 * 60 * 1000L
+
+    /** 相册墙一轮的结果。 */
+    private class AlbumPass(
+        val enumerated: Boolean,
+        val saved: Int,
+        val nextCursor: String,
+        val reachedBottom: Boolean,
+    )
+
+    /**
+     * 相册模式：用**游客身份**从相册墙枚举 `mid`，再逐帖取图。
+     *
+     * 为什么值得单独做一条链路：
+     * 1. 相册墙只列**有图**的微博，跳过大量纯文字帖 —— 时间线要翻 10 帖才碰到几张图，
+     *    相册墙一页 20 张图（约 5–8 帖）；
+     * 2. 全程游客身份，不消耗账号频次与风控评分；
+     * 3. 天然避开「时间线卡片对超 9 图帖只带部分图」的截断：逐帖取详情、以 `pic_ids` 为准。
+     *
+     * 逐帖取详情优先 `weibo.com/ajax/statuses/show`（游客），拿不到或张数不够时
+     * **回退到账号 + m 站详情**（那里有帖级 `live_photo`，Live 动图不会退化）。
+     *
+     * @return 是否至少有一个目标成功枚举到相册墙。false 时上层回退到时间线模式。
+     */
+    suspend fun runAlbum(
+        ctx: Context,
+        log: (String) -> Unit,
+        autoMode: Boolean = false,
+        onEvent: (CrawlEvent) -> Unit = {},
+        isStopped: () -> Boolean = { false },
+    ): Boolean {
+        val targets = AccountStore.crawlTargets(ctx)
+        val treeUriRaw = AccountStore.crawlTreeUri(ctx)
+        if (targets.isEmpty() || treeUriRaw.isEmpty()) {
+            if (!autoMode) log("✗ 请先添加抓取目标并选择相册目录")
+            // 没有目标不算「相册模式失败」，不需要上层回退到时间线
+            return true
+        }
+        val accounts = AccountStore.load(ctx)
+        var anyEnumerated = false
+        var downloaded = 0
+        val startedAt = System.currentTimeMillis()
+
+        onEvent(CrawlEvent.Begin("相册抓取", targets.size))
+        withCrawlContext(ctx, treeUriRaw, log) { state ->
+            for ((index, target) in targets.withIndex()) {
+                if (isStopped()) break
+                if (System.currentTimeMillis() - startedAt > ALBUM_MAX_MILLIS) {
+                    log("已达单轮时间上限（${ALBUM_MAX_MILLIS / 60000} 分钟），本轮先到这里")
+                    break
+                }
+                val label = target.name.ifEmpty { target.uid }
+                onEvent(CrawlEvent.Target(label, index + 1, targets.size))
+                log("── $label（${target.uid} · 相册）──")
+                try {
+                    val result = crawlAlbumTarget(ctx, target, accounts, state, log, onEvent, startedAt, isStopped)
+                    if (result.enumerated) anyEnumerated = true
+                    downloaded += result.saved
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    state.index.flush()
+                    throw e
+                } catch (e: Exception) {
+                    log("  ✗ 目标中断：${e.message}")
+                }
+                state.index.flush()
+            }
+            log("本轮共下载 $downloaded 个新文件，目录累计 ${state.store.count()}")
+        }
+        onEvent(CrawlEvent.Finish)
+        return anyEnumerated
+    }
+
+    private class AlbumTargetResult(val enumerated: Boolean, val saved: Int)
+
+    /**
+     * 游客身份是否已被判定不可用。
+     *
+     * 一次运行内只要撞上一次「身份类」失败（403/432/非 JSON），后续帖子就直接走账号，
+     * 不再每帖白打一次必然失败的请求，也不会把日志刷满。
+     */
+    private class GuestGate {
+        var blocked = false
+
+        /**
+         * 本轮是否已经因「身份可疑」刷新过一次游客身份。
+         *
+         * 只刷一次：真被风控时反复握手除了刷日志没有任何收益，还会放大请求量。
+         * 但完全不刷也不行 —— 游客 cookie 有一年有效期，换发前失效是常态，
+         * 一次 403 就让整轮退化到时间线模式，等于白跑。
+         */
+        var refreshed = false
+    }
+
+    private suspend fun crawlAlbumTarget(
+        ctx: Context,
+        target: AccountStore.CrawlTarget,
+        accounts: List<AccountStore.Account>,
+        state: CrawlContext,
+        log: (String) -> Unit,
+        onEvent: (CrawlEvent) -> Unit,
+        startedAt: Long,
+        isStopped: () -> Boolean,
+    ): AlbumTargetResult {
+        val uid = target.uid
+        val sinceDate = AccountStore.crawlSince(ctx, uid)
+        val savedCursor = AccountStore.albumSince(ctx, state.treeTag, uid)
+
+        // 账号只在需要回退时解析一次（探活有成本，不能每帖都做）
+        var accountResolved = false
+        var accountCookie: String? = null
+        fun account(): String? {
+            if (!accountResolved) {
+                accountResolved = true
+                accountCookie = pickCrawlCookie(accounts, log)
+            }
+            return accountCookie
+        }
+        val guest = GuestGate()
+
+        suspend fun pass(
+            startCursor: String,
+            maxPages: Int,
+            maxPosts: Int,
+        ): AlbumPass {
+            var cursor = startCursor
+            var pages = 0
+            var handled = 0
+            var enumerated = false
+            var saved = 0
+            val seen = HashSet<String>()
+            val floorYm = if (sinceDate.length >= 7) sinceDate.substring(0, 7) else ""
+
+            /** 取一页相册墙；遇到「身份可疑」失败时刷新一次游客身份再重试。 */
+            suspend fun wall(atCursor: String): WebAjax.WallPage? {
+                repeat(2) { attempt ->
+                    try {
+                        return WebAjax.imageWall(uid, atCursor)
+                    } catch (e: Exception) {
+                        val reason = e.message ?: e.javaClass.simpleName
+                        val suspect = e is WeiboApi.WeiboException && e.identitySuspect
+                        if (attempt == 0 && suspect && !guest.refreshed) {
+                            guest.refreshed = true
+                            log("  · 游客身份可能已失效（$reason），刷新后重试")
+                            GuestSession.refresh()
+                        } else {
+                            log("  ✗ 相册墙第 ${pages + 1} 页失败：$reason")
+                            return null
+                        }
+                    }
+                }
+                return null
+            }
+
+            while (pages < maxPages && handled < maxPosts && !isStopped() &&
+                System.currentTimeMillis() - startedAt < ALBUM_MAX_MILLIS
+            ) {
+                val page = wall(cursor) ?: return AlbumPass(enumerated, saved, cursor, false)
+                enumerated = true
+                // 墙上只有「年-月」，只能做粗粒度下界判定
+                if (floorYm.isNotEmpty() && page.oldestYm.isNotEmpty() && page.oldestYm < floorYm) {
+                    log("  已到起始日期（$sinceDate）之前，停止翻页")
+                    return AlbumPass(enumerated, saved, "", true)
+                }
+                for (mid in page.mids) {
+                    if (isStopped() || handled >= maxPosts) break
+                    if (System.currentTimeMillis() - startedAt > ALBUM_MAX_MILLIS) break
+                    if (state.index.isTerminal(mid) && state.index.failedSlots(mid).isEmpty()) continue
+                    handled++
+                    saved += processAlbumPost(ctx, uid, mid, target, state, log, onEvent, guest) { account() }
+                }
+                pages++
+                if (page.nextSinceId.isEmpty() || !seen.add(page.nextSinceId)) {
+                    return AlbumPass(enumerated, saved, "", true)
+                }
+                cursor = page.nextSinceId
+            }
+            return AlbumPass(enumerated, saved, cursor, false)
+        }
+
+        // 1) 补新：固定从第一页扫，保证刚发的图能进来（不依赖历史游标走到哪）
+        val newPass = pass("", ALBUM_NEW_PAGES, ALBUM_MAX_POSTS)
+        if (!newPass.enumerated) return AlbumTargetResult(false, 0)
+
+        var saved = newPass.saved
+        var nextCursor = newPass.nextCursor
+        var reachedBottom = newPass.reachedBottom
+
+        // 2) 补历史：从存档游标继续。游标为空说明「补新」已经覆盖了开头，不必重复。
+        if (newPass.nextCursor.isNotEmpty() && savedCursor.isNotEmpty()) {
+            val historyPass = pass(savedCursor, ALBUM_HISTORY_PAGES, ALBUM_MAX_POSTS)
+            saved += historyPass.saved
+            nextCursor = historyPass.nextCursor
+            reachedBottom = reachedBottom || historyPass.reachedBottom
+        }
+        if (reachedBottom) nextCursor = ""
+
+        AccountStore.setAlbumSince(ctx, state.treeTag, uid, nextCursor)
+        return AlbumTargetResult(true, saved)
+    }
+
+    /**
+     * 相册模式下的单帖：取详情 → 组图清单 → 落盘。
+     *
+     * 两层兜底，专治「18 图只拿到 9 张」：
+     * 1. 游客 Web 详情（不占账号）拿 `pic_ids`；
+     * 2. 若 `pic_ids` 少于帖子自述的 `pic_num`（或游客这条路直接失败），
+     *    回退账号 + m 站详情再取一次，取张数更多的那个结果；
+     * 3. 仍然不足则告警（不阻塞），与参考实现 `_ensure_full_pics` 同口径。
+     */
+    private suspend fun processAlbumPost(
+        ctx: Context,
+        uid: String,
+        mid: String,
+        target: AccountStore.CrawlTarget,
+        state: CrawlContext,
+        log: (String) -> Unit,
+        onEvent: (CrawlEvent) -> Unit,
+        guest: GuestGate,
+        account: () -> String?,
+    ): Int {
+        var detail: JSONObject? = null
+        var assets: PostAssets? = null
+
+        if (!guest.blocked) {
+            // 两轮：第一轮失败且属于「身份可疑」时，刷新游客身份再试一次
+            for (attempt in 0..1) {
+                try {
+                    val web = WebAjax.statusShow(mid)
+                    detail = web
+                    assets = assetsFromWebStatus(web)
+                    break
+                } catch (e: Exception) {
+                    val reason = e.message ?: e.javaClass.simpleName
+                    val suspect = e is WeiboApi.WeiboException && e.identitySuspect
+                    if (attempt == 0 && suspect && !guest.refreshed) {
+                        guest.refreshed = true
+                        log("  · 游客身份可能已失效（$reason），刷新后重试 $mid")
+                        GuestSession.refresh()
+                        continue
+                    }
+                    log("  · $mid 游客取详情失败（$reason）")
+                    if (suspect) {
+                        guest.blocked = true
+                        log("  · 游客身份不可用，本轮后续直接走账号详情")
+                    }
+                    break
+                }
+            }
+        }
+
+        val declared = detail?.optInt("pic_num", 0) ?: 0
+        val short = assets == null || assets.picIds.isEmpty() || (declared > 0 && assets.picIds.size < declared)
+        if (short) {
+            val cookie = account()
+            if (cookie != null) {
+                try {
+                    val mDetail = WeiboApi.fetchPostDetail(cookie, mid)
+                    val mAssets = assetsFromDetail(mDetail)
+                    if (assets == null || mAssets.picIds.size > assets.picIds.size) {
+                        detail = mDetail
+                        assets = mAssets
+                    }
+                } catch (e: Exception) {
+                    log("  ✗ $mid 账号详情也失败：${e.message}")
+                }
+            }
+        }
+
+        val d = detail
+        if (d == null) {
+            log("  ✗ $mid 取不到详情，本贴跳过（下轮重试）")
+            onEvent(CrawlEvent.Post(saved = 0, failed = 0))
+            return 0
+        }
+        val at = epochOf(d.optString("created_at", ""))
+        val a = assets
+        if (a == null || a.picIds.isEmpty()) {
+            state.index.onVoid(mid, at)
+            onEvent(CrawlEvent.Post(saved = 0, failed = 0))
+            return 0
+        }
+        if (declared > 0 && a.picIds.size < declared) {
+            log("  ⚠ $mid 只识别到 ${a.picIds.size}/$declared 张（接口截断），已按现有图片继续")
+        }
+
+        val authorUid = d.optJSONObject("user")?.optString("id", "").orEmpty().ifEmpty { uid }
+        val authorName = d.optJSONObject("user")?.optString("screen_name", "").orEmpty()
+        val label = resolveLabel(state.index, authorUid, authorName.ifEmpty { target.name.ifEmpty { target.uid } })
+        val prefix = prefixOf(at, label)
+        val outcome = savePost(ctx, state, prefix, mid, at, a, null, log)
+        if (outcome.saved > 0) {
+            log("  ✓ $prefix…（+${outcome.saved}${if (outcome.failed.isEmpty()) "" else "，缺 ${outcome.failed.size}"}）")
+        }
+        onEvent(CrawlEvent.Post(saved = outcome.saved, failed = outcome.failed.size))
+        return outcome.saved
+    }
+
+    /**
+     * Web 端扁平 status → 图清单。
+     *
+     * `pic_ids` 是权威顺序；Live 判定看 `pic_infos[pid].type == "livephoto"`，其 `video`
+     * 就是动图直链。Web 版没有帖级 `live_photo`，所以 `liveExtras` 恒为空。
+     */
+    internal fun assetsFromWebStatus(status: JSONObject): PostAssets {
+        val picIds = ArrayList<String>()
+        status.optJSONArray("pic_ids")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val pid = arr.optString(i, "").trim()
+                if (pid.isNotEmpty()) picIds.add(pid)
+            }
+        }
+        val liveByIndex = HashMap<Int, String>()
+        val infos = status.optJSONObject("pic_infos")
+        if (infos != null && picIds.isNotEmpty()) {
+            picIds.forEachIndexed { idx, pid ->
+                val info = infos.optJSONObject(pid) ?: return@forEachIndexed
+                if (info.optString("type") != "livephoto") return@forEachIndexed
+                val video = info.optString("video", "").ifEmpty {
+                    info.optJSONObject("video")?.optString("url", "").orEmpty()
+                }
+                // 只认能过白名单的直链：否则干脆当静图存，别让整张图因为「域名不在白名单」失败
+                if (video.isNotEmpty() && videoAllowed(video)) liveByIndex[idx] = video
+            }
+        }
+        return PostAssets(picIds, liveByIndex, emptyList())
+    }
+
+    /** 动图直链是否落在微博域名白名单内。 */
+    private fun videoAllowed(url: String): Boolean = try {
+        WeiboApi.weiboUrl(url)
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+
+    private class CrawlContext(val store: TreeStore, val index: CrawlIndex, val treeTag: String)
 
     private suspend fun withCrawlContext(
         ctx: Context,
         treeUriRaw: String,
         log: (String) -> Unit,
-        block: suspend (RunState) -> Unit,
+        block: suspend (CrawlContext) -> Unit,
     ) {
         val treeTag = CrawlIndex.treeTagOf(treeUriRaw)
         val store = TreeStore(ctx.contentResolver, treeUriRaw.toUri())
@@ -368,10 +731,14 @@ object Crawler {
         }
 
         try {
-            block(RunState(store, index, treeTag))
+            block(CrawlContext(store, index, treeTag))
         } finally {
             index.maybeCompact()
             index.flush()
+            // 索引写失败此前是完全静默的：用户只会看到「进度回退 / 图片重复下载」
+            index.lastWriteError?.let {
+                log("⚠ 抓取索引写盘失败（$it）：进度可能没保存下来，已下载的文件不受影响")
+            }
             index.close()
         }
     }
@@ -380,7 +747,7 @@ object Crawler {
         ctx: Context,
         cookie: String,
         target: AccountStore.CrawlTarget,
-        state: RunState,
+        state: CrawlContext,
         log: (String) -> Unit,
         retryOnly: Boolean = false,
         onEvent: (CrawlEvent) -> Unit = {},
@@ -542,7 +909,7 @@ object Crawler {
         postId: String,
         uid: String,
         target: AccountStore.CrawlTarget,
-        state: RunState,
+        state: CrawlContext,
         log: (String) -> Unit,
         onlySlots: Set<Int>?,
         onEvent: (CrawlEvent) -> Unit = {},
@@ -564,7 +931,7 @@ object Crawler {
         val authorUid = detail.optJSONObject("user")?.optString("id", "").orEmpty().ifEmpty { uid }
         val label = resolveLabel(state.index, authorUid, target.name.ifEmpty { target.uid })
         val prefix = prefixOf(at, label)
-        val outcome = savePost(ctx, cookie, state, prefix, postId, at, assets, onlySlots, log)
+        val outcome = savePost(ctx, state, prefix, postId, at, assets, onlySlots, log)
         if (outcome.saved > 0) log("  ✓ $prefix…（+${outcome.saved}${if (outcome.failed.isEmpty()) "" else "，缺 ${outcome.failed.size}"}）")
         onEvent(CrawlEvent.Post(saved = outcome.saved, failed = outcome.failed.size))
         return outcome.saved
@@ -605,8 +972,7 @@ object Crawler {
      */
     private suspend fun savePost(
         ctx: Context,
-        cookie: String,
-        state: RunState,
+        state: CrawlContext,
         prefix: String,
         postId: String,
         at: Long,
@@ -713,7 +1079,7 @@ object Crawler {
 
     /** Live 可能存成 gif（默认）或 mov（关闭转换/转换失败），两种都算「已存在」。 */
     private fun existingLiveName(
-        state: RunState,
+        state: CrawlContext,
         prefix: String,
         seq: Int,
         isExtra: Boolean,
@@ -739,7 +1105,7 @@ object Crawler {
     /** 单张静图：L2 → L1 → 下载 → L3。 */
     private suspend fun saveOne(
         ctx: Context,
-        state: RunState,
+        state: CrawlContext,
         postId: String,
         slot: Int,
         kind: CrawlIndex.Kind,
@@ -788,7 +1154,7 @@ object Crawler {
      */
     private suspend fun saveLive(
         ctx: Context,
-        state: RunState,
+        state: CrawlContext,
         postId: String,
         slot: Int,
         picId: String,
@@ -864,10 +1230,16 @@ object Crawler {
             downloadClient.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return null to "HTTP ${resp.code}"
                 val body = resp.body ?: return null to "空响应"
+                // 先看响应声明的长度：旧实现是「先 body.bytes() 全读进内存，再判 64MB」——
+                // 一个异常的超大响应会在上限生效之前就把进程 OOM 掉。
+                val declared = body.contentLength()
+                if (declared > MAX_FILE_BYTES) {
+                    return null to "超过 64MB 上限（声明 ${declared / 1024 / 1024}MB）"
+                }
                 val bytes = body.bytes()
                 when {
                     bytes.isEmpty() -> null to "空文件"
-                    bytes.size > 64 * 1024 * 1024 -> null to "超过 64MB 上限"
+                    bytes.size > MAX_FILE_BYTES -> null to "超过 64MB 上限"
                     else -> bytes to ""
                 }
             }

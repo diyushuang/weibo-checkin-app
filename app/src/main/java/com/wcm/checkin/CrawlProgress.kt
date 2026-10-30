@@ -18,13 +18,18 @@ data class CrawlProgress(
     val targetLabel: String = "",
     val targetIndex: Int = 0,
     val targetTotal: Int = 0,
-    /** 本轮计划处理的帖数（RETRY + A + B 三阶段累加），进度条的分母。 */
+    /**
+     * **当前目标**本轮累计计划处理的帖数（RETRY + A + B 三阶段累加），进度条的分母。
+     *
+     * 换目标（[CrawlEvent.Target]）时归零：进度条回答的是「这个博主还剩多少」，
+     * 而不是把三个博主的工作量加在一起 —— 加起来会让比例在每个新目标处腰斩，
+     * 看起来像进度倒退。`downloaded / skipped / failedSlots` 仍是整轮累计。
+     */
     val discovered: Int = 0,
     val processed: Int = 0,
     val downloaded: Int = 0,
     val skipped: Int = 0,
     val failedSlots: Int = 0,
-    val message: String = "",
 ) {
     val running: Boolean get() = phase != CrawlPhase.IDLE && phase != CrawlPhase.DONE
 }
@@ -37,23 +42,41 @@ sealed interface CrawlEvent {
     data object Finish : CrawlEvent
 }
 
-/** 事件 → 新快照。所有计数只增不减，保证进度条单调。 */
+/**
+ * 事件 → 新快照。
+ *
+ * 三条不变量：
+ * 1. **同一轮内不整体重置**：相册模式回退到时间线时会再发一次 [CrawlEvent.Begin]，
+ *    旧实现直接 `CrawlProgress(...)` 归零，用户看到进度条从 30% 掉回 0；
+ * 2. **换目标时才重置进度**：`discovered / processed` 描述「当前这个博主还剩多少」，
+ *    跨目标累加会让比例在每个新目标处腰斩（详见 [CrawlProgress.discovered]）；
+ * 3. **`processed` 永不超过 `discovered`**：新阶段的分母在已处理数之上累加，
+ *    否则会出现 120% 这种值。
+ */
 fun reduce(prev: CrawlProgress, event: CrawlEvent, now: Long = System.currentTimeMillis()): CrawlProgress =
     when (event) {
-        is CrawlEvent.Begin -> CrawlProgress(
-            phase = CrawlPhase.PREPARE,
-            what = event.what,
-            since = now,
-            targetTotal = event.targets,
-        )
+        is CrawlEvent.Begin -> if (prev.running) {
+            // 同一轮里的第二段（相册 → 时间线回退）：保留计数，只更新当前在跑什么
+            prev.copy(what = event.what, targetTotal = event.targets)
+        } else {
+            CrawlProgress(
+                phase = CrawlPhase.PREPARE,
+                what = event.what,
+                since = now,
+                targetTotal = event.targets,
+            )
+        }
         is CrawlEvent.Target -> prev.copy(
             targetLabel = event.label,
             targetIndex = event.index,
             targetTotal = event.total,
+            // 新目标：进度按「当前目标」重新计（下载/跳过/失败仍是整轮累计）
+            discovered = 0,
+            processed = 0,
         )
         is CrawlEvent.Phase -> prev.copy(
             phase = event.phase,
-            discovered = prev.discovered + event.planned.coerceAtLeast(0),
+            discovered = maxOf(prev.discovered, prev.processed) + event.planned.coerceAtLeast(0),
             skipped = prev.skipped + event.skipped.coerceAtLeast(0),
         )
         is CrawlEvent.Post -> prev.copy(
