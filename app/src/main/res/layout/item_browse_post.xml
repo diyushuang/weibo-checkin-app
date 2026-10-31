@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  浏览列表卡片（v0.9.11）：元信息行 + 正文摘要 + 九宫格缩略图。
+
+  九宫格由 BrowsingActivity 按缩略图数量动态填充 ImageView（3 列，正方形格），
+  这里只放容器；超出 9 张不在此展开（列表数据本来就截断到 9），进选图页看全量。
+
+  多选态：整卡左侧品牌竖条 + 半透明遮罩由代码在 card 上叠 scrim 实现 ——
+  勾选语义是「整帖全抓」，视觉上用遮罩 + 计数即可，不再逐格打勾。
+-->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/browseCard"
+    style="@style/Widget.Wcm.Card.Clickable"
+    app:cardCornerRadius="@dimen/card_radius">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <LinearLayout
+            style="@style/Widget.Wcm.CardContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <!-- 元信息：时间 · 置顶/转发/图数 -->
+            <TextView
+                android:id="@+id/tvBrowseMeta"
+                style="@style/Widget.Wcm.Text.Hint.SingleLine" />
+
+            <TextView
+                android:id="@+id/tvBrowseText"
+                style="@style/Widget.Wcm.Text.Body"
+                android:layout_marginTop="@dimen/sp_1"
+                android:maxLines="4"
+                android:ellipsize="end" />
+
+            <!-- 九宫格容器：3 列，代码填充 -->
+            <GridLayout
+                android:id="@+id/browsePics"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/sp_2"
+                android:columnCount="3" />
+        </LinearLayout>
+
+        <!-- 选中遮罩：多选模式下盖整卡（必须在外层 FrameLayout，
+             放进纵向 LinearLayout 里只会是 1dp 线，盖不住内容） -->
+        <View
+            android:id="@+id/browseScrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_selected_scrim"
+            android:importantForAccessibility="no"
+            android:visibility="gone" />
+
+        <!-- 选中标记：右上角圆点对勾（多选模式） -->
+        <ImageView
+            android:id="@+id/browseCheck"
+            android:layout_width="@dimen/gallery_check_size"
+            android:layout_height="@dimen/gallery_check_size"
+            android:layout_gravity="top|end"
+            android:layout_margin="@dimen/sp_2"
+            android:background="@drawable/bg_cell_check"
+            android:contentDescription="@string/gallery_cd_check"
+            android:padding="3dp"
+            android:src="@drawable/ic_check"
+            android:visibility="gone"
+            app:tint="@color/brand_on" />
+    </FrameLayout>
+</com.google.android.material.card.MaterialCardView>

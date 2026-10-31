@@ -99,6 +99,60 @@
     <string name="single_input_hint">微博链接 / bid，或博主 UID</string>
     <string name="single_input_note">粘贴微博链接直接抓取；填博主 UID 会列出其最近微博供选择。</string>
     <string name="single_pick_title">选择要抓取的微博（最近 %1$d 条）</string>
+
+    <!-- 浏览博主抓图入口（v0.9.11） -->
+    <string name="browse_entry">浏览博主抓图（预览 · 选图 · 批量）</string>
+
+    <!-- 浏览博主抓图（v0.9.11） -->
+    <string name="browse_title">浏览博主</string>
+    <string name="browse_input_hint">博主 UID / 主页链接 / 个性域名</string>
+    <string name="browse_load">载入</string>
+    <string name="browse_filter_original">只看原创</string>
+    <string name="browse_filter_pic">只看有图</string>
+    <string name="browse_load_more">加载更多…</string>
+    <string name="browse_empty">输入博主并载入，浏览微博后勾选图片抓取</string>
+    <string name="browse_no_posts">没有拉到微博（UID 是否正确？）</string>
+    <string name="browse_no_more">到底了</string>
+    <string name="browse_fetch_fail">列表请求失败：%1$s</string>
+    <string name="browse_need_uid">请先输入博主 UID 或主页链接</string>
+    <string name="browse_resolve_fail">无法识别博主：%1$s</string>
+    <string name="browse_need_cookie">没有可用的登录账号，先在首页登录任一账号</string>
+    <string name="browse_meta_pinned">置顶</string>
+    <string name="browse_meta_retweet">转发</string>
+    <string name="browse_meta_pics_fmt">%1$d 图</string>
+    <string name="browse_meta_no_pic">无图</string>
+    <string name="browse_more_pics_fmt">+%1$d</string>
+    <string name="browse_pic_desc_fmt">第 %1$d 张缩略图</string>
+    <string name="browse_select_hint">点卡片选图抓取 · 长按勾选整帖</string>
+    <string name="browse_select_mode_hint">多选：点按勾选整帖，取消请再点一次</string>
+    <string name="browse_selected_fmt">已选 %1$d 帖</string>
+    <string name="browse_download_selected">下载选中</string>
+    <string name="browse_download_fmt">下载选中 %1$d 帖</string>
+    <string name="browse_exit_select">退出多选</string>
+    <string name="browse_done_fmt">抓取完成：新增 %1$d 个文件%2$s</string>
+    <string name="browse_fail_suffix_fmt">，%1$d 张失败（待重试）</string>
+    <string name="browse_stopped">，任务被停止</string>
+    <string name="browse_none_selected">先勾选至少一张图或一帖</string>
+
+    <!-- 选图页（v0.9.11） -->
+    <string name="pick_title">选图抓取</string>
+    <string name="pick_hint">点按勾选 · 长按看大图</string>
+    <string name="pick_all">全选</string>
+    <string name="pick_deselect_all">取消全选</string>
+    <string name="pick_download_zero">下载选中 0 张</string>
+    <string name="pick_download_fmt">下载选中 %1$d 张</string>
+    <string name="pick_downloading">正在下载…</string>
+    <string name="pick_pic_desc">微博配图缩略图</string>
+    <string name="pick_pic_desc_fmt">第 %1$d 张，可勾选下载</string>
+    <string name="pick_live_badge">实况</string>
+    <string name="pick_gif_badge">GIF</string>
+    <string name="pick_no_pics">这条微博没有图片（或为视频微博）</string>
+    <string name="pick_load_fail">详情获取失败：%1$s</string>
+    <string name="pick_only_this">只下这张</string>
+    <string name="pick_close">关闭</string>
+    <string name="pick_preview_desc">全屏预览</string>
+    <string name="pick_full_fail">大图加载失败</string>
+
     <!-- 设置页 -->
     <string name="settings_panel_title">面板同步</string>
     <string name="settings_panel_url_hint">面板地址（公网必须 https://）</string>

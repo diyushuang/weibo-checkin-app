@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  浏览博主页（v0.9.11）：博主微博预览 + 勾选抓取。
+
+  结构：工具栏 → 输入行 → 已有目标 chips（横向，点按直接载入）→
+        筛选 chips（只看原创 / 只看有图）→ 微博列表（weight=1）→ 多选操作条。
+
+  列表卡片的九宫格在 item_browse_post 里；多选操作条平时隐藏，
+  长按任意卡片进入多选后才出现（对齐图库页的 SelectBar 模式）。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/browseRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/browseToolbar"
+        style="@style/Widget.Wcm.Toolbar"
+        app:navigationIcon="@drawable/ic_close"
+        app:title="@string/browse_title" />
+
+    <!-- 输入行：输入框 + 载入按钮 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/page_padding_horizontal"
+        android:paddingEnd="@dimen/page_padding_horizontal">
+
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Wcm.Field"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/browse_input_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etBrowseInput"
+                style="@style/Widget.Wcm.Field.Edit"
+                android:imeOptions="actionGo"
+                android:inputType="textUri" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBrowseLoad"
+            style="@style/Widget.Wcm.Button.Secondary"
+            android:layout_marginStart="@dimen/sp_2"
+            android:text="@string/browse_load" />
+    </LinearLayout>
+
+    <!-- 已有抓取目标：点按直接载入，省去重复输入 -->
+    <HorizontalScrollView
+        android:id="@+id/browseTargetsScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="@dimen/page_padding_horizontal"
+        android:paddingEnd="@dimen/page_padding_horizontal"
+        android:paddingTop="@dimen/sp_2"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/browseTargetsRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
+    <!-- 筛选 chips：两个独立开关维度 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/page_padding_horizontal"
+        android:paddingTop="@dimen/sp_2"
+        android:paddingEnd="@dimen/page_padding_horizontal">
+
+        <TextView
+            android:id="@+id/chipBrowseOriginal"
+            style="@style/Widget.Wcm.Pill.Filter"
+            android:text="@string/browse_filter_original" />
+
+        <TextView
+            android:id="@+id/chipBrowsePic"
+            style="@style/Widget.Wcm.Pill.Filter"
+            android:layout_marginStart="@dimen/pill_gap"
+            android:text="@string/browse_filter_pic" />
+
+        <TextView
+            android:id="@+id/tvBrowseCount"
+            style="@style/Widget.Wcm.Text.Hint.SingleLine"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/sp_2"
+            android:layout_weight="1"
+            android:gravity="end" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvBrowseHint"
+        style="@style/Widget.Wcm.Text.Hint.SingleLine"
+        android:paddingStart="@dimen/page_padding_horizontal"
+        android:paddingEnd="@dimen/page_padding_horizontal"
+        android:paddingTop="2dp"
+        android:text="@string/browse_select_hint" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/browseList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingStart="@dimen/page_padding_horizontal"
+            android:paddingTop="@dimen/sp_2"
+            android:paddingEnd="@dimen/page_padding_horizontal"
+            android:paddingBottom="@dimen/sp_2" />
+
+        <TextView
+            android:id="@+id/tvBrowseEmpty"
+            style="@style/Widget.Wcm.Text.Empty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:paddingStart="@dimen/page_padding_horizontal"
+            android:paddingEnd="@dimen/page_padding_horizontal"
+            android:text="@string/browse_empty" />
+
+        <ProgressBar
+            android:id="@+id/browseLoading"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:indeterminate="true" />
+    </FrameLayout>
+
+    <!-- 多选操作条：进入多选才出现 -->
+    <LinearLayout
+        android:id="@+id/browseSelectBar"
+        style="@style/Widget.Wcm.SelectBar"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvBrowseSelected"
+            style="@style/Widget.Wcm.Text.RowTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBrowseExitSelect"
+            style="@style/Widget.Wcm.Button.Secondary.Small"
+            android:text="@string/browse_exit_select" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBrowseDownload"
+            style="@style/Widget.Wcm.Button"
+            android:layout_marginStart="@dimen/sp_2"
+            android:text="@string/browse_download_selected" />
+    </LinearLayout>
+</LinearLayout>

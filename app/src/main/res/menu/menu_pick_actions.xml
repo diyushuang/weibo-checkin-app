@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 选图页工具栏菜单（v0.9.11）：全选 / 取消全选由代码切换标题 -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_pick_toggle_all"
+        android:title="@string/pick_all"
+        app:showAsAction="ifRoom" />
+</menu>

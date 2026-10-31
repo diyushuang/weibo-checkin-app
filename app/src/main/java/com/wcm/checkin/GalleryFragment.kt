@@ -107,6 +107,7 @@ class GalleryFragment : Fragment() {
         view.findViewById<View>(R.id.btnPickDir).setOnClickListener { pickDir.launch(null) }
         view.findViewById<View>(R.id.btnAddTarget).setOnClickListener { addTarget() }
         view.findViewById<View>(R.id.btnSinglePost).setOnClickListener { pickSinglePost() }
+        view.findViewById<View>(R.id.btnBrowseAuthor).setOnClickListener { openBrowsing() }
         view.findViewById<View>(R.id.btnCrawlStart).setOnClickListener { start() }
         view.findViewById<View>(R.id.btnCrawlStop).setOnClickListener {
             // 先置停止标志（首页自动触发的抓取没有本页协程可取消），再取消本页任务
@@ -673,6 +674,13 @@ class GalleryFragment : Fragment() {
     }
 
     // ---------- 单条抓取（v0.3.1） ----------
+
+    /** 浏览博主抓图（v0.9.11）：带第一个抓取目标跳转，无目标时留空输入框。 */
+    private fun openBrowsing() {
+        val ctx = requireContext()
+        val first = AccountStore.crawlTargets(ctx).firstOrNull()?.uid ?: ""
+        BrowsingActivity.start(ctx, first)
+    }
 
     private fun pickSinglePost() {
         if (busy) {

@@ -110,6 +110,39 @@ object CrawlRunner {
         Crawler.crawlSinglePost(ctx, bid, log)
     }
 
+    /**
+     * 勾选抓取（浏览页 / 选图页提交，v0.9.11）。
+     *
+     * 与单条抓取同一个闸门、同一份索引、同一个停止信号 —— 浏览页只读接口
+     * （列表 / 缩略图）不占闸门，但只要开始下载就按同一规则串行。
+     *
+     * 返回 null 表示闸门被占用（增量任务在跑）；否则返回落盘汇总。
+     * 与 [guarded] 同构而不复用它：guarded 只回 Done/Busy，而勾选抓取的
+     * 调用方（无日志面板的页面）需要拿 saved/failed 计数做结果 toast。
+     */
+    suspend fun runPicked(
+        ctx: Context,
+        tasks: List<Crawler.PickTask>,
+        log: (String) -> Unit,
+    ): Crawler.PickedSummary? {
+        if (!gate.tryLock()) return null
+        stopFlag.set(false)
+        _state.value = RunState.Running(
+            CrawlProgress(
+                phase = CrawlPhase.PREPARE,
+                what = "勾选抓取",
+                since = System.currentTimeMillis(),
+            )
+        )
+        try {
+            return Crawler.crawlPicked(ctx, tasks, log, isStopped = { stopFlag.get() })
+        } finally {
+            _state.value = RunState.Idle
+            stopFlag.set(false)
+            gate.unlock()
+        }
+    }
+
     /** 请求停止当前任务：Crawler 在每帖 / 每阶段之间检查这个标志。 */
     fun requestStop() {
         stopFlag.set(true)

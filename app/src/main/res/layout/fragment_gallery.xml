@@ -299,6 +299,13 @@
                     app:icon="@drawable/ic_stop" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnBrowseAuthor"
+                    style="@style/Widget.Wcm.Button.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/sp_3"
+                    android:text="@string/browse_entry" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSinglePost"
                     style="@style/Widget.Wcm.Button.Text"
                     android:layout_width="match_parent"

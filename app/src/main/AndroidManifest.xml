@@ -51,5 +51,15 @@
             android:name=".ImagePreviewActivity"
             android:exported="false"
             android:theme="@style/Theme.Wcm.Preview" />
+
+        <!-- 浏览博主抓图（v0.9.11）：博主微博预览 + 选图/勾选抓取，均为内部页面 -->
+        <activity
+            android:name=".BrowsingActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".PostPickActivity"
+            android:exported="false" />
     </application>
 </manifest>

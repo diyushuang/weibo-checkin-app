@@ -39,6 +39,12 @@
   五种排序，可按日期或博主分组（跨行分组头显示每组的张数）；
   长按进入多选，批量分享与批量删除（删除同步回退抓取索引，下一轮可重新抓回）
 - **单条抓取**：粘贴微博链接直接抓该条，或输入 UID 列出最近微博点选抓取
+- **浏览博主抓图（v0.9.11）**：像刷微博一样预览指定博主的内容（正文摘要 + 九宫格
+  orj360 缩略图，「只看原创 / 只看有图」筛选，触底翻页），然后按需抓取 ——
+  点卡片进**选图页**（详情 `pic_ids` 权威清单，勾选任意几张、全选、长按全屏大图，
+  大图页「只下这张」即单图抓取；LIVE/GIF 徽标明示类型），或长按卡片**跨帖批量
+  勾选整帖**一键下载；勾选抓取与增量抓取共用同一闸门、索引与命名，先抓单张
+  再增量补全不会产生重复文件
 - **相册抓图模式（v0.9.8）**：图片页可切换「相册模式 / 时间线模式」。
   相册模式走 Web 端相册墙，**默认用游客身份**（不需要登录账号、不占账号频次），
   只枚举有图微博；逐帖取详情时优先游客、失败或有缺图再回落账号。
@@ -161,6 +167,8 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
         │   │   ├── HomeFragment.kt / SettingsFragment.kt  # 首页签到 / 设置
         │   │   ├── TopicFragment.kt / TopicStore.kt       # 超话面板 / 超话快照缓存
         │   │   ├── GalleryFragment.kt / GalleryBrowseActivity.kt
+        │   │   ├── BrowsingActivity.kt / PostPickActivity.kt  # 浏览博主 / 选图勾选抓取（v0.9.11）
+        │   │   ├── RemoteThumb.kt                             # 远程缩略图（LruCache + 并发闸）
         │   │   ├── ImagePreviewActivity.kt / ZoomableImageView.kt
         │   │   ├── LoginWebViewActivity.kt                # 微博官方页登录取 Cookie
         │   │   ├── CheckInWorker.kt                       # WorkManager 定时保活/同步

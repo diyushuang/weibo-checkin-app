@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  选图网格单元（v0.9.11）。结构与 item_gallery_grid 同源：
+  MaterialCardView 只负责裁圆角，边长由 PostPickActivity 按列宽覆写成正方形。
+
+  与图库网格的两处差别：
+  - 勾选角标在**右上**（图库是左上），给左下角的 LIVE/GIF 徽标让位 ——
+    选图页要靠徽标分辨「勾的到底是静图还是实况」；
+  - 徽标常驻（有图必标），不靠 visibility 切换。
+-->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/Widget.Wcm.Card.Thumb">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <ImageView
+            android:id="@+id/pickImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@string/pick_pic_desc"
+            android:scaleType="centerCrop" />
+
+        <!-- LIVE / GIF 徽标：左下角，深色半透明底压任何图片都可读 -->
+        <TextView
+            android:id="@+id/pickBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="@dimen/sp_1"
+            android:background="@drawable/bg_gif_badge"
+            android:paddingStart="@dimen/gallery_gif_badge_padding_horizontal"
+            android:paddingTop="@dimen/gallery_gif_badge_padding_vertical"
+            android:paddingEnd="@dimen/gallery_gif_badge_padding_horizontal"
+            android:paddingBottom="@dimen/gallery_gif_badge_padding_vertical"
+            android:textAppearance="@style/TextAppearance.Wcm.Cap"
+            android:textColor="@color/on_preview_surface"
+            android:visibility="gone" />
+
+        <!-- 选中遮罩 -->
+        <View
+            android:id="@+id/pickScrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_selected_scrim"
+            android:importantForAccessibility="no"
+            android:visibility="gone" />
+
+        <!-- 勾选角标：右上 -->
+        <ImageView
+            android:id="@+id/pickCheck"
+            android:layout_width="@dimen/gallery_check_size"
+            android:layout_height="@dimen/gallery_check_size"
+            android:layout_gravity="top|end"
+            android:layout_margin="@dimen/sp_1"
+            android:background="@drawable/bg_cell_check"
+            android:contentDescription="@string/gallery_cd_check"
+            android:padding="3dp"
+            android:src="@drawable/ic_check"
+            android:visibility="gone"
+            app:tint="@color/brand_on" />
+    </FrameLayout>
+</com.google.android.material.card.MaterialCardView>

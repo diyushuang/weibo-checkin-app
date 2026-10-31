@@ -750,6 +750,12 @@ object WeiboApi {
         val isRetweet: Boolean,
         val picNum: Int,            // 不可信：Live 会重复计数，仅当粗筛用
         val text: String = "",      // 去 HTML 的正文摘要（列表选择器展示用）
+        /**
+         * 列表卡片自带的缩略图 URL（orj360 尺寸，已 https 化并过白名单）。
+         * 超 9 图帖列表会截断到 9 张，这里的清单只做**预览**；真正的张数与
+         * 图身份以详情里的 pic_ids 为准（选图页进入后再拉）。
+         */
+        val thumbs: List<String> = emptyList(),
     )
 
     private val MONTHS = mapOf(
@@ -817,10 +823,51 @@ object WeiboApi {
                         isRetweet = mb.optJSONObject("retweeted_status") != null,
                         picNum = cardPicNum(mb),
                         text = summarize(mb.optString("text", "")),
+                        thumbs = parseThumbUrls(mb),
                     )
                 )
             }
             return total to posts
+        }
+    }
+
+    /**
+     * 列表卡片 `mblog.pics[]` → 缩略图 URL 清单（浏览页九宫格用）。
+     *
+     * - url 通常是 `https://wx{n}.sinaimg.cn/orj360/<pid>.jpg`（GIF 帖保留 `.gif` 后缀）；
+     * - 个别卡片只有 pid 没有 url，按 pid 拼一份兜底；
+     * - http 的强制升级 https，域名不在白名单的整张丢弃 —— 宁可少显示一张，
+     *   不让一张图把「明文流量」或「任意域」的口子撕开。
+     */
+    internal fun parseThumbUrls(mblog: JSONObject): List<String> {
+        val out = ArrayList<String>()
+        val arr = mblog.optJSONArray("pics") ?: return out
+        for (i in 0 until arr.length()) {
+            val p = arr.optJSONObject(i) ?: continue
+            val raw = p.optString("url", "").trim()
+                .ifEmpty { thumbnailUrl(p.optString("pid", "")) }
+            sanitizeThumbUrl(raw)?.let { out.add(it) }
+        }
+        return out
+    }
+
+    /**
+     * 缩略图 URL 规范化（纯函数，JVM 可测）：
+     * `http://` 升级 `https://`，过微博域名白名单；不合格返回 null（调用方丢弃）。
+     */
+    internal fun sanitizeThumbUrl(raw: String): String? {
+        val t = raw.trim()
+        if (t.isEmpty()) return null
+        val https = if (t.startsWith("http://", ignoreCase = true)) {
+            "https://" + t.substring("http://".length)
+        } else {
+            t
+        }
+        return try {
+            weiboUrl(https)
+            https
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -934,6 +981,18 @@ object WeiboApi {
         val crc = java.util.zip.CRC32().apply { update(pid.toByteArray()) }.value.toInt()
         val host = 1 + (Math.floorMod(crc, 4))
         return "https://wx$host.sinaimg.cn/large/$pid.jpg"
+    }
+
+    /**
+     * 缩略图 URL：与 [originalImageUrl] 同一套 host 轮转，尺寸段可换
+     * （`orj360` 网格预览 / `mw690` 更清晰 / `large` 原图）。仅在列表卡片
+     * 只给 pid 不给 url 时兜底使用 —— 有 url 时永远用接口给的（后缀才对得上 GIF）。
+     */
+    fun thumbnailUrl(pid: String, size: String = "orj360"): String {
+        if (pid.isEmpty()) return ""
+        val crc = java.util.zip.CRC32().apply { update(pid.toByteArray()) }.value.toInt()
+        val host = 1 + (Math.floorMod(crc, 4))
+        return "https://wx$host.sinaimg.cn/$size/$pid.jpg"
     }
 
     /** 从用户输入解析 UID：纯数字 / 含 /u/ 或 profile/ 的链接 / 个性域名（302 跳转）。 */

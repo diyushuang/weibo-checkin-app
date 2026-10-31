@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  选图页（v0.9.11）：一条微博的完整图片清单，点按勾选、长按看大图。
+
+  结构：工具栏（含全选菜单）→ 操作提示 → 网格（weight=1 撑满）→ 底部单一主行动。
+  底部按钮是本页唯一的高强调按钮（M3「一页一个主行动」），N=0 时置灰。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/pickRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/pickToolbar"
+        style="@style/Widget.Wcm.Toolbar"
+        app:menu="@menu/menu_pick_actions"
+        app:navigationIcon="@drawable/ic_close"
+        app:title="@string/pick_title" />
+
+    <TextView
+        style="@style/Widget.Wcm.Text.Hint.SingleLine"
+        android:paddingStart="@dimen/page_padding_horizontal"
+        android:paddingEnd="@dimen/page_padding_horizontal"
+        android:text="@string/pick_hint" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="@dimen/sp_2"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/pickGrid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingStart="@dimen/page_padding_horizontal"
+            android:paddingEnd="@dimen/page_padding_horizontal"
+            android:paddingBottom="@dimen/sp_2" />
+
+        <TextView
+            android:id="@+id/tvPickEmpty"
+            style="@style/Widget.Wcm.Text.Empty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:paddingStart="@dimen/page_padding_horizontal"
+            android:paddingEnd="@dimen/page_padding_horizontal"
+            android:text="@string/pick_no_pics"
+            android:visibility="gone" />
+
+        <ProgressBar
+            android:id="@+id/pickLoading"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:indeterminate="true" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/bg"
+        android:paddingStart="@dimen/page_padding_horizontal"
+        android:paddingTop="@dimen/sp_2"
+        android:paddingEnd="@dimen/page_padding_horizontal"
+        android:paddingBottom="@dimen/sp_2">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnPickDownload"
+            style="@style/Widget.Wcm.Button.Primary.Large"
+            android:layout_width="match_parent"
+            android:enabled="false"
+            android:text="@string/pick_download_zero" />
+    </FrameLayout>
+</LinearLayout>

@@ -158,8 +158,8 @@ object Crawler {
     }
 
     /** 槽位编码：静图 i*2，配对 Live i*2+1，帖级 Live 1000+n。全局唯一且稳定。 */
-    private fun stillSlot(i: Int) = i * 2
-    private fun pairedLiveSlot(i: Int) = i * 2 + 1
+    internal fun stillSlot(i: Int) = i * 2
+    internal fun pairedLiveSlot(i: Int) = i * 2 + 1
     private fun extraLiveSlot(n: Int) = 1000 + n
 
     /** 详情 → 图清单（pic_ids 完整保序）+ Live 配对（pics 前 9 条内）+ 独立 Live。 */
@@ -271,6 +271,113 @@ object Crawler {
                 else "✓ 完成（文件均已存在，无新增）"
             )
         }
+    }
+
+    // ========================= 勾选抓取（v0.9.11） =========================
+
+    /**
+     * 一条勾选任务。[picIds] 为 null 表示**整帖全抓**（浏览页多选按帖勾选），
+     * 非空时只落集合内的图（选图页逐张勾选）。picId 是图片业务身份，
+     * 与增量抓取 / 单条抓取共用同一份索引与去重。
+     */
+    data class PickTask(val bid: String, val picIds: Set<String>? = null)
+
+    /** 勾选抓取的结果汇总（选图页 / 浏览页的结果 toast 用）。 */
+    data class PickedSummary(
+        val posts: Int = 0,
+        val saved: Int = 0,
+        val failed: Int = 0,
+        val stopped: Boolean = false,
+    )
+
+    /**
+     * 用户勾选的 picId → 落盘槽位（internal 供 JVM 单测钉住口径）。
+     *
+     * - 未选中的图不产生槽位；
+     * - 选中的图若是配对 Live（`liveByIndex` 有值），槽位是 `pairedLiveSlot(i)`：
+     *   落动图不落封面静图，与增量抓取「Live 只存一份」的口径一致；
+     * - picked 为 null（整帖）直接返回 null = `savePost(onlySlots=null)` 全槽位。
+     */
+    internal fun slotsForPics(assets: PostAssets, picked: Set<String>?): Set<Int>? {
+        if (picked == null) return null
+        if (picked.isEmpty()) return emptySet()
+        val slots = LinkedHashSet<Int>()
+        assets.picIds.forEachIndexed { i, pid ->
+            if (pid in picked) {
+                slots.add(if (assets.liveByIndex.containsKey(i)) pairedLiveSlot(i) else stillSlot(i))
+            }
+        }
+        return slots
+    }
+
+    /**
+     * 勾选抓取：浏览页 / 选图页提交的一批任务，逐帖拉详情后按槽位落盘。
+     *
+     * 与 [crawlSinglePost] 的差别只在「哪些槽位要落」：
+     * 命名（`prefixOf` + `AssetName`）、三层去重、索引、目录全部同一套 ——
+     * 用户先勾选抓一张、以后增量抓全量，文件在同一个名字上相遇，L1 直接命中。
+     *
+     * 单帖失败记日志继续下一帖；[isStopped] 由 [CrawlRunner] 的停止信号驱动。
+     */
+    suspend fun crawlPicked(
+        ctx: Context,
+        tasks: List<PickTask>,
+        log: (String) -> Unit,
+        isStopped: () -> Boolean = { false },
+    ): PickedSummary {
+        val cookie = pickCrawlCookie(AccountStore.load(ctx), log) ?: return PickedSummary()
+        val treeUriRaw = AccountStore.crawlTreeUri(ctx)
+        if (treeUriRaw.isEmpty()) {
+            log("✗ 请先选择相册目录")
+            return PickedSummary()
+        }
+        var posts = 0
+        var saved = 0
+        var failed = 0
+        var stopped = false
+        withCrawlContext(ctx, treeUriRaw, log) { state ->
+            for ((taskIdx, task) in tasks.withIndex()) {
+                if (isStopped()) {
+                    log("⏹ 勾选抓取已停止（已处理 $taskIdx/${tasks.size}）")
+                    stopped = true
+                    break
+                }
+                val detail = try {
+                    WeiboApi.fetchPostDetail(cookie, task.bid)
+                } catch (e: Exception) {
+                    log("✗ 帖 ${task.bid} 详情获取失败：${e.message}")
+                    continue
+                }
+                val assets = assetsFromDetail(detail)
+                if (assets.picIds.isEmpty()) {
+                    log("· 帖 ${task.bid} 没有图片（或为视频微博），跳过")
+                    continue
+                }
+                val slots = slotsForPics(assets, task.picIds)
+                if (slots != null && slots.isEmpty()) {
+                    log("· 帖 ${task.bid} 选中的图片不在其中（可能已被删帖），跳过")
+                    continue
+                }
+                val postId = detail.optString("id", "").ifEmpty { task.bid }
+                val at = epochOf(detail.optString("created_at", ""))
+                val authorUid = detail.optJSONObject("user")?.optString("id", "") ?: ""
+                val authorName = detail.optJSONObject("user")?.optString("screen_name", "") ?: ""
+                val label = resolveLabel(state.index, authorUid, authorName.ifEmpty { "微博" })
+                val prefix = prefixOf(at, label)
+
+                val want = if (slots == null) assets.picIds.size else slots.size
+                log("── 勾选抓取 $prefix（${assets.picIds.size} 图，选 ${want} 张）──")
+                val outcome = savePost(ctx, state, prefix, postId, at, assets, slots, log)
+                posts++
+                saved += outcome.saved
+                failed += outcome.failed.size
+                log(
+                    if (outcome.saved > 0) "✓ 完成，新增 ${outcome.saved} 个文件（目录累计 ${state.store.count()}）"
+                    else "✓ 完成（文件均已存在，无新增）"
+                )
+            }
+        }
+        return PickedSummary(posts, saved, failed, stopped)
     }
 
     // ========================= 全量增量抓取 =========================
