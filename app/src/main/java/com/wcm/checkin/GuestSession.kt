@@ -1,6 +1,7 @@
 package com.wcm.checkin
 
 import android.content.Context
+import androidx.core.content.edit
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -38,6 +39,7 @@ import kotlin.random.Random
  *
  * 全程不抛异常：拿不到就返回 null，让调用方回落到账号身份。抓图可用性不允许被它拖垮。
  */
+@Suppress("StaticFieldLeak")   // appCtx 存的是 applicationContext（进程级），见字段处注释
 object GuestSession {
 
     private const val PREFS = "wcm_guest"
@@ -60,6 +62,9 @@ object GuestSession {
     /** 握手用的表单版本号：与 2026-10 实测页面保持一致。 */
     private const val GEN_VISITOR_VER = "20250916"
 
+    // lint: StaticFieldLeak —— 存的是 applicationContext，生命周期与进程一致，
+    // 不存在 Activity/Fragment 泄漏；单例必须持一份 ctx 才能读写 SharedPreferences。
+    @Suppress("StaticFieldLeak")
     @Volatile private var appCtx: Context? = null
     @Volatile private var cached: String? = null
     @Volatile private var cachedAt: Long = 0L
@@ -127,8 +132,10 @@ object GuestSession {
         cachedAt = 0L
         val ctx = appCtx ?: return
         try {
-            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .remove(KEY_COOKIE).remove(KEY_AT).apply()
+            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
+                remove(KEY_COOKIE)
+                remove(KEY_AT)
+            }
         } catch (e: Exception) {
             // 磁盘清不掉不影响正确性：内存已清，下次会重新握手
         }
@@ -149,8 +156,10 @@ object GuestSession {
     private fun saveDisk(cookie: String, at: Long) {
         val ctx = appCtx ?: return
         try {
-            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putString(KEY_COOKIE, cookie).putLong(KEY_AT, at).apply()
+            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
+                putString(KEY_COOKIE, cookie)
+                putLong(KEY_AT, at)
+            }
         } catch (e: Exception) {
             // 落盘失败只是下次启动要重新握手，不影响本次使用
         }
