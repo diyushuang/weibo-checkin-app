@@ -19,3 +19,6 @@ build.log
 
 # 根目录工作截图（docs/images/ 已有入库副本）
 /wcm_*.png
+
+# 本地打包产物（分发用，构建可再生，不入库）
+/dist/
