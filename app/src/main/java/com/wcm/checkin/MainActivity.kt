@@ -132,6 +132,17 @@ class MainActivity : AppCompatActivity() {
         findViewById<BottomNavigationView>(R.id.bottomNav).selectedItemId = R.id.nav_home
     }
 
+    /**
+     * 跳到「设置」Tab（首页 Cookie 卡上的「去设置配置面板」用）。
+     *
+     * 与 [selectTopicTab] 同一套写法：先看底栏当前选中的是不是它，是就直接 show ——
+     * 直接改 `selectedItemId` 时，若已经在设置页则不会触发 listener，页面看起来没反应。
+     */
+    fun selectSettingsTab() {
+        val nav = findViewById<BottomNavigationView>(R.id.bottomNav)
+        if (nav.selectedItemId == R.id.nav_settings) show(settings) else nav.selectedItemId = R.id.nav_settings
+    }
+
     /** 底栏「超话」上的待签角标；[count] 为 null 或 ≤0 时移除。 */
     fun setTopicBadge(count: Int?) {
         val nav = findViewById<BottomNavigationView>(R.id.bottomNav)

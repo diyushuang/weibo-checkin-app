@@ -28,12 +28,21 @@ object PanelApi {
         .followSslRedirects(false)
         .build()
 
-    fun sync(panelUrl: String, token: String, cookie: String, uid: String): SyncResult {
+    fun sync(
+        panelUrl: String,
+        token: String,
+        cookie: String,
+        uid: String,
+        name: String = "",
+    ): SyncResult {
         // 地址策略收口在 PanelUrl：公网必须 https，只有内网才允许 http
         val base = PanelUrl.parse(panelUrl).base
         val body = JSONObject()
             .put("cookie", cookie)
             .put("uid", uid)
+            // 面板只在**新建**账号时才用这个昵称（老账号保留用户在面板上的自定义名），
+            // 但少了它，新账号就只能落到「手机同步账号」这种默认名。
+            .put("name", name)
             .toString()
             .toRequestBody("application/json".toMediaType())
         val request = Request.Builder()

@@ -240,4 +240,77 @@ class WeiboApiPureTest {
         assertTrue(r.ok)
         assertEquals("签到第 12 名 · 经验 +8", r.summary)
     }
+
+    // ---------- 账号资料解析（「（未获取到昵称）」的根因回归） ----------
+
+    /** `/api/config` 实测只回 login/st/loginUrl，**没有 screen_name**，解析必须是空而不是崩。 */
+    @Test
+    fun extractProfile_configWithoutNameYieldsEmpty() {
+        val payload = org.json.JSONObject(
+            """{"ok":1,"data":{"login":true,"st":"5b6cb0","uid":"1904178193",
+               "loginUrl":"https://passport.weibo.com/sso/signin"}}"""
+        )
+        val p = WeiboApi.extractProfile(payload)
+        assertEquals("", p.name)
+    }
+
+    /** Web 端 `ajax/profile/info` 的形状：昵称在 data.user.screen_name。 */
+    @Test
+    fun extractProfile_webProfileShape() {
+        val payload = org.json.JSONObject(
+            """{"ok":1,"data":{"user":{"id":1904178193,"idstr":"1904178193",
+               "screen_name":"微博开放平台",
+               "profile_image_url":"https://tvax3.sinaimg.cn/a.jpg"}}}"""
+        )
+        val p = WeiboApi.extractProfile(payload)
+        assertEquals("微博开放平台", p.name)
+        assertEquals("1904178193", p.uid)
+        assertEquals("https://tvax3.sinaimg.cn/a.jpg", p.avatarUrl)
+    }
+
+    /** m 站容器：键名可能是 userInfo 也可能是 userinfo，两种都要能挖到。 */
+    @Test
+    fun extractProfile_mStationShapeIsCaseTolerant() {
+        val lower = org.json.JSONObject(
+            """{"ok":1,"data":{"userinfo":{"id":42,"screen_name":"小号甲"}}}"""
+        )
+        assertEquals("小号甲", WeiboApi.extractProfile(lower).name)
+
+        val upper = org.json.JSONObject(
+            """{"ok":1,"data":{"userInfo":{"id":43,"screen_name":"小号乙"}}}"""
+        )
+        assertEquals("小号乙", WeiboApi.extractProfile(upper).name)
+    }
+
+    /**
+     * 最危险的误判：超话列表卡片里 `buttons[i].name` 是「签到 / 已签」。
+     * 无差别递归取 name 会把昵称显示成「签到」—— 这张卡片必须一个都不取。
+     */
+    @Test
+    fun extractProfile_ignoresButtonNamesInCards() {
+        val payload = org.json.JSONObject(
+            """{"ok":1,"data":{"cards":[
+                 {"card_type":8,"title_sub":"#某超话#",
+                  "buttons":[{"name":"签到","scheme":"sinaweibo://checkin"}]},
+                 {"card_type":8,"title_sub":"#另一个超话#",
+                  "buttons":[{"name":"已签","scheme":""}]}
+               ]}}"""
+        )
+        val p = WeiboApi.extractProfile(payload)
+        assertEquals("", p.name)
+        assertEquals("", p.uid)
+    }
+
+    /** 泛用 name 只在「像用户对象」时才认（有头像 / 粉丝数 / 认证之一）。 */
+    @Test
+    fun extractProfile_genericNameNeedsUserMarkers() {
+        val userLike = org.json.JSONObject(
+            """{"data":{"user":{"id":7,"name":"阿甲","followers_count":100}}}"""
+        )
+        assertEquals("阿甲", WeiboApi.extractProfile(userLike).name)
+        assertEquals("7", WeiboApi.extractProfile(userLike).uid)
+
+        val notUser = org.json.JSONObject("""{"data":{"name":"签到"}}""")
+        assertEquals("", WeiboApi.extractProfile(notUser).name)
+    }
 }

@@ -8,12 +8,14 @@
     应用栏 48dp   左：问候 + 「日期 · N 个账号」；右：刷新、添加账号（品牌方块）
     Hero 卡       左：88dp 进度环（已签/总数）；右：待签数 + 两个 pill
                   结论先行 —— 3 秒内回答「今天签完没有」
-    主行动        整行品牌实底「立即签到」，是这一屏唯一的强按钮
+    主行动        并列两枚：品牌实底「立即签到」+ 描边「Cookie 同步」
+    Cookie 卡     面板端 cookie 还剩几天 / 何时到期，临期与过期整行标红
     账号卡        行式账号：头像 / 昵称 + 状态 pill / UID / 说明
     日志卡        默认收起，展开是恒深色的终端块
 
-  为什么把「立即签到」放成整行按钮而不是卡片里的次要元素：
-  这一屏的全部价值是「点一下签到」，它必须是页面上对比度最高的东西。
+  为什么「立即签到」仍用品牌实底、同步用描边：签到是每天的动作，同步是每 7 天
+  一次的动作，视觉权重本来就不同；但同步不能藏进次级文字按钮 —— 用户会忘记续期，
+  随后整屏账号一起掉登录。
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -173,20 +175,81 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ==================== 主行动 ==================== -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnCheckin"
-            style="@style/Widget.Wcm.Button.Primary.Large"
+        <!-- ==================== 主行动（两枚并列） ====================
+             等宽并列：签到是每天的动作，Cookie 同步是每 7 天一次的动作，
+             但两者都必须是「一眼能点」的入口 —— 把同步藏进次级文字按钮时，
+             用户会忘记续期，随后整屏账号一起掉登录。 -->
+        <LinearLayout
+            android:id="@+id/actionRow"
             android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/card_gap"
-            android:text="@string/btn_checkin" />
+            android:baselineAligned="false"
+            android:orientation="horizontal">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSync"
-            style="@style/Widget.Wcm.Button.Text"
-            android:layout_width="match_parent"
-            android:layout_marginTop="@dimen/sp_1"
-            android:text="@string/btn_sync" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCheckin"
+                style="@style/Widget.Wcm.Button.Primary.Large"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:text="@string/btn_checkin" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSync"
+                style="@style/Widget.Wcm.Button.Secondary.Large"
+                android:layout_width="0dp"
+                android:layout_marginStart="@dimen/sp_2"
+                android:layout_weight="1"
+                android:text="@string/btn_sync" />
+        </LinearLayout>
+
+        <!-- ==================== Cookie 同步（有效期面板） ====================
+             面板端的登录态约 7 天就会被微博吊销，而 App 只在同步那一瞬间知道
+             「面板现在拿到的 cookie 是什么时候的」。这块卡把那个时间差摊开：
+             每个账号还剩几天、什么时候到期，临期整行标红。 -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/syncCard"
+            style="@style/Widget.Wcm.Card">
+
+            <LinearLayout style="@style/Widget.Wcm.CardContent">
+
+                <LinearLayout style="@style/Widget.Wcm.CardHead">
+
+                    <TextView
+                        android:id="@+id/tvSyncTitle"
+                        style="@style/Widget.Wcm.Text.SectionTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/sync_card_title" />
+
+                    <TextView
+                        android:id="@+id/tvSyncPill"
+                        style="@style/Widget.Wcm.Pill.Neutral"
+                        android:layout_height="@dimen/pill_height_sm"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvSyncHint"
+                    style="@style/Widget.Wcm.Text.Hint"
+                    android:layout_marginTop="@dimen/sp_1"
+                    android:text="@string/sync_card_hint" />
+
+                <LinearLayout
+                    android:id="@+id/cookieList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/sp_2"
+                    android:orientation="vertical" />
+
+                <TextView
+                    android:id="@+id/tvSyncConfig"
+                    style="@style/Widget.Wcm.Text.Link"
+                    android:layout_marginTop="@dimen/sp_2"
+                    android:text="@string/sync_card_config"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- ==================== 账号卡 ==================== -->
         <com.google.android.material.card.MaterialCardView

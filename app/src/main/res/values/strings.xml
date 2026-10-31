@@ -29,7 +29,37 @@
     <string name="home_delete_msg">只删除本机存储的登录态，不影响面板。</string>
     <string name="btn_checkin">立即签到</string>
     <string name="btn_checkin_running">正在签到…</string>
-    <string name="btn_sync">仅同步面板</string>
+    <string name="btn_sync">Cookie 同步</string>
+    <string name="btn_sync_running">正在同步…</string>
+
+    <!-- ===== Cookie 同步面板（v0.9.10） =====
+         面板端的登录态按「同步时刻 + 7 天」估算寿命（与面板 cookie_session_ttl_days
+         默认值一致），剩余 ≤2 天开始标红提醒重新同步。 -->
+    <string name="sync_card_title">Cookie 同步</string>
+    <string name="sync_card_hint">面板端登录态约 7 天被微博吊销，按同步时刻起算；剩余 2 天以内会标红，点上方「Cookie 同步」续期。</string>
+    <string name="sync_card_hint_off">面板未配置，Cookie 只在本机保活。配置面板后可在此查看有效期并一键续期。</string>
+    <string name="sync_card_config">去设置配置面板 ›</string>
+    <string name="sync_pill_off">面板未配置</string>
+    <string name="sync_pill_ok">全部有效</string>
+    <string name="sync_pill_warn_fmt">%1$d 个待续期</string>
+    <string name="sync_pill_expired_fmt">%1$d 个已过期</string>
+    <string name="sync_pill_unknown">未同步</string>
+    <string name="sync_pill_unsynced_fmt">%1$d 个未同步</string>
+    <string name="sync_pill_dead_fmt">%1$d 个已失效</string>
+    <string name="cookie_dead_pill">已失效</string>
+    <string name="cookie_dead_hint">探活判定登录态已失效，请在账号列表删除后重新添加</string>
+    <string name="sync_empty">还没有账号，添加后这里会显示 Cookie 有效期</string>
+    <string name="cookie_left_days_fmt">剩余 %1$d 天</string>
+    <string name="cookie_left_today">不足 1 天</string>
+    <string name="cookie_expired">已过期</string>
+    <string name="cookie_expired_days_fmt">已过期 %1$d 天</string>
+    <string name="cookie_unsynced">未同步</string>
+    <string name="cookie_synced_at_fmt">同步于 %1$s</string>
+    <string name="cookie_issued_at_fmt">登录于 %1$s</string>
+    <string name="cookie_deadline_fmt">%1$s · 预计 %2$s 失效</string>
+    <string name="cookie_renew_hint">请点「Cookie 同步」重新推送，否则面板会掉登录</string>
+    <string name="cookie_unknown_hint">还没有同步记录，点上方「Cookie 同步」开始计时</string>
+    <string name="cookie_unknown_hint_off">面板还没配置，先在下方「去设置配置面板」填好地址与令牌</string>
     <string name="accounts_label">账号</string>
     <string name="log_label">运行日志</string>
     <string name="auto_on_open">打开 App 即自动签到</string>

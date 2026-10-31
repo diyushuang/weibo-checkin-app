@@ -337,31 +337,147 @@ object WeiboApi {
         else -> ""
     }
 
-    /** 取当前账号 uid 与昵称（登录成功后调用）。 */
-    fun fetchProfile(cookie: String): Pair<String, String> {
-        try {
-            client.newCall(request("$BASE/api/config", cookie)).execute().use { resp ->
-                if (!resp.isSuccessful) return "" to ""
-                val data = JSONObject(resp.body?.string() ?: "{}").optJSONObject("data")
-                    ?: return "" to ""
-                val uid = (data.optString("uid", "").ifEmpty { data.optString("user_id", "") }).trim()
-                var name = data.optString("screen_name", "")
-                if (uid.isNotEmpty() && name.isEmpty()) {
-                    client.newCall(
-                        request("$BASE/api/container/getIndex?type=uid&value=$uid", cookie)
-                    ).execute().use { r2 ->
-                        if (r2.isSuccessful) {
-                            val p = JSONObject(r2.body?.string() ?: "{}")
-                                .optJSONObject("data")?.optJSONObject("userinfo") ?: return "" to uid
-                            name = p.optString("screen_name", "")
+    /** 账号资料：昵称 / UID / 头像（任一字段都可能为空，调用方按需兜底）。 */
+    data class Profile(val name: String = "", val uid: String = "", val avatarUrl: String = "")
+
+    /** 昵称所在的键。微博各端两种写法都出现过，统一大小写口径后逐个试。 */
+    private val NAME_KEYS = listOf("screen_name", "screenName", "nickname")
+
+    /** 泛用键：只允许从「看起来像用户」的对象里取，否则会把卡片的 `name:"签到"` 当昵称。 */
+    private val GENERIC_NAME_KEYS = listOf("name")
+
+    /** 判断一个 dict 像不像「用户对象」：要有 id 类字段，且带一处用户专有字段。 */
+    private val USER_ID_KEYS = listOf("idstr", "id", "uid", "user_id")
+    private val USER_MARK_KEYS = listOf(
+        "profile_image_url", "avatar_hd", "avatar_large", "avatar_url",
+        "followers_count", "followers_count_str", "verified", "description",
+    )
+
+    /**
+     * 从任意微博响应里挖出昵称 / UID / 头像（对齐面板 `_extract_weibo_profile`）。
+     *
+     * 为什么不能直接读某个固定字段：昵称散落在 `data.screen_name`（旧版 m 站）、
+     * `data.userInfo.screen_name`（m 站容器，键名大小写随版本变）、
+     * `data.user.screen_name`（Web 端 `ajax/profile/info`）三处，写死任一个都会在
+     * 另两个端点上拿到空串 —— App 的「（未获取到昵称）」就是这么来的。
+     *
+     * 但**不能无脑递归取第一个 name**：超话卡片里 `buttons[i].name` 就是「签到 / 已签」，
+     * 无差别取 `name` 会把昵称显示成「签到」。所以只认两类对象：
+     * 1. 带 `screen_name` / `screenName` / `nickname` 的对象（键名本身就是用户专有）；
+     * 2. 带 id 类字段**且**带头像/粉丝数/认证等用户标记的对象，才允许取泛用的 `name`。
+     */
+    fun extractProfile(payload: JSONObject): Profile {
+        var name = ""
+        var uid = ""
+        var avatar = ""
+
+        fun harvest(any: Any?) {
+            when (any) {
+                is JSONObject -> {
+                    val keys = any.keys().asSequence().toSet()
+                    val userLike = USER_MARK_KEYS.any { it in keys }
+                    if (name.isEmpty()) {
+                        val strict = NAME_KEYS.firstNotNullOfOrNull { k ->
+                            any.optString(k, "").trim().ifEmpty { null }
                         }
+                        val loose = if (userLike) {
+                            GENERIC_NAME_KEYS.firstNotNullOfOrNull { k ->
+                                any.optString(k, "").trim().ifEmpty { null }
+                            }
+                        } else {
+                            null
+                        }
+                        name = strict ?: loose ?: ""
+                    }
+                    if (uid.isEmpty() && (userLike || NAME_KEYS.any { it in keys })) {
+                        uid = USER_ID_KEYS.firstNotNullOfOrNull { k ->
+                            any.opt(k)?.toString()?.trim()?.ifEmpty { null }
+                        } ?: ""
+                    }
+                    if (avatar.isEmpty()) {
+                        avatar = listOf("avatar_hd", "avatar_large", "profile_image_url", "avatar_url")
+                            .firstNotNullOfOrNull { k ->
+                                any.optString(k, "").trim()
+                                    .takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                            } ?: ""
+                    }
+                    any.keys().forEach { k -> harvest(any.opt(k)) }
+                }
+
+                is org.json.JSONArray -> for (i in 0 until any.length()) harvest(any.opt(i))
+            }
+        }
+        harvest(payload)
+        return Profile(name = name, uid = uid, avatarUrl = avatar)
+    }
+
+    /**
+     * 取当前账号 uid 与昵称（登录成功后、昵称补拉时调用）。
+     *
+     * 三条链路依次尝试，与面板 `_fetch_weibo_profile` 同口径但顺序按「实测可用性」重排：
+     * 1. **Web 端 `ajax/profile/info`** —— 实测游客 cookie 就能返回
+     *    `data.user.screen_name`（`m.weibo.cn/api/config` 根本不带昵称字段，
+     *    见 2026-10 实测：data 里只有 login/st/loginUrl）；
+     * 2. m 站 `getIndex?type=uid` —— 键名大小写随版本变，用 [extractProfile] 容错解析；
+     * 3. 都失败就返回空昵称，交给调用方用占位名，不阻断登录。
+     *
+     * [knownUid]：登录/探活已经拿到的 uid（/api/config 的 `data.uid`）。传进来可以省掉
+     * 一次配置请求，也能在配置接口没回 uid 时仍然完成昵称补拉。
+     */
+    fun fetchProfile(cookie: String, knownUid: String = ""): Pair<String, String> {
+        var uid = knownUid.trim()
+        var name = ""
+
+        // 1) 配置接口：主要为了 uid（以及拿不到 knownUid 时的兜底）
+        if (uid.isEmpty()) {
+            try {
+                client.newCall(request("$BASE/api/config", cookie)).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val payload = JSONObject(resp.body?.string() ?: "{}")
+                        val data = payload.optJSONObject("data") ?: JSONObject()
+                        uid = (data.optString("uid", "").ifEmpty { data.optString("user_id", "") }).trim()
+                        val parsed = extractProfile(payload)
+                        if (uid.isEmpty()) uid = parsed.uid
+                        name = parsed.name
                     }
                 }
-                return name.trim() to uid
+            } catch (e: Exception) {
+                // 网络/风控：继续走下面两条链路，昵称拿不到不该让登录流程失败
             }
-        } catch (e: Exception) {
-            return "" to ""
         }
+        if (name.isNotEmpty()) return name to uid
+        if (uid.isEmpty()) return "" to ""
+
+        // 2) Web 端用户资料：游客身份可用，是当前唯一稳定的昵称来源
+        webProfileName(cookie, uid)?.let { return it to uid }
+        // 3) m 站用户主页兜底（风控严格，常为空体；能拿到就用）
+        mStationName(cookie, uid)?.let { return it to uid }
+        return "" to uid
+    }
+
+    /** Web 端 `ajax/profile/info`：先账号身份，再游客身份。拿不到返回 null。 */
+    private fun webProfileName(identity: String, uid: String): String? {
+        if (identity.isNotEmpty()) {
+            webUserName(identity, uid)?.let { return it }
+        }
+        // 账号 cookie 的域是 `.weibo.cn`，Web 端不一定认；游客 cookie 实测可用。
+        GuestSession.cookie()?.let { guest ->
+            webUserName(guest, uid)?.let { return it }
+        }
+        return null
+    }
+
+    /** m 站用户主页：`getIndex?type=uid`，昵称键名不固定，交给 [extractProfile] 容错。 */
+    private fun mStationName(cookie: String, uid: String): String? = try {
+        val url = "$BASE/api/container/getIndex?type=uid&value=$uid"
+        client.newCall(request(url, cookie)).execute().use { resp ->
+            if (!resp.isSuccessful) return null
+            val body = resp.body?.string().orEmpty()
+            if (body.isBlank()) return null
+            extractProfile(JSONObject(body)).name.ifEmpty { null }
+        }
+    } catch (e: Exception) {
+        null
     }
 
     // ---------- 超话字段解析（纯函数，不触网，随 CI 做 JVM 单测） ----------
@@ -783,22 +899,14 @@ object WeiboApi {
      * 失败一律返回空串：调用方只用来做展示兜底，不该因为它中断抓取。
      */
     fun fetchUserName(cookie: String?, uid: String): String {
+        // 顺序与 fetchProfile 一致：Web 端（游客即可）稳定，m 站只作兜底
+        val acc = cookie?.trim().orEmpty()
+        if (acc.isNotEmpty()) webUserName(acc, uid)?.let { return it }
         GuestSession.cookie()?.let { guest ->
             webUserName(guest, uid)?.let { return it }
         }
-        val acc = cookie?.trim().orEmpty()
         if (acc.isEmpty()) return ""
-        return try {
-            val url = "$BASE/api/container/getIndex?type=uid&value=$uid"
-            client.newCall(request(url, acc)).execute().use { resp ->
-                if (!resp.isSuccessful) return ""
-                parseJson(resp.body?.string() ?: "{}", "用户信息")
-                    .optJSONObject("data")?.optJSONObject("userinfo")
-                    ?.optString("screen_name", "") ?: ""
-            }
-        } catch (e: Exception) {
-            ""
-        }
+        return mStationName(acc, uid) ?: ""
     }
 
     /** Web 端用户信息（游客可用）。返回 null 表示「这条路拿不到」，交给调用方回落。 */
@@ -814,8 +922,8 @@ object WeiboApi {
             if (!resp.isSuccessful) return null
             val payload = parseJson(resp.body?.string() ?: "{}", "用户信息")
             if (payload.optInt("ok", 0) != 1) return null
-            payload.optJSONObject("data")?.optJSONObject("user")
-                ?.optString("screen_name", "")?.trim()?.ifEmpty { null }
+            // 正常是 data.user.screen_name；个别版本会包成 data.userInfo，交给容错解析
+            extractProfile(payload).name.ifEmpty { null }
         }
     } catch (e: Exception) {
         null

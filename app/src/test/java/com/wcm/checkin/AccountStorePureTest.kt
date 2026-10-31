@@ -103,4 +103,74 @@ class AccountStorePureTest {
 
         assertEquals("SUB=keep", merged[0].cookie)
     }
+
+    // ---------- cookie 时间锚点（CookieLife 的输入，落盘不能丢） ----------
+
+    @Test
+    fun serialize_deserialize_keepsCookieAnchors() {
+        val acc = AccountStore.Account(
+            uid = "1001",
+            name = "小号",
+            cookie = "SUB=a",
+            cookieIssuedAt = 1000L,
+            cookieRotatedAt = 2000L,
+            cookieSeenAt = 3000L,
+            cookieSyncedAt = 4000L,
+        )
+        val parsed = AccountStore.deserializeAccounts(AccountStore.serializeAccounts(listOf(acc)))
+        assertEquals(1000L, parsed[0].cookieIssuedAt)
+        assertEquals(2000L, parsed[0].cookieRotatedAt)
+        assertEquals(3000L, parsed[0].cookieSeenAt)
+        assertEquals(4000L, parsed[0].cookieSyncedAt)
+    }
+
+    @Test
+    fun deserialize_legacyJsonWithoutAnchors_isZero() {
+        // 0 = 没有锚点（旧版本账号），界面显示「未同步」而不是瞎猜一个到期时间
+        val parsed = AccountStore.deserializeAccounts(
+            """[{"uid":"1001","name":"老账号","cookie":"SUB=a","lastResult":""}]"""
+        )
+        assertEquals(0L, parsed[0].cookieIssuedAt)
+        assertEquals(0L, parsed[0].cookieRotatedAt)
+        assertEquals(0L, parsed[0].cookieSeenAt)
+        assertEquals(0L, parsed[0].cookieSyncedAt)
+    }
+
+    @Test
+    fun mergeAccounts_takesLatestAnchors() {
+        val current = listOf(
+            acc("1001").copy(cookieSeenAt = 500L, cookieSyncedAt = 900L)
+        )
+        val snapshot = listOf(
+            acc("1001").copy(cookieSeenAt = 700L, cookieSyncedAt = 100L)
+        )
+
+        val merged = AccountStore.mergeAccounts(current, snapshot)
+
+        // 取更大值：后台保活推进的「最近有效」不能被前台旧快照退回去
+        assertEquals(700L, merged[0].cookieSeenAt)
+        assertEquals(900L, merged[0].cookieSyncedAt)
+    }
+
+    @Test
+    fun mergeAccounts_fillsPlaceholderNameFromSnapshot() {
+        // 当前是占位名、快照已补到真实昵称 → 采用快照（后台保活补拉的昵称要能落地）
+        val current = listOf(acc("1001", name = AccountStore.placeholderName("1001")))
+        val snapshot = listOf(acc("1001", name = "真实昵称", cookie = "SUB=new"))
+
+        val merged = AccountStore.mergeAccounts(current, snapshot)
+
+        assertEquals("真实昵称", merged[0].name)
+    }
+
+    @Test
+    fun cookieDead_persistsAndIsNotTakenFromSnapshot() {
+        val dead = acc("1001").copy(cookieDead = true)
+        val parsed = AccountStore.deserializeAccounts(AccountStore.serializeAccounts(listOf(dead)))
+        assertTrue(parsed[0].cookieDead)
+
+        // 快照里的「活着」不能把库里刚记下的失效抹掉（快照是任务开始前的状态）
+        val merged = AccountStore.mergeAccounts(listOf(dead), listOf(acc("1001")))
+        assertEquals(true, merged[0].cookieDead)
+    }
 }

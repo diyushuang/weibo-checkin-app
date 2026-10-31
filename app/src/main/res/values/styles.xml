@@ -291,6 +291,14 @@
         <item name="rippleColor">#0F000000</item>
     </style>
 
+    <!-- 描边 + 大号：与「立即签到」并排时高度对齐。
+         并列的两个按钮必须等高，否则一眼就是「主次没对齐」的草稿感。 -->
+    <style name="Widget.Wcm.Button.Secondary.Large" parent="Widget.Wcm.Button.Secondary">
+        <item name="android:layout_height">@dimen/touch_min</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+        <item name="android:textAppearance">@style/TextAppearance.Wcm.Button.Large</item>
+    </style>
+
 
     <!-- 描边 + 小号（行内「选择 / 重置」这类） -->
     <style name="Widget.Wcm.Button.Secondary.Small" parent="Widget.Wcm.Button.Secondary">
@@ -412,6 +420,10 @@
         <item name="android:paddingEnd">@dimen/sp_2</item>
         <item name="android:textSize">11sp</item>
     </style>
+
+    <!-- 危险 pill 没有做成 style：cookie 行要在「绿 / 琥珀 / 红 / 中性」之间动态切换，
+         样式只能静态绑定一种，配色统一由 HomeFragment 里的 PillStyle 负责
+         （底衬 drawable 仍是 bg_pill_danger）。 -->
 
     <!-- ==================== 7. 日志折叠区 + 控制台 ==================== -->
 

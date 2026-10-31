@@ -80,7 +80,7 @@ GET <buttons[0].scheme>[&st=<data.st>]
 | `data.login` | 是否已登录 | 探活 |
 | `data.st` | 签到签名 | 拼到签到 URL 上 |
 | `data.uid` / `data.user_id` | 账号 UID | 账号主键 |
-| `data.screen_name` | 昵称 | 账号显示名（缺失时用 `getIndex?type=uid&value=<uid>` 的 `userinfo.screen_name` 兜底补拉） |
+| `data.screen_name` | 昵称 | **v0.9.10 实测：/api/config 通常不回这个字段**（data 只有 login/st/uid/loginUrl）。昵称改走 `weibo.com/ajax/profile/info?uid=`（游客 cookie 即可，`data.user.screen_name`），m 站 `getIndex?type=uid` 的 `userInfo`/`userinfo`（键名随版本变，递归解析）只作兜底 |
 | `Set-Cookie` 响应头 | 换发的新 `SUB` 等 | 合并回本地账号（登录态轮换） |
 
 ## 五、本地缓存（`SharedPreferences: wcm_topics`）

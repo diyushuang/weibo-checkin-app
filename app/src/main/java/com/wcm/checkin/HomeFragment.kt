@@ -40,6 +40,13 @@ import kotlin.random.Random
  * - 账号卡标题行只留「账号 (N) + 添加」，删除收进行尾溢出菜单；
  * - 账号行的超话状态改用「已签 / 待签」两个状态 chip；
  * - 日志卡默认收起（标题 + 最近一行摘要），运行任务开始时自动展开。
+ *
+ * v0.9.10：
+ * - 「仅同步面板」升级为与「立即签到」**等宽并列**的「Cookie 同步」按钮 ——
+ *   同步是每 7 天必须做一次的动作，藏在文字按钮里会被忘掉；
+ * - 新增「Cookie 同步」卡：逐账号展示面板端 cookie 还剩几天、何时到期
+ *   （口径见 [CookieLife]，对齐面板 `describe_cookie_lifespan`），临期/过期整行标红；
+ * - 昵称补拉：占位名账号在进入首页时后台补一次，不再长期停在「（未获取到昵称）」。
  */
 class HomeFragment : Fragment() {
 
@@ -76,6 +83,18 @@ class HomeFragment : Fragment() {
         /** 日志行缓冲：放进程级，旋转后日志不丢。 */
         private val logLines = ArrayDeque<String>()
 
+        /**
+         * 已经尝试过补拉昵称的账号集合（`uid` 升序拼接）。
+         *
+         * 用集合而不是布尔闸门：新添加的账号、上一步失败的账号只要进入待补列表就应该
+         * 再试一次，而同一批账号在同一个进程里只补一次（补拉要发探活 + 资料两个请求）。
+         * 放进程级：旋转屏幕重建 Fragment 不该把它重置掉。
+         */
+        @Volatile private var nameBackfillFor = ""
+
+        /** 当前这轮 busy 是否是「Cookie 同步」（决定两个按钮各自的进行中文案）。 */
+        @Volatile private var busySyncing = false
+
         private const val LOG_MAX_LINES = 500
     }
 
@@ -97,6 +116,15 @@ class HomeFragment : Fragment() {
      */
     private val timeFmt: ThreadLocal<SimpleDateFormat> =
         ThreadLocal.withInitial { SimpleDateFormat("HH:mm:ss", Locale.CHINA) }
+
+    /** cookie 有效期的日期戳（`10月30日 21:40`）：只到分钟，不占宽度也不啰嗦。 */
+    private val stampFmt: ThreadLocal<SimpleDateFormat> =
+        ThreadLocal.withInitial { SimpleDateFormat("M月d日 HH:mm", Locale.CHINA) }
+
+    private fun formatStamp(at: Long): String {
+        val fmt = stampFmt.get() ?: SimpleDateFormat("M月d日 HH:mm", Locale.CHINA)
+        return fmt.format(Date(at))
+    }
 
     /** 线程安全的时间格式化：每个线程用自己的 [SimpleDateFormat]。 */
     private fun formatTime(at: Long): String {
@@ -170,6 +198,10 @@ class HomeFragment : Fragment() {
         view.findViewById<View>(R.id.btnRefreshTopics).setOnClickListener {
             refreshTopics(manual = true)
         }
+        // Cookie 卡上的「去设置配置面板」：面板没配时唯一的去处，别再让用户自己找
+        view.findViewById<View>(R.id.tvSyncConfig)?.setOnClickListener {
+            (activity as? MainActivity)?.selectSettingsTab()
+        }
         // Hero 卡整块可点：直接进「超话」页，默认选中待签最多的账号
         view.findViewById<View>(R.id.heroCard)?.setOnClickListener {
             val uid = topicStates.entries
@@ -202,6 +234,8 @@ class HomeFragment : Fragment() {
         // 视图是新建的（刚进页面 / 旋转重建）：上一次的 busy latch 不代表现在真在跑，
         // 按 Job 的真实状态校正一次，避免按钮一进来就是「已置灰」的假运行态。
         settleBusy()
+        // 昵称兜底：占位名（登录时资料接口没回昵称）在这里补一次，补到就落盘
+        backfillMissingNames()
 
         val ctx = requireContext()
         var autoCheckinStarted = false
@@ -340,6 +374,8 @@ class HomeFragment : Fragment() {
 
         val container = view?.findViewById<ViewGroup>(R.id.accountList) ?: return
         container.removeAllViews()
+        // Cookie 有效期面板：账号为空时它也要渲染（显示空态并引导去添加账号）
+        renderCookieValidity(accounts, panelReady)
         if (accounts.isEmpty()) {
             container.addView(requireContext().emptyHintView(getString(R.string.home_account_empty)))
             // 空账号时进度环也要回到占位态，否则会留着上一次的百分比
@@ -367,6 +403,197 @@ class HomeFragment : Fragment() {
             container.addView(row)
         }
         renderTopicProgress()
+    }
+
+    // ========================= Cookie 有效期面板 =========================
+
+    /**
+     * 逐账号展示面板端 cookie 的有效期。
+     *
+     * 数据的来源只有一个：`AccountStore` 里的四个时间锚点 + cookie 里的 ALF，
+     * 算法在 [CookieLife]（对齐面板 `describe_cookie_lifespan`）。这里只负责
+     * 把结论翻译成「还剩几天 + 何时到期」，并在临期 / 过期时把整行切成红色。
+     *
+     * **为什么红色要铺到昵称和副行，而不只是那个小 pill**：用户扫的是「用户名那一行
+     * 还剩几天」，只有 pill 变色时，眼睛会把它当成状态标签跳过；整行红字才会拉住视线。
+     */
+    private fun renderCookieValidity(accounts: List<AccountStore.Account>, panelReady: Boolean) {
+        val host = view ?: return
+        val pill = host.findViewById<TextView>(R.id.tvSyncPill) ?: return
+        val hint = host.findViewById<TextView>(R.id.tvSyncHint)
+        val list = host.findViewById<LinearLayout>(R.id.cookieList) ?: return
+        val config = host.findViewById<TextView>(R.id.tvSyncConfig)
+
+        hint?.text = getString(
+            if (panelReady) R.string.sync_card_hint else R.string.sync_card_hint_off
+        )
+        // 面板没配时给一个明确去处，别让用户自己翻设置页
+        config?.visibility = if (panelReady) View.GONE else View.VISIBLE
+
+        list.removeAllViews()
+        if (accounts.isEmpty()) {
+            list.addView(requireContext().emptyHintView(getString(R.string.sync_empty)))
+            applyPill(pill, getString(R.string.sync_pill_unknown), PillStyle.NEUTRAL)
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        // 需要处理的排前面（失效 → 已过期 → 临期 → 未同步 → 正常），同档保持账号原顺序：
+        // 这块卡存在的意义是「告诉我现在该动谁」，需要动手的不该埋在列表末尾
+        val rows = accounts
+            .map { it to CookieLife.describe(it, now) }
+            .sortedBy { (acc, life) ->
+                when {
+                    acc.cookieDead -> 0
+                    life.state == CookieLife.State.EXPIRED -> 1
+                    life.state == CookieLife.State.EXPIRING -> 2
+                    !life.known -> 3
+                    else -> 4
+                }
+            }
+        val dead = rows.count { it.first.cookieDead }
+        val expired = rows.count { !it.first.cookieDead && it.second.state == CookieLife.State.EXPIRED }
+        val expiring = rows.count { !it.first.cookieDead && it.second.state == CookieLife.State.EXPIRING }
+        val unsynced = rows.count { !it.first.cookieDead && !it.second.known }
+
+        // 卡头只讲「最坏的那一个」：一个号过期，面板上那个号就已经掉登录了
+        when {
+            !panelReady -> applyPill(pill, getString(R.string.sync_pill_off), PillStyle.NEUTRAL)
+            dead > 0 -> applyPill(
+                pill, getString(R.string.sync_pill_dead_fmt, dead), PillStyle.DANGER
+            )
+            expired > 0 -> applyPill(
+                pill, getString(R.string.sync_pill_expired_fmt, expired), PillStyle.DANGER
+            )
+            expiring > 0 -> applyPill(
+                pill, getString(R.string.sync_pill_warn_fmt, expiring), PillStyle.DANGER
+            )
+            unsynced == accounts.size -> applyPill(
+                pill, getString(R.string.sync_pill_unknown), PillStyle.NEUTRAL
+            )
+            unsynced > 0 -> applyPill(
+                pill, getString(R.string.sync_pill_unsynced_fmt, unsynced), PillStyle.WARN
+            )
+            else -> applyPill(pill, getString(R.string.sync_pill_ok), PillStyle.OK)
+        }
+
+        val inflater = LayoutInflater.from(requireContext())
+        rows.forEach { (acc, life) ->
+            val row = inflater.inflate(R.layout.item_cookie, list, false)
+            val nameView = row.findViewById<TextView>(R.id.tvCookieName)
+            val expiryView = row.findViewById<TextView>(R.id.tvCookieExpiry)
+            val pillView = row.findViewById<TextView>(R.id.tvCookiePill)
+            // 失效 / 临期 / 过期一律红：这三件事的动作都是「马上处理」
+            val danger = acc.cookieDead || life.alert
+
+            nameView.text = displayName(acc)
+            nameView.setTextColor(
+                ContextCompat.getColor(
+                    nameView.context,
+                    if (danger) R.color.danger_text else R.color.ink
+                )
+            )
+            expiryView.text = if (acc.cookieDead) {
+                getString(R.string.cookie_dead_hint)
+            } else {
+                expiryLine(life, panelReady)
+            }
+            expiryView.setTextColor(
+                ContextCompat.getColor(
+                    expiryView.context,
+                    if (danger) R.color.danger_text else R.color.ink_2
+                )
+            )
+            val (label, style) = when {
+                acc.cookieDead -> getString(R.string.cookie_dead_pill) to PillStyle.DANGER
+                life.state == CookieLife.State.EXPIRED ->
+                    getString(R.string.cookie_expired) to PillStyle.DANGER
+                life.state == CookieLife.State.EXPIRING ->
+                    cookieLeftLabel(life) to PillStyle.DANGER
+                life.state == CookieLife.State.OK -> cookieLeftLabel(life) to PillStyle.OK
+                else -> getString(R.string.cookie_unsynced) to PillStyle.NEUTRAL
+            }
+            applyPill(pillView, label, style)
+            list.addView(row)
+        }
+    }
+
+    /** 剩余天数文案：满 1 天给整数天，不足 1 天单独说，别显示「剩余 0 天」。 */
+    private fun cookieLeftLabel(life: CookieLife.View): String {
+        val days = life.daysLeft ?: return getString(R.string.cookie_unsynced)
+        return when {
+            // 已过期要说清过了多久：过期 1 天和过期 20 天的处置紧迫度完全不同
+            days <= -1 -> getString(R.string.cookie_expired_days_fmt, -days.toInt())
+            days <= 0 -> getString(R.string.cookie_expired)
+            days < 1 -> getString(R.string.cookie_left_today)
+            else -> getString(R.string.cookie_left_days_fmt, days.toInt())
+        }
+    }
+
+    /**
+     * 副行文案：「同步于 10月30日 21:40 · 预计 11月6日 21:40 失效」。
+     *
+     * 临期时第二行直接写清楚要做什么 —— 光变红不告诉用户「点哪里」等于只知道出事。
+     */
+    private fun expiryLine(life: CookieLife.View, panelReady: Boolean): String {
+        if (!life.known) {
+            return getString(
+                if (panelReady) R.string.cookie_unknown_hint else R.string.cookie_unknown_hint_off
+            )
+        }
+        val anchor = getString(
+            if (life.fromPanel) R.string.cookie_synced_at_fmt else R.string.cookie_issued_at_fmt,
+            formatStamp(life.anchorAt),
+        )
+        val base = getString(R.string.cookie_deadline_fmt, anchor, formatStamp(life.deadlineAt))
+        return if (life.alert) base + "\n" + getString(R.string.cookie_renew_hint) else base
+    }
+
+    /** cookie 卡上的三种 pill 配色（绿 / 琥珀 / 红 / 中性），统一从这里取，别各写各的。 */
+    private enum class PillStyle(val bg: Int, val fg: Int) {
+        OK(R.drawable.bg_pill_ok, R.color.ok_text),
+        WARN(R.drawable.bg_pill_warn, R.color.warn_text),
+        DANGER(R.drawable.bg_pill_danger, R.color.danger_text),
+        NEUTRAL(R.drawable.bg_pill_neutral, R.color.ink_2),
+    }
+
+    private fun applyPill(pill: TextView, text: String, style: PillStyle) {
+        pill.text = text
+        pill.setBackgroundResource(style.bg)
+        pill.setTextColor(ContextCompat.getColor(pill.context, style.fg))
+    }
+
+    /**
+     * 昵称兜底补拉：登录时资料接口没回昵称的账号，进首页后台补一次。
+     *
+     * 旧实现的补拉只挂在「超话状态刷新」里，于是从不刷新超话、也不签到的账号会
+     * 长期停在「（未获取到昵称）」。现在与刷新解耦：只要列表里还有占位名，
+     * 打开首页就补一次（同一批账号每进程只补一次，见 [nameBackfillFor]）。
+     */
+    private fun backfillMissingNames() {
+        val ctx = context ?: return
+        val pending = AccountStore.load(ctx).filter { AccountStore.needsNameResolve(it) }
+        if (pending.isEmpty()) return
+        val marker = pending.map { it.uid }.sorted().joinToString(",")
+        if (marker == nameBackfillFor) return
+        nameBackfillFor = marker
+
+        AppScope.launch {
+            var fixed = 0
+            pending.forEach { acc ->
+                try {
+                    val verify = WeiboApi.verify(acc.cookie)
+                    if (!verify.login) return@forEach
+                    val name = WeiboApi.fetchProfile(verify.cookie, acc.uid).first
+                    if (name.isEmpty()) return@forEach
+                    AccountStore.markVerified(ctx, acc.uid, verify.cookie, name = name)
+                    fixed++
+                } catch (e: Exception) {
+                    // 单账号失败不影响其它账号；下次进页面（或刷新超话）还会再试
+                }
+            }
+            if (fixed > 0) postRender()
+        }
     }
 
     /** 问候语：按本机时间分四档，只读系统时钟，不请求任何权限。 */
@@ -567,8 +794,16 @@ class HomeFragment : Fragment() {
     private fun setBusy(value: Boolean) {
         busy = value
         val host = view ?: return
+        // 两枚按钮各自说自己正在干什么：同步时把「立即签到」改成「正在签到…」会误导
+        val syncing = value && busySyncing
         host.findViewById<MaterialButton>(R.id.btnCheckin)?.apply {
-            text = getString(if (value) R.string.btn_checkin_running else R.string.btn_checkin)
+            text = getString(
+                if (value && !syncing) R.string.btn_checkin_running else R.string.btn_checkin
+            )
+            isEnabled = true
+        }
+        host.findViewById<MaterialButton>(R.id.btnSync)?.apply {
+            text = getString(if (syncing) R.string.btn_sync_running else R.string.btn_sync)
             isEnabled = true
         }
     }
@@ -633,6 +868,8 @@ class HomeFragment : Fragment() {
                         null
                     }
                     if (verify == null || !verify.login) {
+                        // 只有「探活明确判未登录」才记失效；抛异常（断网/风控）不代表号掉了
+                        if (verify != null) AccountStore.markDead(ctx, acc.uid)
                         setTopicState(acc.uid, TopicState(atMs = System.currentTimeMillis(), error = ctx.getString(R.string.home_cookie_dead)))
                         TopicStore.saveError(ctx, acc.uid, ctx.getString(R.string.home_cookie_dead))
                         log("  ✗ $label：${ctx.getString(R.string.home_cookie_dead)}")
@@ -682,17 +919,18 @@ class HomeFragment : Fragment() {
     /**
      * 顺手把轮换后的 cookie 写回，并在昵称仍是占位值时补拉真实用户名。
      *
-     * 写回走 [AccountStore.patchAccount]（内部持锁），不再「load 一份旧表 → 改 → save 覆盖」：
-     * 这里跑在 IO 线程，两步之间随时可能被签到收尾的 mergeSave 插进来，旧写法会把
-     * 刚轮换的 cookie 又写回去。
+     * 写回走 [AccountStore.markVerified]（内部持锁，且顺带推进「最近一次探活有效」
+     * 时间锚点）：这里跑在 IO 线程，两步之间随时可能被签到收尾的 mergeSave 插进来，
+     * 「load 一份旧表 → 改 → save 覆盖」的旧写法会把刚轮换的 cookie 又写回去。
      */
     private fun updateCookieAndName(ctx: Context, uid: String, cookie: String) {
         var name = ""
         val current = AccountStore.load(ctx).firstOrNull { it.uid == uid } ?: return
         if (AccountStore.needsNameResolve(current)) {
-            name = WeiboApi.fetchProfile(cookie).first
+            // 传 uid 进去：Web 端资料接口直接按 uid 查，不再依赖 /api/config 回昵称
+            name = WeiboApi.fetchProfile(cookie, uid).first
         }
-        AccountStore.patchAccount(ctx, uid, cookie = cookie, name = name)
+        AccountStore.markVerified(ctx, uid, cookie, name = name)
     }
 
     // ========================= 签到 / 同步 =========================
@@ -778,10 +1016,14 @@ class HomeFragment : Fragment() {
         }
         if (!verify.login) {
             acc.lastResult = ctx.getString(R.string.home_cookie_dead)
+            AccountStore.markDead(ctx, acc.uid)
             log("  ✗ ${ctx.getString(R.string.home_cookie_dead)}")
             return
         }
         acc.cookie = verify.cookie
+        // 签到前的探活同样是一次「确认登录有效」：新鲜 cookie 顺手落盘，
+        // Cookie 卡上的到期时间才不会停留在几天前的估算上
+        AccountStore.markVerified(ctx, acc.uid, verify.cookie)
         try {
             val topics = WeiboApi.listTopics(acc.cookie)
             val pending = topics.filter { !it.done }
@@ -811,27 +1053,39 @@ class HomeFragment : Fragment() {
             log("  ✗ ${e.message}")
         }
         // 签到**不再顺带同步面板**：两件事各有各的开关与失败语义，混在一起会让
-        // 「签到成功但面板 5xx」看起来像签到失败。需要推送时点「仅同步面板」，
+        // 「签到成功但面板 5xx」看起来像签到失败。需要推送时点「Cookie 同步」，
         // 后台保活（CheckInWorker）也会按自己的节奏同步。
     }
 
-    /** 把一路账号的 cookie 推送到面板（只由「仅同步面板」与后台保活触发）。 */
-    private suspend fun syncToPanel(ctx: Context, acc: AccountStore.Account) {
+    /**
+     * 把一个账号的 cookie 推送到面板（由「Cookie 同步」与后台保活触发）。
+     *
+     * 成功后记一笔 [AccountStore.markSynced]：面板端每次同步都会把 cookie 的生命周期
+     * 基准重置成此刻（`database.update_account` 的行为），首页那张卡的「还剩几天」
+     * 就是从这个时刻往后数 7 天。**不记这一笔，界面会继续显示旧的到期时间**。
+     *
+     * @return 是否同步成功
+     */
+    private suspend fun syncToPanel(ctx: Context, acc: AccountStore.Account): Boolean {
         val url = AccountStore.panelUrl(ctx)
         val token = AccountStore.panelToken(ctx)
         if (url.isEmpty() || token.isEmpty()) {
             log("  （未配置面板，跳过同步）")
-            return
+            return false
         }
-        try {
-            val r = PanelApi.sync(url, token, acc.cookie, acc.uid)
+        return try {
+            val r = PanelApi.sync(url, token, acc.cookie, acc.uid, acc.name)
             if (r.ok) {
                 log("  📲 已同步面板：${if (r.updated) "覆盖" else "新建"} ${r.name}")
+                AccountStore.markSynced(ctx, acc.uid)
+                true
             } else {
                 log("  📲 面板拒绝同步：${r.detail}")
+                false
             }
         } catch (e: Exception) {
             log("  📲 同步面板失败：${e.message}")
+            false
         }
     }
 
@@ -856,6 +1110,7 @@ class HomeFragment : Fragment() {
                     null
                 }
                 if (verify == null || !verify.login) {
+                    if (verify != null) AccountStore.markDead(ctx, uid)
                     log("  ✗ ${ctx.getString(R.string.home_cookie_dead)}")
                     withContext(Dispatchers.Main + NonCancellable) {
                         if (isAdded) {
@@ -1029,26 +1284,33 @@ class HomeFragment : Fragment() {
             toast(getString(R.string.home_no_account))
             return
         }
+        busySyncing = true
         setBusy(true)
         setLogExpanded(true)
         taskJob = AppScope.launch {
             try {
-                log("==== 仅同步面板 · ${now()} ====")
+                log("==== Cookie 同步 · ${now()} ====")
+                var ok = 0
                 for (acc in accounts) {
                     log("── ${acc.name.ifEmpty { acc.uid }} ──")
                     try {
                         val verify = WeiboApi.verify(acc.cookie)
                         if (!verify.login) {
                             acc.lastResult = ctx.getString(R.string.home_cookie_dead)
+                            AccountStore.markDead(ctx, acc.uid)
                             log("  ✗ ${ctx.getString(R.string.home_cookie_dead)}")
                             continue
                         }
                         acc.cookie = verify.cookie
-                        syncToPanel(ctx, acc)
+                        // 探活成功也走一次落盘：同步失败的账号至少把「最近有效」锚点更新掉，
+                        // 否则它会一直停在过期的红字上，看起来像没点过同步
+                        AccountStore.markVerified(ctx, acc.uid, verify.cookie)
+                        if (syncToPanel(ctx, acc)) ok++
                     } catch (e: Exception) {
                         log("  ✗ ${e.message}")
                     }
                 }
+                log("==== 同步结束：成功 $ok/${accounts.size} · ${now()} ====")
             } finally {
                 try {
                     AccountStore.mergeSave(ctx, accounts)
@@ -1056,6 +1318,7 @@ class HomeFragment : Fragment() {
                     log("保存账号失败：${e.message}")
                 }
                 withContext(Dispatchers.Main + NonCancellable) {
+                    busySyncing = false
                     setBusy(false)
                     if (isAdded) render()
                 }

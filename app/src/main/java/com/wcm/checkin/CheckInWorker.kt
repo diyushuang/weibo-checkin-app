@@ -36,16 +36,39 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
                 try {
                     val verify = WeiboApi.verify(acc.cookie)
                     if (verify.login) {
+                        val at = System.currentTimeMillis()
                         acc.cookie = verify.cookie
+                        acc.cookieSeenAt = at
                         acc.lastResult = acc.lastResult.ifEmpty { "后台保活 ✓" }
+                        // 昵称兜底：登录时资料接口没回名字的账号，在这里顺手补上
+                        // （后台跑，用户下次打开 App 就不再看到「（未获取到昵称）」）
+                        val name = if (AccountStore.needsNameResolve(acc)) {
+                            WeiboApi.fetchProfile(verify.cookie, acc.uid).first
+                        } else {
+                            ""
+                        }
+                        // 探活成功立即落盘时间锚点 / 昵称：整轮跑完再落会有几分钟窗口，
+                        // 期间首页那张 Cookie 卡显示的仍是旧值
+                        AccountStore.markVerified(ctx, acc.uid, verify.cookie, name = name, at = at)
                         alive++
                         if (panelUrl.isNotEmpty() && panelToken.isNotEmpty()) {
                             try {
-                                PanelApi.sync(panelUrl, panelToken, acc.cookie, acc.uid)
+                                val r = PanelApi.sync(
+                                    panelUrl, panelToken, acc.cookie, acc.uid,
+                                    name.ifEmpty { acc.name },
+                                )
+                                if (r.ok) {
+                                    // 面板侧生命周期以这次同步为基准重新计时（约 7 天）
+                                    AccountStore.markSynced(ctx, acc.uid)
+                                    acc.cookieSyncedAt = System.currentTimeMillis()
+                                }
                             } catch (e: Exception) {
                                 // 面板同步失败不影响本地保活
                             }
                         }
+                    } else {
+                        // 探活明确判未登录：记一笔失效，首页 Cookie 卡会直接标红提示重新登录
+                        AccountStore.markDead(ctx, acc.uid)
                     }
                 } catch (e: Exception) {
                     // 网络抖动/风控：下一轮再说

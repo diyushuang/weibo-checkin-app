@@ -13,6 +13,29 @@ object AccountStore {
         val name: String,
         var cookie: String,
         var lastResult: String = "",
+        /**
+         * 本机首次存下这份 cookie 的时刻（epoch ms；0 = 没有记录）。
+         *
+         * 四个时间戳共同构成 cookie 有效期的估算依据（口径见 [CookieLife]）：
+         * 面板端每次同步都会把基准重置成同步时刻，所以已同步账号以 [cookieSyncedAt]
+         * 为准，未同步账号才退回本机这三把尺子。
+         */
+        var cookieIssuedAt: Long = 0L,
+        /** 最近一次观察到微博换发 Set-Cookie（SUB 等被替换）的时刻。 */
+        var cookieRotatedAt: Long = 0L,
+        /** 最近一次探活确认「登录有效」的时刻。 */
+        var cookieSeenAt: Long = 0L,
+        /** 最近一次成功推送到面板的时刻（面板侧生命周期基准）。 */
+        var cookieSyncedAt: Long = 0L,
+        /**
+         * 探活已明确判定登录态失效（`login=false`）。
+         *
+         * 有效期是**估算**：一个已经掉登录的账号照样能算出「还剩 5 天」，
+         * 这比不给结论更糟。所以探活失败要单独记一笔，界面上直接显示「已失效」，
+         * 让用户去重新登录，而不是等那个算出来的倒计时走完。
+         * 任何一次探活成功（[markVerified]）都会清掉它。
+         */
+        var cookieDead: Boolean = false,
     )
 
     private const val PREFS = "wcm"
@@ -82,6 +105,11 @@ object AccountStore {
                     .put("name", it.name)
                     .put("cookie", it.cookie)
                     .put("lastResult", it.lastResult)
+                    .put("issuedAt", it.cookieIssuedAt)
+                    .put("rotatedAt", it.cookieRotatedAt)
+                    .put("seenAt", it.cookieSeenAt)
+                    .put("syncedAt", it.cookieSyncedAt)
+                    .put("dead", it.cookieDead)
             )
         }
         return arr.toString()
@@ -99,6 +127,13 @@ object AccountStore {
                         name = o.optString("name", "未命名账号"),
                         cookie = o.optString("cookie", ""),
                         lastResult = o.optString("lastResult", ""),
+                        // 旧版本没有这些键：时间戳落 0 = 没有锚点（界面显示「未同步」），
+                        // 失效标记落 false = 还没被探活判过
+                        cookieIssuedAt = o.optLong("issuedAt", 0L),
+                        cookieRotatedAt = o.optLong("rotatedAt", 0L),
+                        cookieSeenAt = o.optLong("seenAt", 0L),
+                        cookieSyncedAt = o.optLong("syncedAt", 0L),
+                        cookieDead = o.optBoolean("dead", false),
                     )
                 )
             }
@@ -110,13 +145,35 @@ object AccountStore {
 
     /**
      * 合并两个账号列表：以 current 为准（成员不增不减），只把 snapshot 里同 uid
-     * 账号的 cookie / lastResult 回填进来。运行期间用户新增 / 删除的账号不会被
+     * 账号的 cookie / lastResult / 时间锚点回填进来。运行期间用户新增 / 删除的账号不会被
      * 旧快照覆盖（Worker 与前台签到共用，防丢新账号 / 防删掉的账号复活）。
+     *
+     * 昵称单独处理：只有**当前还是占位名**、而快照里已经是真实昵称时才覆盖 ——
+     * 后台保活顺手补拉的昵称能落地，又不会把用户已经看到的名字改回去
+     * （面板侧的自定义名同理，见 AccountStorePureTest 的既有断言）。
+     *
+     * 失效标记（`cookieDead`）**不从快照合并**：它只由 [markDead] / [markVerified]
+     * 直接写库，而快照是"任务开始前"的状态。按 OR 合并会让刚探活成功的账号被旧快照
+     * 重新标成失效，按快照覆盖又会抹掉任务中途刚记下的失效 —— 保持库里那份最稳。
      */
     fun mergeAccounts(current: List<Account>, snapshot: List<Account>): List<Account> =
         current.map { cur ->
             snapshot.firstOrNull { snap -> snap.uid.isNotEmpty() && snap.uid == cur.uid }
-                ?.let { snap -> cur.copy(cookie = snap.cookie, lastResult = snap.lastResult) }
+                ?.let { snap ->
+                    cur.copy(
+                        cookie = snap.cookie,
+                        lastResult = snap.lastResult,
+                        name = if (needsNameResolve(cur) && !needsNameResolve(snap)) {
+                            snap.name
+                        } else {
+                            cur.name
+                        },
+                        cookieIssuedAt = maxOf(cur.cookieIssuedAt, snap.cookieIssuedAt),
+                        cookieRotatedAt = maxOf(cur.cookieRotatedAt, snap.cookieRotatedAt),
+                        cookieSeenAt = maxOf(cur.cookieSeenAt, snap.cookieSeenAt),
+                        cookieSyncedAt = maxOf(cur.cookieSyncedAt, snap.cookieSyncedAt),
+                    )
+                }
                 ?: cur
         }
 
@@ -140,14 +197,26 @@ object AccountStore {
     }
 
     /**
-     * 只补写 cookie / 昵称（超话刷新、签到探活后都会用到）。
+     * 只补写 cookie / 昵称 / 时间锚点（超话刷新、签到探活、面板同步后都会用到）。
      *
      * 用「持锁的 load-modify-save」而不是让调用方自己 load 再 save：调用方在 IO 线程
      * 上跑，两步之间随时可能被别的写入方插进来。
      *
+     * 时间锚点的写入口径（[CookieLife] 依赖它们，写错就会误报临期）：
+     * - cookie **真的换了** → 首次录入写 `issuedAt`，之后写 `rotatedAt`（微博换发）；
+     * - [seenAt] / [syncedAt] 只前进不后退，传 0 表示这次不更新。
+     *
      * @return 是否真的写了盘（没变化就不写，减少 IO 与冲突面）。
      */
-    fun patchAccount(ctx: Context, uid: String, cookie: String = "", name: String = ""): Boolean {
+    fun patchAccount(
+        ctx: Context,
+        uid: String,
+        cookie: String = "",
+        name: String = "",
+        seenAt: Long = 0L,
+        syncedAt: Long = 0L,
+        dead: Boolean? = null,
+    ): Boolean {
         synchronized(LOCK) {
             val list = load(ctx)
             val index = list.indexOfFirst { it.uid == uid }
@@ -155,11 +224,29 @@ object AccountStore {
             var acc = list[index]
             var changed = false
             if (cookie.isNotEmpty() && cookie != acc.cookie) {
-                acc = acc.copy(cookie = cookie)
+                val now = System.currentTimeMillis()
+                val firstTime = acc.cookie.isEmpty() || acc.cookieIssuedAt <= 0L
+                acc = acc.copy(
+                    cookie = cookie,
+                    cookieIssuedAt = if (firstTime) now else acc.cookieIssuedAt,
+                    cookieRotatedAt = if (firstTime) acc.cookieRotatedAt else now,
+                )
                 changed = true
             }
             if (name.isNotEmpty() && name != acc.name) {
                 acc = acc.copy(name = name)
+                changed = true
+            }
+            if (seenAt > acc.cookieSeenAt) {
+                acc = acc.copy(cookieSeenAt = seenAt)
+                changed = true
+            }
+            if (syncedAt > acc.cookieSyncedAt) {
+                acc = acc.copy(cookieSyncedAt = syncedAt)
+                changed = true
+            }
+            if (dead != null && dead != acc.cookieDead) {
+                acc = acc.copy(cookieDead = dead)
                 changed = true
             }
             if (changed) {
@@ -169,6 +256,32 @@ object AccountStore {
             return changed
         }
     }
+
+    /**
+     * 记录一次「探活确认登录有效」：同时收下换发后的 cookie。
+     *
+     * [name] 非空时顺带补昵称 —— 后台保活顺手把占位名换成真实昵称，用户下次打开
+     * 就不再看到「（未获取到昵称）」。
+     */
+    fun markVerified(
+        ctx: Context,
+        uid: String,
+        cookie: String,
+        name: String = "",
+        at: Long = System.currentTimeMillis(),
+    ): Boolean = patchAccount(ctx, uid, cookie = cookie, name = name, seenAt = at, dead = false)
+
+    /**
+     * 记录一次「探活明确判定登录态失效」。
+     *
+     * 只由 `login == false` 触发，**网络异常不写**：断网、风控、超时都不代表登录态没了，
+     * 把它们记成失效会让整块 Cookie 卡变成一片红报警。
+     */
+    fun markDead(ctx: Context, uid: String): Boolean = patchAccount(ctx, uid, dead = true)
+
+    /** 记录一次成功推送到面板：面板侧 cookie 生命周期从这里重新计时（约 7 天）。 */
+    fun markSynced(ctx: Context, uid: String, at: Long = System.currentTimeMillis()): Boolean =
+        patchAccount(ctx, uid, syncedAt = at)
 
     /** 只写一行 `lastResult`（签到小结），不影响其它字段。 */
     fun setLastResult(ctx: Context, uid: String, result: String) {

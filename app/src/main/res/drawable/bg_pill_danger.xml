@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 状态 pill 底衬 · 危险软底（cookie 临期 / 已过期）。
+     用 danger_soft 而不是纯红：纯红底会把 11sp 的文字压得读不清，
+     浅红底 + danger_text 的对比度才是够的（浅深色模式各自有令牌）。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/danger_soft" />
+    <corners android:radius="@dimen/radius_full" />
+</shape>

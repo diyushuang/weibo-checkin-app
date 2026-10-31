@@ -325,7 +325,11 @@ class LoginWebViewActivity : AppCompatActivity() {
         CookieManager.getInstance().flush()
 
         lifecycleScope.launch {
-            val profile = withContext(Dispatchers.IO) { WeiboApi.fetchProfile(verify.cookie) }
+            // 把探活已经拿到的 uid 传进去：即使 /api/config 这次没回 uid，也能靠它去
+            // Web 端把昵称取回来（旧实现只读 data.screen_name，常年是空串）
+            val profile = withContext(Dispatchers.IO) {
+                WeiboApi.fetchProfile(verify.cookie, verify.uid)
+            }
             val uid = profile.second.ifEmpty { verify.uid }
             busy = false
             if (isFinishing || isDestroyed) return@launch
@@ -333,12 +337,16 @@ class LoginWebViewActivity : AppCompatActivity() {
                 uid.isNotEmpty() -> {
                     finished = true
                     val name = profile.first.ifEmpty { AccountStore.placeholderName(uid) }
+                    val now = System.currentTimeMillis()
                     AccountStore.upsert(
                         this@LoginWebViewActivity,
                         AccountStore.Account(
                             uid = uid,
                             name = name,
                             cookie = verify.cookie,
+                            // 新录入的登录态：有效期从这里起算（7 天后到期，见 CookieLife）
+                            cookieIssuedAt = now,
+                            cookieSeenAt = now,
                         )
                     )
                     Toast.makeText(this@LoginWebViewActivity, getString(R.string.login_added_fmt, name), Toast.LENGTH_SHORT).show()

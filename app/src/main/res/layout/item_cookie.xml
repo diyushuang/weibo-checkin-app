@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cookie 有效期行（首页「Cookie 同步」卡内）。
+
+  一行两段：
+    左：昵称 13.5sp / 副行「同步于 … · 预计 … 失效」11.5sp
+    右：剩余天数 pill（正常=绿，临期/过期=红）
+
+  临期时 HomeFragment 会把昵称、副行、pill 全部切成 danger 令牌 —— 只改 pill 的
+  颜色不够醒目：用户扫的是「名字那一行还剩几天」，红字比红底更能拉住视线。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:baselineAligned="false"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingTop="@dimen/sp_2"
+    android:paddingBottom="@dimen/sp_2">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvCookieName"
+            style="@style/Widget.Wcm.Text.RowTitle"
+            android:ellipsize="end"
+            android:maxLines="1" />
+
+        <TextView
+            android:id="@+id/tvCookieExpiry"
+            style="@style/Widget.Wcm.Text.Hint"
+            android:layout_marginTop="1dp"
+            android:maxLines="2" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvCookiePill"
+        style="@style/Widget.Wcm.Pill.Ok.Small"
+        android:layout_marginStart="@dimen/sp_2" />
+</LinearLayout>
