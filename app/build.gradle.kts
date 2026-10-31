@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,8 +8,22 @@ plugins {
 // 稳定签名 keystore（PKCS12，别名 wcmsign）：本地放 app/keystore/（已 gitignore），
 // CI 由 Secret WCM_KEYSTORE_B64 解出到同一路径。Android 只允许同签名 APK 覆盖安装，
 // 缺失该文件时回退默认 debug 密钥，覆盖旧版会报「签名冲突」。
+// 口令同样不进仓库：环境变量 WCM_KEYSTORE_PASSWORD（CI）优先，其次 local.properties
+// 的 wcm.keystore.password（本地，已 gitignore）。keystore 存在但两处都没配时直接
+// 构建失败，避免静默错签。
 val wcmKeystore = file("keystore/wcm-release.p12").takeIf { it.exists() }
-val wcmStorePassword = System.getenv("WCM_KEYSTORE_PASSWORD")
+val localProps = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }
+        ?.inputStream()?.use { load(it) }
+}
+val wcmStorePassword: String? = System.getenv("WCM_KEYSTORE_PASSWORD")
+    ?: (localProps.getProperty("wcm.keystore.password") as String?)
+    ?: if (wcmKeystore != null) {
+        throw GradleException(
+            "检测到 app/keystore/wcm-release.p12 但未配置签名口令：请在 local.properties 写 " +
+                "wcm.keystore.password=<口令>，或设置环境变量 WCM_KEYSTORE_PASSWORD"
+        )
+    } else null
 
 android {
     namespace = "com.wcm.checkin"

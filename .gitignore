@@ -16,3 +16,6 @@ build.log
 .mimosa/
 .workbuddy/
 .zcode/
+
+# 根目录工作截图（docs/images/ 已有入库副本）
+/wcm_*.png

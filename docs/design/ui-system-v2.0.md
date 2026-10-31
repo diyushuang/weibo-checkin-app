@@ -1,7 +1,7 @@
 # UI 系统规范 v2.0（对齐面板端 `tokens.css`）
 
 > 工程：`com.wcm.checkin`（微博签到助手，Kotlin / View，minSdk 23 / targetSdk 36）
-> 参考基线：`E:/项目/微博签到/docs/ui-redesign/tokens.css`（面板端 UI 系统 v2.0）
+> 参考基线：`微博签到/docs/ui-redesign/tokens.css`（面板端 UI 系统 v2.0）
 > 落地范围：**只改呈现层**（`res/` 令牌与布局、Fragment 的视图绑定）。
 > 抓取内核、签到逻辑、面板同步、Cookie 存储一行未改。
 > 取代：`ui-system-v0.7.md`（暖灰 + 粉卡方案，视觉过闷，已废弃）

@@ -1,7 +1,7 @@
 # QA 报告：UI 主题与布局层级改造（v0.6）
 
 - 验证者：严过关（QA Engineer）
-- 验证对象：`E:/项目/微博签到app`（Kotlin / View，Material 3，minSdk 23 / targetSdk 36 / compileSdk 36）
+- 验证对象：`<项目根>`（Kotlin / View，Material 3，minSdk 23 / targetSdk 36 / compileSdk 36）
 - 基线快照：`.workbuddy/baseline/src-2032/main/`（权威对照）
 - 验证方式：独立跑通构建、单测、lint；用基线快照做 diff；静态资源解析；WCAG 公式实算；逐行读状态机。
 - **本报告不采信任何"已完成"声明，所有结论均附命令输出或文件行号。**
@@ -33,8 +33,8 @@
 
 | 项 | 值 |
 |---|---|
-| JAVA_HOME | `C:/Users/adsm/dev/jdk17`（OpenJDK 17.0.20.1 Temurin） |
-| Android SDK | `C:/Users/adsm/AppData/Local/Android/Sdk`（`local.properties:1`） |
+| JAVA_HOME | `C:/Users/<you>/dev/jdk17`（OpenJDK 17.0.20.1 Temurin） |
+| Android SDK | `C:/Users/<you>/AppData/Local/Android/Sdk`（`local.properties:1`） |
 | Gradle | 8.13 |
 
 **关于"干净构建"的一处偏差，如实记录：**

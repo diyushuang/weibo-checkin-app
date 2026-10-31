@@ -46,6 +46,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Unit tests & Build debug APK
+        env:
+          WCM_KEYSTORE_PASSWORD: ${{ secrets.WCM_KEYSTORE_PASSWORD }}
         run: |
           set +e
           sh gradlew testDebugUnitTest assembleDebug --no-daemon > build.log 2>&1

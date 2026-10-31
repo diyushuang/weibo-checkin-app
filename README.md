@@ -65,6 +65,10 @@
 
 Material 3 界面（底部导航：首页 / 超话 / 图片 / 设置，Android 12+ 跟随系统取色）。
 
+| 首页 | 超话 |
+| --- | --- |
+| ![首页（空状态）](docs/images/home.png) | ![超话（空状态）](docs/images/topics.png) |
+
 超话字段（列表 / 详情 / 签到响应各有哪些可用字段、怎么解析）见
 [`docs/design/topic-fields.md`](docs/design/topic-fields.md)。
 
@@ -130,18 +134,26 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
 开发者签名异常」。CI 每次都是全新 runner，默认 debug 密钥是随机生成的，因此
 统一改用固定 keystore 签名：
 
-1. 密钥已生成在 `app/keystore/wcm-release.p12`（PKCS12，别名 `wcmsign`，
-   口令 [REDACTED]，整个目录已 gitignore）。**请备份到仓库之外**——丢失后
-   新版本将无法再覆盖升级。
-2. 仓库 → Settings → Secrets and variables → Actions → New repository secret：
-   新建 `WCM_KEYSTORE_B64`，值为同目录 `wcm-release.p12.b64` 的内容（即
-   keystore 的 base64）。配置后 CI 构建的 APK 全部同签名，可直接覆盖升级；
-   未配置时仍会构建并给出 warning，但签名退回一次性随机 debug 密钥。
+1. 密钥已生成在 `app/keystore/wcm-release.p12`（PKCS12，别名 `wcmsign`，整个
+   目录已 gitignore）。**请备份到仓库之外**——丢失后新版本将无法再覆盖升级。
+   签名口令同样不进仓库：本地存 `local.properties` 的 `wcm.keystore.password`
+   （已 gitignore），CI 存 Secret `WCM_KEYSTORE_PASSWORD`。
+2. 仓库 → Settings → Secrets and variables → Actions → New repository secret，
+   新建两个：
+   - `WCM_KEYSTORE_B64`：值为同目录 `wcm-release.p12.b64` 的内容（即 keystore
+     的 base64）；
+   - `WCM_KEYSTORE_PASSWORD`：值为签名口令。
+
+   配置后 CI 构建的 APK 全部同签名，可直接覆盖升级；未配置时仍会构建并给出
+   warning，但签名退回一次性随机 debug 密钥。
 3. 首次启用前旧版 App 需**卸载一次**再装新 APK（签名不同无法覆盖；卸载会清掉
    App 本地保存的账号 Cookie，需重新登录），此后每次更新直接覆盖安装即可。
-4. 本地构建：把 `wcm-release.p12` 放在 `app/keystore/` 下即与 CI 产物同签名。
+4. 本地构建：把 `wcm-release.p12` 放在 `app/keystore/` 下，并在 `local.properties`
+   写入 `wcm.keystore.password=<口令>`，即与 CI 产物同签名；keystore 存在但两处
+   口令都未配置时构建直接报错（避免静默错签）。
 
-若需换口令，设置环境变量 `WCM_KEYSTORE_PASSWORD`（口令 [REDACTED]）。
+口令来源优先级：环境变量 `WCM_KEYSTORE_PASSWORD` > `local.properties` 的
+`wcm.keystore.password`。
 
 ## 结构
 
