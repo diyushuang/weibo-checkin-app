@@ -173,4 +173,31 @@ class AccountStorePureTest {
         val merged = AccountStore.mergeAccounts(listOf(dead), listOf(acc("1001")))
         assertEquals(true, merged[0].cookieDead)
     }
+
+    // ---------- 单博主抓取范围（v0.9.12） ----------
+
+    private fun targets() = listOf(
+        AccountStore.CrawlTarget("1001", "小号"),
+        AccountStore.CrawlTarget("1002", "大号"),
+        AccountStore.CrawlTarget("1003", ""),
+    )
+
+    @Test
+    fun selectTargets_emptyMeansAll() {
+        // 空集合 = 旧行为「全部抓取」，不能因为「filter 空集合」变成什么都不抓
+        assertEquals(targets(), AccountStore.selectTargets(targets(), emptySet()))
+    }
+
+    @Test
+    fun selectTargets_keepsListOrderAndOnlyRequestedUids() {
+        val picked = AccountStore.selectTargets(targets(), setOf("1003", "1001"))
+        assertEquals(listOf("1001", "1003"), picked.map { it.uid })
+    }
+
+    @Test
+    fun selectTargets_unknownUidIgnored() {
+        // 点完菜单到真正开跑之间目标可能被删：静默忽略，不能抛也不能把已删的当成范围
+        val picked = AccountStore.selectTargets(targets(), setOf("9999"))
+        assertTrue(picked.isEmpty())
+    }
 }

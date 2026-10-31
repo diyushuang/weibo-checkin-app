@@ -9,7 +9,11 @@ package com.wcm.checkin
  * 为什么要做成纯函数：进度算错的表现是「进度条倒退 / 数字乱跳」，
  * 这类问题靠人眼在真机上盯日志几乎发现不了，必须能被 JVM 单测钉住。
  */
-enum class CrawlPhase { IDLE, PREPARE, RETRY, NEW, HISTORY, DONE }
+/**
+ * 抓取阶段。v0.9.12 增加 [SCAN]：全量扫描既不是「补新」也不是「补历史」，
+ * 它是一条从最新连续下行的独立通道，进度文案必须说「全量」而不是骗人的「补新」。
+ */
+enum class CrawlPhase { IDLE, PREPARE, RETRY, NEW, HISTORY, SCAN, DONE }
 
 data class CrawlProgress(
     val phase: CrawlPhase = CrawlPhase.IDLE,

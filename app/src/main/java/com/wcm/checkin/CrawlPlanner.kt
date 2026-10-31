@@ -281,6 +281,106 @@ object CrawlPlanner {
         )
     }
 
+    // ========================= 全量扫描（v0.9.12） =========================
+
+    /**
+     * 全量扫描：从最新一页开始，**连续**往最老方向翻，直到起始日期 / 到底 / 硬墙 / 本轮预算。
+     *
+     * 与「增量」的区别只在判据：
+     * - 增量只补「水线以上」的缺口，并在回到已覆盖区间时停（`ALL_COVERED`）；
+     * - 全量**不承认已有覆盖区间**，只信索引里的「这帖是否终态」—— 终态只花一次列表请求，
+     *   不拉详情、不重复下载。所以它能发现任何历史上的空洞（旧版本按连续计数误判、
+     *   置顶帖绕过判定、中途断过留下的缺口），代价是列表请求数随深度线性增长。
+     *
+     * 断点用 [CrawlCursor.fullScanPageHint]（页码）而不是时间锚点：全量是**单向连续下行**，
+     * 页码即位置，中途插入/删除最多让一页重复、不会漏。增量则必须用时间锚点，
+     * 因为它只补一段区间、容易被置顶与删帖带偏。
+     */
+    fun planScan(
+        cursor: CrawlCursor,
+        index: IndexView,
+        sinceDate: String,
+        fetch: (Int) -> PageOutcome,
+        budget: Budget = Budget.FULL,
+    ): Plan {
+        val sinceSec = CrawlDate.dayStartSec(sinceDate)
+        val startPage = cursor.fullScanPageHint.coerceIn(1, MAX_PAGES)
+        val batch = ArrayList<PostRef>()
+        val seen = HashSet<String>()
+        var stop = StopReason.NONE
+        var lastPage = 0
+        var low = Long.MAX_VALUE
+        var high = 0L
+        var reachedBottom = false
+        var skipped = 0
+
+        val endPage = minOf(startPage + budget.maxPages - 1, MAX_PAGES)
+        for (page in startPage..endPage) {
+            val out = fetch(page)
+            val slice = out.slice
+            if (slice == null) {
+                stop = StopReason.PAGE_ERROR
+                break
+            }
+            if (slice.posts.isEmpty()) {
+                reachedBottom = true
+                stop = StopReason.PAGE_EXHAUSTED
+                break
+            }
+            lastPage = page
+            if (slice.minAt > 0L && slice.minAt < low) low = slice.minAt
+            if (slice.maxAt > high) high = slice.maxAt
+
+            for (p in slice.posts) {
+                if (!p.imageBearingOriginal) continue
+                // 终态 = 这张帖的图已经完整落盘过：只记一次「跳过」，不去拉详情
+                if (index.isTerminal(p.id)) {
+                    if (seen.add(p.id)) skipped++
+                    continue
+                }
+                // 起始日期是硬下界：全量也不越过用户设定的边界
+                if (sinceSec != null && p.at > 0L && p.at < sinceSec) continue
+                if (seen.add(p.id)) batch.add(p)
+            }
+
+            if (sinceSec != null && slice.minAt > 0L && slice.minAt < sinceSec) {
+                stop = StopReason.SINCE_DATE
+                break
+            }
+            if (page == endPage) {
+                stop = if (endPage >= MAX_PAGES) StopReason.HARD_CAP else StopReason.BUDGET
+            }
+        }
+
+        if (low == Long.MAX_VALUE) low = 0L
+        return Plan(
+            phase = Phase.SCAN,
+            startPage = startPage,
+            batch = batch.sortedBy { it.at },
+            lastPage = lastPage,
+            stop = stop,
+            coverageLow = low,
+            coverageHigh = high,
+            reachedBottom = reachedBottom,
+            skippedTerminal = skipped,
+        )
+    }
+
+    /**
+     * 全量扫描结束后的续跑页码：0 表示这一轮把方向走完了，下一轮从头再来。
+     *
+     * - 预算用完 → 从下一轮接着走（`lastPage + 1`）；
+     * - 某页失败 → 同样从 `lastPage + 1` 开始，也就是**失败的这一页**（`lastPage` 是最后
+     *   一个成功页，失败页 = `lastPage + 1`），跳过去才是真的漏；
+     * - 到底 / 推到起始日期 / 触达 200 页硬墙 → 本轮全量扫描完成。
+     */
+    fun nextScanPage(plan: Plan): Int = when (plan.stop) {
+        StopReason.BUDGET, StopReason.PAGE_ERROR -> (plan.lastPage + 1).coerceAtMost(MAX_PAGES)
+        else -> 0
+    }
+
+    // ========================= 锚点定位 =========================
+
     /**
      * 用 hint 页缩小搜索；只信 id 与时间，不信页码本身。
      * 顺序按 |偏移| 递增：hint → hint+1 → hint-1 → hint+2 → hint-2 → hint+3 → hint-3。

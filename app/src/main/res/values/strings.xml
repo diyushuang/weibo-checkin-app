@@ -94,6 +94,20 @@
     <string name="crawl_progress_from">起始 %1$s</string>
     <string name="crawl_progress_bottom"> · 已到底</string>
 
+    <!-- v0.9.12 单博主全量 / 增量抓取 -->
+    <string name="crawl_target_incremental">增量抓取（仅此博主）</string>
+    <string name="crawl_target_full">全量抓取（仅此博主）</string>
+    <string name="crawl_target_gone">该博主已不在抓取目标里，刷新列表后再试</string>
+    <string name="crawl_full_all">全量抓取（全部目标）</string>
+    <string name="crawl_all_targets">全部目标</string>
+    <string name="crawl_full_confirm_title">全量抓取 %1$s?</string>
+    <string name="crawl_full_confirm_msg">从最新一页开始连续翻到底，不依赖已有进度。已下载的图按索引跳过，不会重复下载；仍受「起始日期」限制。大博主可能要多点几次才能走完，每轮会接着上次的页继续。</string>
+    <string name="crawl_full_confirm_ok">开始全量</string>
+    <string name="crawl_full_running">全量抓取进行中（断点续跑，可随时停止）</string>
+    <string name="crawl_progress_scan_fmt"> · 全量已扫到第 %1$d 页</string>
+    <string name="crawl_phase_scan">全量扫描</string>
+    <string name="crawl_scope_single">范围：只抓 %1$s</string>
+
     <!-- 单条抓取 -->
     <string name="single_title">单条抓取</string>
     <string name="single_input_hint">微博链接 / bid，或博主 UID</string>

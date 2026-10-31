@@ -49,14 +49,26 @@ object CrawlRunner {
      * - `album`（默认）：游客身份走相册墙，只抓有图微博；拿不到游客身份时
      *   **自动回退**到时间线模式，用户不会因为风控/接口变化而「点了没反应」。
      * - `timeline`：原实现。
+     *
+     * @param onlyUids v0.9.12 单博主抓取：空集合 = 全部目标；非空只抓这些 UID
+     *   （按目标列表顺序，不在列表里的 UID 静默忽略）。
+     * @param full 全量：连续下行、不信已有覆盖区间，用来补历史空洞；见 [Crawler.crawlFullScan]。
      */
     suspend fun runAll(
         ctx: Context,
         log: (String) -> Unit,
         auto: Boolean = false,
+        onlyUids: Set<String> = emptySet(),
+        full: Boolean = false,
     ): RunResult {
         val album = AccountStore.crawlMode(ctx) == AccountStore.MODE_ALBUM
-        return guarded(if (album) "相册抓取" else "增量抓取") { emit, stopped ->
+        val what = when {
+            full && album -> "相册全量"
+            full -> "全量抓取"
+            album -> "相册抓取"
+            else -> "增量抓取"
+        }
+        return guarded(what) { emit, stopped ->
             if (!album) {
                 Crawler.runIncremental(
                     ctx = ctx,
@@ -64,6 +76,8 @@ object CrawlRunner {
                     autoMode = auto,
                     onEvent = emit,
                     isStopped = stopped,
+                    onlyUids = onlyUids,
+                    full = full,
                 )
                 return@guarded
             }
@@ -73,6 +87,8 @@ object CrawlRunner {
                 autoMode = auto,
                 onEvent = emit,
                 isStopped = stopped,
+                onlyUids = onlyUids,
+                full = full,
             )
             if (!ok) {
                 log("相册模式没跑起来（游客身份不可用或相册为空），回退到时间线模式")
@@ -82,6 +98,8 @@ object CrawlRunner {
                     autoMode = auto,
                     onEvent = emit,
                     isStopped = stopped,
+                    onlyUids = onlyUids,
+                    full = full,
                 )
             }
         }

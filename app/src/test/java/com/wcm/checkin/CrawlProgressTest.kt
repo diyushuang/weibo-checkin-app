@@ -44,6 +44,20 @@ class CrawlProgressTest {
         assertEquals(0, p.processed)
     }
 
+    /** v0.9.12：全量扫描是独立阶段，进度文案不能说成「补新」（否则用户以为没跑全量）。 */
+    @Test
+    fun phase_scanIsItsOwnPhase() {
+        val p = step(
+            CrawlEvent.Begin("全量抓取", 1),
+            CrawlEvent.Target("甲", 1, 1),
+            CrawlEvent.Phase(CrawlPhase.SCAN, planned = 12, skipped = 40),
+        )
+        assertEquals(CrawlPhase.SCAN, p.phase)
+        assertEquals(12, p.discovered)
+        assertEquals(40, p.skipped)
+        assertTrue(p.running)
+    }
+
     @Test
     fun post_accumulatesMonotonically() {
         val p = step(

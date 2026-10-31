@@ -289,6 +289,14 @@
                     android:layout_marginTop="@dimen/sp_3"
                     android:text="@string/crawl_start" />
 
+                <!-- v0.9.12 全量抓取（全部目标）：单博主入口在目标行菜单里 -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCrawlFull"
+                    style="@style/Widget.Wcm.Button.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/sp_2"
+                    android:text="@string/crawl_full_all" />
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnCrawlStop"
                     style="@style/Widget.Wcm.Button.Danger"

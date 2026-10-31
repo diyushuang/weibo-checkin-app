@@ -109,6 +109,8 @@ class GalleryFragment : Fragment() {
         view.findViewById<View>(R.id.btnSinglePost).setOnClickListener { pickSinglePost() }
         view.findViewById<View>(R.id.btnBrowseAuthor).setOnClickListener { openBrowsing() }
         view.findViewById<View>(R.id.btnCrawlStart).setOnClickListener { start() }
+        // 全量（全部目标）：破坏性不大但请求量明显更大，先确认再跑
+        view.findViewById<View>(R.id.btnCrawlFull).setOnClickListener { confirmFull(emptySet()) }
         view.findViewById<View>(R.id.btnCrawlStop).setOnClickListener {
             // 先置停止标志（首页自动触发的抓取没有本页协程可取消），再取消本页任务
             CrawlRunner.requestStop()
@@ -255,6 +257,7 @@ class GalleryFragment : Fragment() {
         CrawlPhase.RETRY -> getString(R.string.crawl_phase_retry)
         CrawlPhase.NEW -> getString(R.string.crawl_phase_new)
         CrawlPhase.HISTORY -> getString(R.string.crawl_phase_history)
+        CrawlPhase.SCAN -> getString(R.string.crawl_phase_scan)
         CrawlPhase.DONE -> getString(R.string.crawl_phase_done)
     }
 
@@ -491,8 +494,8 @@ class GalleryFragment : Fragment() {
     private fun buildEmptyHint(text: String): TextView = requireContext().emptyHintView(text)
 
     /**
-     * 目标行溢出菜单：起始日期 / 移除。
-     * 原来这两个入口以文字按钮常驻在行尾，一行 3 个点击目标极易误触。
+     * 目标行溢出菜单：单博主增量 / 单博主全量 / 起始日期 / 移除。
+     * 原来这些入口以文字按钮常驻在行尾，一行 3 个点击目标极易误触。
      */
     private fun showTargetMenu(anchor: View, target: AccountStore.CrawlTarget) {
         val ctx = requireContext()
@@ -500,6 +503,14 @@ class GalleryFragment : Fragment() {
         popup.menuInflater.inflate(R.menu.item_crawl_target_actions, popup.menu)
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                R.id.action_target_incremental -> {
+                    startCrawl(setOf(target.uid), full = false)
+                    true
+                }
+                R.id.action_target_full -> {
+                    confirmFull(setOf(target.uid))
+                    true
+                }
                 R.id.action_target_since -> {
                     pickSince(target)
                     true
@@ -542,6 +553,10 @@ class GalleryFragment : Fragment() {
         }
         val since = AccountStore.crawlSince(ctx, target.uid)
         if (since.isNotEmpty()) sb.append(" · ").append(getString(R.string.crawl_progress_from, since))
+        // 全量扫描有独立的页码断点：不显示的话用户会以为「全量没反应」
+        if (cursor?.fullScanInProgress == true) {
+            sb.append(getString(R.string.crawl_progress_scan_fmt, cursor.fullScanPageHint))
+        }
         if (cursor?.reachedBottom == true) sb.append(getString(R.string.crawl_progress_bottom))
         return sb.toString()
     }
@@ -624,20 +639,61 @@ class GalleryFragment : Fragment() {
         val host = view ?: return
         val startButton = host.findViewById<View>(R.id.btnCrawlStart)
         val stopButton = host.findViewById<View>(R.id.btnCrawlStop)
+        val fullButton = host.findViewById<View>(R.id.btnCrawlFull)
         startButton?.visibility = if (running) View.GONE else View.VISIBLE
         stopButton?.visibility = if (running) View.VISIBLE else View.GONE
+        fullButton?.visibility = if (running) View.GONE else View.VISIBLE
         startButton?.isEnabled = !running
         host.findViewById<View>(R.id.btnAddTarget)?.isEnabled = !running
     }
 
-    private fun start() {
+    private fun start() = startCrawl(emptySet(), full = false)
+
+    /**
+     * 全量确认框（v0.9.12）。
+     *
+     * 全量不是「更彻底的增量」而是一次从头连续翻到底的重扫：不会重复下载
+     * （索引里终态的帖直接跳过），但列表请求量会随深度线性增长，
+     * 属于用户明确想做的动作 —— 单博主与全部目标都先确认再跑。
+     */
+    private fun confirmFull(uids: Set<String>) {
         if (busy) {
             toast(getString(R.string.busy))
             return
         }
         val ctx = requireContext()
-        if (AccountStore.crawlTargets(ctx).isEmpty()) {
-            toast(getString(R.string.crawl_need_target))
+        val name = if (uids.isEmpty()) {
+            getString(R.string.crawl_all_targets)
+        } else {
+            AccountStore.crawlTargets(ctx).firstOrNull { it.uid in uids }
+                ?.name?.ifEmpty { null } ?: uids.first()
+        }
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(getString(R.string.crawl_full_confirm_title, name))
+            .setMessage(getString(R.string.crawl_full_confirm_msg))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.crawl_full_confirm_ok) { _, _ ->
+                startCrawl(uids, full = true)
+            }
+            .show()
+    }
+
+    /**
+     * 启动一轮抓取。
+     *
+     * @param uids 空 = 全部目标；非空 = 只跑这些博主（v0.9.12 单博主抓取）。
+     * @param full 全量扫描；false 为增量。
+     */
+    private fun startCrawl(uids: Set<String>, full: Boolean) {
+        if (busy) {
+            toast(getString(R.string.busy))
+            return
+        }
+        val ctx = requireContext()
+        val targets = AccountStore.selectTargets(AccountStore.crawlTargets(ctx), uids)
+        if (targets.isEmpty()) {
+            // 单博主入口点完后目标被删了：给一句准确的提示，而不是笼统的「请先添加目标」
+            toast(getString(if (uids.isEmpty()) R.string.crawl_need_target else R.string.crawl_target_gone))
             return
         }
         if (AccountStore.crawlTreeUri(ctx).isEmpty()) {
@@ -650,9 +706,19 @@ class GalleryFragment : Fragment() {
         crawlJob = AppScope.launch {
             try {
                 val modeName = if (AccountStore.crawlMode(ctx) == AccountStore.MODE_ALBUM) "相册" else "时间线"
-                log("==== 抓取开始（$modeName · Live→${if (AccountStore.crawlGif(ctx)) "GIF" else "MOV"}） ====")
+                val scope = when {
+                    full && uids.isNotEmpty() -> "全量 · 单博主"
+                    full -> "全量 · 全部目标"
+                    uids.isNotEmpty() -> "增量 · 单博主"
+                    else -> "增量"
+                }
+                log("==== 抓取开始（$scope · $modeName · Live→${if (AccountStore.crawlGif(ctx)) "GIF" else "MOV"}） ====")
+                if (uids.isNotEmpty()) {
+                    log(getString(R.string.crawl_scope_single, targets.joinToString("、") { it.name.ifEmpty { it.uid } }))
+                }
+                if (full) log(getString(R.string.crawl_full_running))
                 // 与首页自动抓图共用一个闸门：拿不到锁立即返回，不排队、不并发写同一目录
-                if (CrawlRunner.runAll(ctx, ::log) == CrawlRunner.RunResult.Busy) {
+                if (CrawlRunner.runAll(ctx, ::log, onlyUids = uids, full = full) == CrawlRunner.RunResult.Busy) {
                     log(ctx.getString(R.string.crawl_busy))
                 } else {
                     log("==== 抓取结束 ====")
@@ -666,8 +732,11 @@ class GalleryFragment : Fragment() {
                 // busy 就永远回不到 false，开始抓取的按钮会一直灰着。
                 withContext(Dispatchers.Main + NonCancellable) {
                     busy = false
-                    setRunningUi(false)
-                    refreshGalleryCount()
+                    if (isAdded) {
+                        setRunningUi(false)
+                        renderTargets()          // 单博主抓完，目标行的「已覆盖 / 全量页码」要刷新
+                        refreshGalleryCount()
+                    }
                 }
             }
         }

@@ -340,6 +340,17 @@ object AccountStore {
         return list
     }
 
+    /**
+     * 按 UID 收窄抓取范围（v0.9.12：单博主全量 / 增量）。
+     *
+     * 纯函数，便于单测：`uids` 为空 = 全部目标（保持旧的「全部抓取」语义）；
+     * 传了 UID 就**只**跑这些，顺序沿用列表顺序（用户看到的顺序就是抓取顺序），
+     * 匹配不到的 UID 静默忽略 —— 目标可能在点菜单与真正开跑之间被删掉，
+     * 这里不该抛异常，也不该把「已删除的博主」当成有效范围。
+     */
+    fun selectTargets(list: List<CrawlTarget>, uids: Set<String>): List<CrawlTarget> =
+        if (uids.isEmpty()) list else list.filter { it.uid in uids }
+
     fun addCrawlTarget(ctx: Context, target: CrawlTarget) {
         synchronized(LOCK) {
             val list = crawlTargets(ctx)

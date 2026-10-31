@@ -160,4 +160,43 @@ class CrawlCursorTest {
         assertTrue(CrawlCursor(newestAt = 1).hasCoverage)
         assertTrue(CrawlCursor(oldestCoveredAt = 1).hasCoverage)
     }
+
+    // ---------- 全量扫描断点（v0.9.12） ----------
+
+    @Test
+    fun fullScanPageHint_roundTrip() {
+        val c = CrawlCursor(uid = "u", newestAt = 5000, oldestCoveredAt = 1000, fullScanPageHint = 37)
+        val back = CrawlCursor.fromJson(c.toJson())
+        assertEquals(37, back.fullScanPageHint)
+        assertTrue(back.fullScanInProgress)
+        assertEquals(c, back)
+    }
+
+    @Test
+    fun fullScanPageHint_defaultsToIdleWhenMissing() {
+        // 旧版本存下来的 JSON 没有 scanPage：必须落 0（没有进行中的全量扫描），
+        // 而不是被当成「从第 1 页开始」以外的某种状态
+        val legacy = org.json.JSONObject()
+            .put("uid", "u").put("newestAt", 5000L).put("oldest", 1000L)
+            .put("hint", 3).put("bottom", false).put("parked", false)
+        val back = CrawlCursor.fromJson(legacy)
+        assertEquals(0, back.fullScanPageHint)
+        assertFalse(back.fullScanInProgress)
+        assertEquals(3, back.anchorPageHint)      // 增量方向的锚点不受影响
+    }
+
+    @Test
+    fun fullScanPageHint_doesNotTouchIncrementalAnchor() {
+        // 两条方向的进度各自独立：跑完全量不能把增量的水线/锚点挤掉
+        val c = CrawlCursor(
+            uid = "u", newestAt = 5000, oldestCoveredAt = 1000,
+            anchorAt = 4000, anchorPageHint = 9, fullScanPageHint = 12,
+        )
+        val afterScan = c.copy(fullScanPageHint = 13)
+        assertEquals(5000L, afterScan.newestAt)
+        assertEquals(1000L, afterScan.oldestCoveredAt)
+        assertEquals(4000L, afterScan.anchorAt)
+        assertEquals(9, afterScan.anchorPageHint)
+        assertEquals(13, afterScan.fullScanPageHint)
+    }
 }

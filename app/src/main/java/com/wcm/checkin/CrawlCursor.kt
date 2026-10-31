@@ -26,8 +26,20 @@ data class CrawlCursor(
     val anchorPageHint: Int = 1,      // 上次所在页码，仅作搜索起点
     val reachedBottom: Boolean = false,
     val historyParked: Boolean = false,
+    /**
+     * 全量扫描（v0.9.12）的续跑页码，0 表示「没有进行中的全量扫描」。
+     *
+     * 与 [anchorPageHint] 分开存：增量方向的锚点是「时间锚点 + 搜索起点」，
+     * 全量扫描是一次从最新往最老的**连续下行**，它的断点就是「下一次该翻第几页」。
+     * 复用同一个字段会让两条方向的进度互相覆盖 —— 全量扫到第 40 页后
+     * 再跑一轮增量，下一次全量就得从增量留下的锚点重新猜位置。
+     */
+    val fullScanPageHint: Int = 0,
 ) {
     val hasCoverage: Boolean get() = newestAt > 0L || oldestCoveredAt > 0L
+
+    /** 是否有未完成的全量扫描（UI 展示「全量已扫到第 N 页」）。 */
+    val fullScanInProgress: Boolean get() = fullScanPageHint > 0
 
     fun toJson(): JSONObject = JSONObject()
         .put("uid", uid)
@@ -38,6 +50,7 @@ data class CrawlCursor(
         .put("hint", anchorPageHint)
         .put("bottom", reachedBottom)
         .put("parked", historyParked)
+        .put("scanPage", fullScanPageHint)
 
     fun applyJson(o: JSONObject): CrawlCursor = copy(
         uid = o.optString("uid", uid),
@@ -48,6 +61,7 @@ data class CrawlCursor(
         anchorPageHint = o.optInt("hint", anchorPageHint).coerceAtLeast(1),
         reachedBottom = o.optBoolean("bottom", reachedBottom),
         historyParked = o.optBoolean("parked", historyParked),
+        fullScanPageHint = o.optInt("scanPage", fullScanPageHint).coerceAtLeast(0),
     )
 
     companion object {
@@ -74,10 +88,20 @@ data class Budget(
         val NEW = Budget(maxPages = 6)
         val HISTORY = Budget(maxPages = 20)
         val RETRY = Budget(maxPages = 0, maxDetails = 50, maxFiles = 150)
+
+        /**
+         * 全量（单博主 / 全部目标，v0.9.12）单轮预算。
+         *
+         * 只放宽**翻页**上限到 20 页：全量意味着「从头重新枚举一遍」，
+         * 已抓过的帖在索引里是终态，只花列表请求、不拉详情也不重复下载，
+         * 所以多翻几页很便宜；而下载/详情/时间三项上限保持与增量一致，
+         * 避免一次全量把手机跑几个小时（预算耗尽可再点一次接着走）。
+         */
+        val FULL = Budget(maxPages = 20)
     }
 }
 
-enum class Phase { NEW, HISTORY, RETRY }
+enum class Phase { NEW, HISTORY, RETRY, SCAN }
 
 enum class StopReason {
     /** 列表返回空页：真到底了 */

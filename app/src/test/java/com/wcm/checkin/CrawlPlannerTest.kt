@@ -404,4 +404,105 @@ class CrawlPlannerTest {
         val plan = CrawlPlanner.planHistory(c, view("pin"), "", fetcher(pages))
         assertEquals(2500L, plan.coverageLow)
     }
+
+    // ========================= 全量扫描（v0.9.12） =========================
+
+    private fun scanCursor(scanPage: Int = 0, newestAt: Long = 0L, oldest: Long = 0L) = CrawlCursor(
+        uid = "u", newestAt = newestAt, oldestCoveredAt = oldest, fullScanPageHint = scanPage,
+    )
+
+    /**
+     * 全量的核心语义：**不承认已覆盖区间**。
+     * 增量在同一份数据上会立刻 ALL_COVERED 停在第 1 页，全量必须继续往下翻。
+     */
+    @Test
+    fun scan_doesNotStopAtAlreadyCovered() {
+        val pages = mapOf(
+            1 to listOf(post("a", 3000), post("b", 2900)),
+            2 to listOf(post("c", 2000)),
+            3 to emptyList<PostRef>(),
+        )
+        // 覆盖区间已经很宽，索引里第 1 页也全是终态
+        val c = scanCursor(newestAt = 3000, oldest = 1000)
+        val plan = CrawlPlanner.planScan(c, view("a", "b", "c"), "", fetcher(pages))
+        assertEquals(Phase.SCAN, plan.phase)
+        assertEquals(StopReason.PAGE_EXHAUSTED, plan.stop)
+        assertEquals(2, plan.lastPage)              // lastPage 是最后一个「有内容」的页
+        assertEquals(3, plan.skippedTerminal)       // 终态帖只记跳过，不进批次
+        assertTrue(plan.batch.isEmpty())
+        assertEquals(0, CrawlPlanner.nextScanPage(plan))   // 到底 = 本轮全量完成
+    }
+
+    @Test
+    fun scan_collectsPendingPostsAscendingAndRecordsCoverage() {
+        val pages = mapOf(
+            1 to listOf(post("a", 3000), post("b", 2500), post("done", 2400)),
+            2 to listOf(post("c", 1000)),
+        )
+        val plan = CrawlPlanner.planScan(scanCursor(), view("done"), "", fetcher(pages), Budget(maxPages = 2))
+        assertEquals(listOf("c", "b", "a"), plan.batch.map { it.id })
+        assertEquals(1000L, plan.coverageLow)
+        assertEquals(3000L, plan.coverageHigh)
+        assertEquals(StopReason.BUDGET, plan.stop)  // 页数用满
+        assertEquals(2, plan.lastPage)
+        assertEquals(3, CrawlPlanner.nextScanPage(plan))   // 下轮从第 3 页接着走
+    }
+
+    /** 断点续跑：有 scanPage 就从那一页开始，不重走前面的页。 */
+    @Test
+    fun scan_resumesFromScanPageHint() {
+        val fetched = ArrayList<Int>()
+        val pages = mapOf(
+            3 to listOf(post("x", 1000)),
+            4 to emptyList<PostRef>(),
+        )
+        val fetch: (Int) -> PageOutcome = { p ->
+            fetched.add(p)
+            PageOutcome.ok(p, pages[p] ?: emptyList())
+        }
+        val plan = CrawlPlanner.planScan(scanCursor(scanPage = 3), view(), "", fetch, Budget(maxPages = 5))
+        assertEquals(3, plan.startPage)
+        assertEquals(listOf(3, 4), fetched)
+        assertEquals(StopReason.PAGE_EXHAUSTED, plan.stop)
+    }
+
+    /** 起始日期是硬下界：全量也不越过用户设定的边界。 */
+    @Test
+    fun scan_stopsAtSinceDate() {
+        val since = CrawlDate.dayStartSec("2025-06-01")!!
+        val pages = mapOf(
+            1 to listOf(post("new", since + 86400)),
+            2 to listOf(post("old", since - 86400)),
+        )
+        val plan = CrawlPlanner.planScan(scanCursor(), view(), "2025-06-01", fetcher(pages))
+        assertEquals(StopReason.SINCE_DATE, plan.stop)
+        assertEquals(listOf("new"), plan.batch.map { it.id })
+        assertEquals(0, CrawlPlanner.nextScanPage(plan))
+    }
+
+    /** 翻页失败不能跳过：断点停回失败页（lastPage 是最后成功页）。 */
+    @Test
+    fun scan_pageErrorKeepsHintAtFailedPage() {
+        val pages = mapOf(1 to listOf(post("a", 3000)))
+        val plan = CrawlPlanner.planScan(scanCursor(), view("a"), "", fetcher(pages, failing = setOf(2)))
+        assertEquals(StopReason.PAGE_ERROR, plan.stop)
+        assertEquals(1, plan.lastPage)
+        assertEquals(2, CrawlPlanner.nextScanPage(plan))
+    }
+
+    @Test
+    fun scan_firstPageEmptyMeansReachedBottom() {
+        val plan = CrawlPlanner.planScan(scanCursor(), view(), "", fetcher(emptyMap()))
+        assertTrue(plan.reachedBottom)
+        assertEquals(StopReason.PAGE_EXHAUSTED, plan.stop)
+        assertEquals(0, CrawlPlanner.nextScanPage(plan))
+    }
+
+    /** 纯文字帖不进批次（与增量同口径）：没有原图可下，进批次只会白拉详情。 */
+    @Test
+    fun scan_skipsTextOnlyPosts() {
+        val pages = mapOf(1 to listOf(post("t", 3000, pics = 0), post("g", 2500)))
+        val plan = CrawlPlanner.planScan(scanCursor(), view(), "", fetcher(pages), Budget(maxPages = 1))
+        assertEquals(listOf("g"), plan.batch.map { it.id })
+    }
 }

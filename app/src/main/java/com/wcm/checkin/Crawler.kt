@@ -387,6 +387,8 @@ object Crawler {
      * 进度落在 [CrawlCursor]，任意时刻中断都能从锚点接上。
      *
      * [retryOnly] 只跑 RETRY 阶段（补上次失败的槽位），不翻页。
+     * [onlyUids] 只抓这些 UID（v0.9.12 单博主抓取）；空集合 = 全部目标。
+     * [full] 全量扫描：从头连续下行、不信已有覆盖区间（详见 [CrawlPlanner.planScan]）。
      * [onEvent] 进度事件（只用于展示，不影响抓取语义）。
      * [isStopped] 停止信号：在每帖 / 每阶段之间检查，让自动触发的抓取也能停。
      */
@@ -397,8 +399,11 @@ object Crawler {
         retryOnly: Boolean = false,
         onEvent: (CrawlEvent) -> Unit = {},
         isStopped: () -> Boolean = { false },
+        onlyUids: Set<String> = emptySet(),
+        full: Boolean = false,
     ) {
-        val targets = AccountStore.crawlTargets(ctx)
+        // 单博主抓取：先按 UID 收窄，再走完全相同的链路（顺序仍是用户看到的顺序）
+        val targets = AccountStore.selectTargets(AccountStore.crawlTargets(ctx), onlyUids)
         val treeUriRaw = AccountStore.crawlTreeUri(ctx)
         val accounts = AccountStore.load(ctx)
         if (accounts.isEmpty()) {
@@ -406,22 +411,42 @@ object Crawler {
             return
         }
         if (targets.isEmpty() || treeUriRaw.isEmpty()) {
-            if (!autoMode) log("✗ 请先添加抓取目标并选择相册目录")
+            if (!autoMode) {
+                log(
+                    if (onlyUids.isEmpty()) "✗ 请先添加抓取目标并选择相册目录"
+                    else "✗ 该博主已不在抓取目标里，刷新目标列表后再试",
+                )
+            }
             return
         }
         val cookie = pickCrawlCookie(accounts, log) ?: return
+        // 索引是按目录共享的：pendingRetry 没有 uid 维度，单博主跑重试会把别人的失败一起补掉。
+        // 与其偷偷扩大范围，不如跳过并把入口指给「待重试」——用户点哪个范围就只跑哪个范围。
+        val scoped = onlyUids.isNotEmpty()
+        val allowRetry = !scoped && !full
 
-        onEvent(CrawlEvent.Begin(if (retryOnly) "补抓失败" else "增量抓取", targets.size))
+        val what = when {
+            full && scoped -> "单博主全量"
+            full -> "全量抓取"
+            retryOnly -> "补抓失败"
+            scoped -> "单博主增量"
+            else -> "增量抓取"
+        }
+        onEvent(CrawlEvent.Begin(what, targets.size))
+        if (scoped) {
+            log("范围：只抓 ${targets.joinToString("、") { it.name.ifEmpty { it.uid } }}")
+            if (!allowRetry) log("提示：单博主 / 全量不跑共享的「待重试」队列，需要时用「待重试」入口")
+        }
         withCrawlContext(ctx, treeUriRaw, log) { state ->
             var downloaded = 0
             for ((index, target) in targets.withIndex()) {
                 if (isStopped()) break
                 val label = target.name.ifEmpty { target.uid }
                 onEvent(CrawlEvent.Target(label, index + 1, targets.size))
-                log("── $label（${target.uid}）──")
+                log("── $label（${target.uid}${if (full) " · 全量" else ""}）──")
                 try {
                     downloaded += crawlTarget(
-                        ctx, cookie, target, state, log, retryOnly, onEvent, isStopped,
+                        ctx, cookie, target, state, log, retryOnly, onEvent, isStopped, full, allowRetry,
                     )
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     state.index.flush()
@@ -443,6 +468,15 @@ object Crawler {
 
     /** 每轮「补历史」最多翻几页相册墙。 */
     private const val ALBUM_HISTORY_PAGES = 8
+
+    /**
+     * 全量（v0.9.12）每轮最多翻几页相册墙。
+     *
+     * 相册墙的游标本身就是「从头往下的位置」，所以相册模式没有时间线那种
+     * 「覆盖区间」概念：全量与增量的唯一区别就是每轮走多深。已抓过的帖在索引里
+     * 是终态，只花列表请求、不拉详情，20 页很便宜。
+     */
+    private const val ALBUM_FULL_PAGES = 20
 
     /** 每轮每目标最多处理几帖（一帖可能带 18 张图，按帖计数比按图更可控）。 */
     private const val ALBUM_MAX_POSTS = 40
@@ -478,11 +512,18 @@ object Crawler {
         autoMode: Boolean = false,
         onEvent: (CrawlEvent) -> Unit = {},
         isStopped: () -> Boolean = { false },
+        onlyUids: Set<String> = emptySet(),
+        full: Boolean = false,
     ): Boolean {
-        val targets = AccountStore.crawlTargets(ctx)
+        val targets = AccountStore.selectTargets(AccountStore.crawlTargets(ctx), onlyUids)
         val treeUriRaw = AccountStore.crawlTreeUri(ctx)
         if (targets.isEmpty() || treeUriRaw.isEmpty()) {
-            if (!autoMode) log("✗ 请先添加抓取目标并选择相册目录")
+            if (!autoMode) {
+                log(
+                    if (onlyUids.isEmpty()) "✗ 请先添加抓取目标并选择相册目录"
+                    else "✗ 该博主已不在抓取目标里，刷新目标列表后再试",
+                )
+            }
             // 没有目标不算「相册模式失败」，不需要上层回退到时间线
             return true
         }
@@ -491,7 +532,10 @@ object Crawler {
         var downloaded = 0
         val startedAt = System.currentTimeMillis()
 
-        onEvent(CrawlEvent.Begin("相册抓取", targets.size))
+        onEvent(CrawlEvent.Begin(if (full) "相册全量" else "相册抓取", targets.size))
+        if (onlyUids.isNotEmpty()) {
+            log("范围：只抓 ${targets.joinToString("、") { it.name.ifEmpty { it.uid } }}")
+        }
         withCrawlContext(ctx, treeUriRaw, log) { state ->
             for ((index, target) in targets.withIndex()) {
                 if (isStopped()) break
@@ -501,9 +545,11 @@ object Crawler {
                 }
                 val label = target.name.ifEmpty { target.uid }
                 onEvent(CrawlEvent.Target(label, index + 1, targets.size))
-                log("── $label（${target.uid} · 相册）──")
+                log("── $label（${target.uid} · 相册${if (full) " · 全量" else ""}）──")
                 try {
-                    val result = crawlAlbumTarget(ctx, target, accounts, state, log, onEvent, startedAt, isStopped)
+                    val result = crawlAlbumTarget(
+                        ctx, target, accounts, state, log, onEvent, startedAt, isStopped, full,
+                    )
                     if (result.enumerated) anyEnumerated = true
                     downloaded += result.saved
                 } catch (e: kotlinx.coroutines.CancellationException) {
@@ -550,10 +596,13 @@ object Crawler {
         onEvent: (CrawlEvent) -> Unit,
         startedAt: Long,
         isStopped: () -> Boolean,
+        full: Boolean = false,
     ): AlbumTargetResult {
         val uid = target.uid
         val sinceDate = AccountStore.crawlSince(ctx, uid)
         val savedCursor = AccountStore.albumSince(ctx, state.treeTag, uid)
+        // 全量只是「每轮走得更深」，不需要新的断点字段：相册墙游标本身就是位置
+        val historyPages = if (full) ALBUM_FULL_PAGES else ALBUM_HISTORY_PAGES
 
         // 账号只在需要回退时解析一次（探活有成本，不能每帖都做）
         var accountResolved = false
@@ -637,7 +686,7 @@ object Crawler {
 
         // 2) 补历史：从存档游标继续。游标为空说明「补新」已经覆盖了开头，不必重复。
         if (newPass.nextCursor.isNotEmpty() && savedCursor.isNotEmpty()) {
-            val historyPass = pass(savedCursor, ALBUM_HISTORY_PAGES, ALBUM_MAX_POSTS)
+            val historyPass = pass(savedCursor, historyPages, ALBUM_MAX_POSTS)
             saved += historyPass.saved
             nextCursor = historyPass.nextCursor
             reachedBottom = reachedBottom || historyPass.reachedBottom
@@ -859,6 +908,8 @@ object Crawler {
         retryOnly: Boolean = false,
         onEvent: (CrawlEvent) -> Unit = {},
         isStopped: () -> Boolean = { false },
+        full: Boolean = false,
+        allowRetry: Boolean = true,
     ): Int {
         val uid = target.uid
         val sinceDate = AccountStore.crawlSince(ctx, uid)
@@ -870,8 +921,18 @@ object Crawler {
         fun exhausted() = downloaded >= Budget.NEW.maxFiles || details >= Budget.NEW.maxDetails ||
             System.currentTimeMillis() - started > Budget.NEW.maxWallClockMs
 
+        // ---- 全量扫描：一条连续下行通道，不跑「补新/补历史」两段式 ----
+        if (full && !retryOnly) {
+            return crawlFullScan(ctx, cookie, target, state, log, onEvent, isStopped)
+        }
+
         // ---- Phase RETRY：先补上次失败的槽位（不翻页） ----
-        val pending = state.index.pendingRetries(System.currentTimeMillis(), Budget.RETRY.maxDetails)
+        // 单博主/全量时跳过：索引按目录共享，pendingRetry 没有 uid 维度，跑了就会越界。
+        val pending = if (allowRetry) {
+            state.index.pendingRetries(System.currentTimeMillis(), Budget.RETRY.maxDetails)
+        } else {
+            emptyList()
+        }
         if (pending.isNotEmpty()) {
             onEvent(CrawlEvent.Phase(CrawlPhase.RETRY, pending.size, 0))
             log("  重试队列：${pending.size} 帖")
@@ -952,6 +1013,77 @@ object Crawler {
         }
         return downloaded
     }
+
+    /**
+     * 全量扫描（v0.9.12）：从最新一页开始**连续**往最老翻，一段一段走到底。
+     *
+     * 和增量的本质区别在判据（见 [CrawlPlanner.planScan]）：这里不相信「已覆盖区间」，
+     * 只相信索引里「这帖是否终态」。所以它适合用来补历史空洞 —— 旧版本按连续计数
+     * 误判、置顶帖绕过判定、中途断掉都会留下「游标以为抓过、其实没抓」的缺口，
+     * 增量永远不会回头，全量会。已抓过的帖只花一次列表请求，不会重复下载。
+     *
+     * 断点存在 [CrawlCursor.fullScanPageHint]：预算用完就从下一页接着走，
+     * 翻页失败就留在本页下一轮重试。断点只在**这一轮把整批帖都处理完**时才推进，
+     * 否则宁可重做一轮，也不能把没下的帖当成已扫过。
+     */
+    private suspend fun crawlFullScan(
+        ctx: Context,
+        cookie: String,
+        target: AccountStore.CrawlTarget,
+        state: CrawlContext,
+        log: (String) -> Unit,
+        onEvent: (CrawlEvent) -> Unit,
+        isStopped: () -> Boolean,
+    ): Int {
+        val uid = target.uid
+        val sinceDate = AccountStore.crawlSince(ctx, uid)
+        var cursor = AccountStore.crawlCursor(ctx, state.treeTag, uid)
+        var downloaded = 0
+        var details = 0
+        val started = System.currentTimeMillis()
+
+        fun exhausted() = downloaded >= Budget.FULL.maxFiles || details >= Budget.FULL.maxDetails ||
+            System.currentTimeMillis() - started > Budget.FULL.maxWallClockMs
+
+        val fetch = pageFetcher(cookie, uid, log)
+        val plan = CrawlPlanner.planScan(cursor, indexView(state.index), sinceDate, fetch, Budget.FULL)
+        log("  全量扫描：第 ${plan.startPage} 页起，${plan.batch.size} 帖（索引命中 ${plan.skippedTerminal}）")
+        onEvent(CrawlEvent.Phase(CrawlPhase.SCAN, plan.batch.size, plan.skippedTerminal))
+
+        var processed = 0
+        for (p in plan.batch) {
+            if (exhausted() || isStopped()) break
+            details++
+            // 上次抓到一半的帖（PARTIAL）只补缺的槽位，已落盘的图不再重下
+            val slots = state.index.failedSlots(p.id).ifEmpty { null }
+            downloaded += processPost(
+                ctx, cookie, p.id, uid, target, state, log, onlySlots = slots, onEvent = onEvent,
+            )
+            processed++
+        }
+
+        if (processed >= plan.batch.size) {
+            cursor = CursorLogic.afterNewPhase(cursor, plan.coverageHigh, plan.coverageLow)
+            val next = CrawlPlanner.nextScanPage(plan)
+            cursor = cursor.copy(fullScanPageHint = next)
+            if (plan.reachedBottom) cursor = cursor.copy(reachedBottom = true)
+            if (next == 0) {
+                log("  ✓ 全量扫描完成（第 ${plan.startPage} ~ ${plan.lastPage.ifAtLeast(1)} 页）")
+            } else {
+                log("  全量已扫到第 ${plan.lastPage.ifAtLeast(1)} 页，下次从第 $next 页接着走")
+            }
+        } else {
+            // 预算中途耗尽：本页的帖没下完，断点必须留在本轮起点重做，
+            // 下一轮已终态的帖会被索引跳过，重复代价只有一次列表请求。
+            log("  全量预算耗尽（$processed/${plan.batch.size}），断点留在第 ${plan.startPage} 页，下轮重试")
+        }
+        state.index.flush()
+        AccountStore.saveCrawlCursor(ctx, state.treeTag, cursor)
+        logPlan("全量", plan, cursor, log)
+        return downloaded
+    }
+
+    private fun Int.ifAtLeast(min: Int): Int = if (this < min) min else this
 
     /** 把本阶段停下来的原因写进日志 —— 用户能直接看出「为什么这轮只抓到这儿」。 */
     private fun logPlan(
