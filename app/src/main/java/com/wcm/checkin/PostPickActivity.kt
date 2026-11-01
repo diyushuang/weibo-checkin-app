@@ -431,8 +431,19 @@ class PostPickActivity : AppCompatActivity() {
 
         override fun onViewRecycled(holder: Holder) {
             // 不复用前先掐掉还没回来的缩略图请求：单帖最多 18 格，翻来翻去会堆一串 Job
-            holder.cancelLoad()
+            holder.stopLoad()
             super.onViewRecycled(holder)
+        }
+
+        /** 格子进入可见区才发起请求（与浏览页同一口径：先滚到的先加载）。 */
+        override fun onViewAttachedToWindow(holder: Holder) {
+            super.onViewAttachedToWindow(holder)
+            holder.startLoad()
+        }
+
+        override fun onViewDetachedFromWindow(holder: Holder) {
+            holder.stopLoad()
+            super.onViewDetachedFromWindow(holder)
         }
 
         inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
@@ -444,13 +455,35 @@ class PostPickActivity : AppCompatActivity() {
             /** 当前格的缩略图请求；换绑/回收时取消，避免 Job 堆积与错位回填。 */
             private var thumbJob: Job? = null
 
-            fun cancelLoad() {
+            /** 本格要加载的 URL（[startLoad] 用，避免重复从 tag 里取）。 */
+            private var pendingUrl: String = ""
+
+            private var attached = false
+
+            fun stopLoad() {
+                attached = false
                 thumbJob?.cancel()
                 thumbJob = null
             }
 
+            /** 进入可见区后开工；同一格已经在跑就不重复发。 */
+            fun startLoad() {
+                attached = true
+                if (thumbJob?.isActive == true) return
+                val url = pendingUrl
+                if (url.isEmpty()) return
+                thumbJob = lifecycleScope.launch(Dispatchers.IO) {
+                    val bmp = RemoteThumb.load(url) ?: return@launch
+                    withContext(Dispatchers.Main) {
+                        if (image.tag == url) {
+                            @Suppress("UseKtx")
+                            image.setImageDrawable(BitmapDrawable(null, bmp))
+                        }
+                    }
+                }
+            }
+
             fun bind(item: PicItem, position: Int) {
-                image.setImageDrawable(null)
                 image.contentDescription = getString(R.string.pick_pic_desc_fmt, position + 1)
                 badge.visibility = if (item.isLive || item.isGif) View.VISIBLE else View.GONE
                 badge.text = getString(if (item.isLive) R.string.pick_live_badge else R.string.pick_gif_badge)
@@ -458,18 +491,17 @@ class PostPickActivity : AppCompatActivity() {
                 scrim.visibility = if (checked) View.VISIBLE else View.GONE
                 check.visibility = if (checked) View.VISIBLE else View.GONE
 
-                // 远程缩略图：tag 防错位（快速滚动时旧请求回来不能盖到新格子）
+                // 远程缩略图：tag 防错位（快速滚动时旧请求回来不能盖到新格子）。
+                // 勾选一次会整表重绑，所以 URL 没变时**不清图、不重发** —— 否则每点一次
+                // 勾选，屏上已经显示好的图会被清空再排队重下。
                 val key = item.thumbUrl
-                image.tag = key
-                thumbJob?.cancel()
-                thumbJob = lifecycleScope.launch(Dispatchers.IO) {
-                    val bmp = runCatching { RemoteThumb.load(item.thumbUrl) }.getOrNull()
-                    withContext(Dispatchers.Main) {
-                        if (image.tag == key && bmp != null) {
-                            @Suppress("UseKtx")
-                            image.setImageDrawable(BitmapDrawable(null, bmp))
-                        }
-                    }
+                if (image.tag != key) {
+                    image.tag = key
+                    image.setImageDrawable(null)
+                    pendingUrl = key
+                    thumbJob?.cancel()
+                    thumbJob = null
+                    if (attached) startLoad()
                 }
 
                 itemView.setOnClickListener {

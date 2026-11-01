@@ -30,6 +30,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -312,11 +313,14 @@ class BrowsingActivity : AppCompatActivity() {
                     if (isFinishing || isDestroyed) return@withContext
                     toolbar.subtitle = "$name · $resolved"
                 }
-                // 首屏拉到「可见 ≥ 6」或 3 页为止：前几条常是置顶/转发，一页筛完可能只剩两三张卡
+                // 首屏只拉 1 页（10 帖）：配合「卡片进可见区才加载缩略图」，
+                // 进页面时不再一次把 3 页 × 最多 9 格（近 90 个请求）压给 CDN ——
+                // 剩下的靠触底翻页，一屏一屏往下续。
+                // 例外：筛完不足 3 条（前几条是置顶/纯转发）才补一页，最多 2 页。
                 var fetched = 0
-                while (fetched < 3) {
-                    val want = withContext(Dispatchers.Main) { hasMore && visible.size < 6 }
-                    if (!want) break
+                while (fetched < 2) {
+                    val needMore = withContext(Dispatchers.Main) { hasMore && visible.size < 3 }
+                    if (fetched >= 1 && !needMore) break
                     if (!fetchOnePage(cookie)) break
                     fetched++
                 }
@@ -552,6 +556,26 @@ class BrowsingActivity : AppCompatActivity() {
             holder.bind(visible[position])
         }
 
+        /**
+         * 缩略图只在卡片真正进入可见区时才发起，滑出即取消：
+         * 滚动时是「一屏一屏、一格一格」地加载，而不是进页面就把所有卡片的
+         * 所有格子一起排进队列。
+         */
+        override fun onViewAttachedToWindow(holder: Holder) {
+            super.onViewAttachedToWindow(holder)
+            holder.startThumbs()
+        }
+
+        override fun onViewDetachedFromWindow(holder: Holder) {
+            holder.stopThumbs()
+            super.onViewDetachedFromWindow(holder)
+        }
+
+        override fun onViewRecycled(holder: Holder) {
+            holder.stopThumbs()
+            super.onViewRecycled(holder)
+        }
+
         inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
             private val meta = view.findViewById<TextView>(R.id.tvBrowseMeta)
             private val text = view.findViewById<TextView>(R.id.tvBrowseText)
@@ -559,7 +583,23 @@ class BrowsingActivity : AppCompatActivity() {
             private val scrim = view.findViewById<View>(R.id.browseScrim)
             private val check = view.findViewById<ImageView>(R.id.browseCheck)
 
+            /** 当前卡的缩略图请求；换绑 / 滑出可见区时取消，避免排队请求堆积。 */
+            private var thumbJob: Job? = null
+
+            /** 本卡待加载的格子（按九宫格顺序）。 */
+            private var pendingThumbs: List<Pair<ImageView, String>> = emptyList()
+
+            /** 下次从第几格开始：滑出再滑回来要接着拉，不能从头把 9 格再压一遍。 */
+            private var nextThumb = 0
+
+            /** 请求代次：取消后旧循环即使还没跑到挂起点，也不会再发请求。 */
+            private var thumbGen = 0
+
+            /** 当前是否在可见区内（RecyclerView 的 attach 状态，与 bind 是两条时间线）。 */
+            private var attached = false
+
             fun bind(post: WeiboApi.RawPost) {
+                cancelThumbs()
                 meta.text = buildString {
                     append(metaLine(post))
                 }
@@ -568,6 +608,47 @@ class BrowsingActivity : AppCompatActivity() {
                 val checked = post.bid in selectedBids
                 scrim.visibility = if (checked) View.VISIBLE else View.GONE
                 check.visibility = if (checked) View.VISIBLE else View.GONE
+                // bind 之后 RecyclerView 才会回调 attach；已经在可见区（筛选/勾选重绑）时直接开工
+                if (attached) startThumbs()
+            }
+
+            private fun cancelThumbs() {
+                thumbGen++
+                thumbJob?.cancel()
+                thumbJob = null
+            }
+
+            /** 按顺序逐张拉：9 格同时并发会让靠前的图反而最后出现。 */
+            fun startThumbs() {
+                attached = true
+                if (thumbJob?.isActive == true) return
+                if (nextThumb >= pendingThumbs.size) return
+                val gen = ++thumbGen
+                thumbJob = lifecycleScope.launch(Dispatchers.IO) {
+                    while (true) {
+                        // 换绑 / 滑出可见区之后，旧循环停在下一格就收工
+                        if (gen != thumbGen) return@launch
+                        val idx = nextThumb
+                        if (idx >= pendingThumbs.size) return@launch
+                        val (iv, url) = pendingThumbs[idx]
+                        val bmp = RemoteThumb.load(url)
+                        // 这一格真的结束了才前进：中途被取消时游标留在原地，
+                        // 滑回来会重下它，而不是漏成一张永远空白的格子
+                        nextThumb = idx + 1
+                        if (bmp == null) continue
+                        withContext(Dispatchers.Main) {
+                            if (iv.tag == url) {
+                                @Suppress("UseKtx")
+                                iv.setImageDrawable(BitmapDrawable(null, bmp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            fun stopThumbs() {
+                attached = false
+                cancelThumbs()
             }
 
             private fun metaLine(post: WeiboApi.RawPost): String {
@@ -586,16 +667,24 @@ class BrowsingActivity : AppCompatActivity() {
                 return "$whenStr · ${tags.joinToString(" · ")}"
             }
 
-            /** 九宫格：每次 bind 重建（不搞视图复用），tag 防旧请求盖图。 */
+            /**
+             * 九宫格：每次 bind 重建（不搞视图复用），tag 防旧请求盖图。
+             *
+             * **这里只摆格子、登记待加载清单，不发起请求** —— 真正的下载由
+             * [startThumbs] 在卡片进入可见区后按顺序一格一格来。
+             */
             private fun fillPics(post: WeiboApi.RawPost) {
                 pics.removeAllViews()
                 val thumbs = post.thumbs
                 if (thumbs.isEmpty() || cellPx <= 0) {
+                    pendingThumbs = emptyList()
+                    nextThumb = 0
                     pics.visibility = if (thumbs.isEmpty()) View.GONE else View.VISIBLE
                     return
                 }
                 pics.visibility = View.VISIBLE
                 val ctx = pics.context
+                val jobs = ArrayList<Pair<ImageView, String>>(9)
                 thumbs.take(9).forEachIndexed { i, url ->
                     val iv = ImageView(ctx).apply {
                         layoutParams = GridLayout.LayoutParams().apply {
@@ -610,17 +699,11 @@ class BrowsingActivity : AppCompatActivity() {
                         contentDescription = getString(R.string.browse_pic_desc_fmt, i + 1)
                     }
                     iv.tag = url
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        val bmp = runCatching { RemoteThumb.load(url) }.getOrNull()
-                        withContext(Dispatchers.Main) {
-                            if (iv.tag == url && bmp != null) {
-                                @Suppress("UseKtx")
-                                iv.setImageDrawable(BitmapDrawable(null, bmp))
-                            }
-                        }
-                    }
                     pics.addView(iv)
+                    jobs.add(iv to url)
                 }
+                pendingThumbs = jobs
+                nextThumb = 0
                 if (thumbs.size > 9 || post.picNum > 9) {
                     val more = TextView(ctx).apply {
                         text = getString(R.string.browse_more_pics_fmt, maxOf(thumbs.size, post.picNum) - 9)

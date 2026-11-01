@@ -69,8 +69,11 @@ android {
         // 「全量（全部目标）」；全量 = planScan 连续下行、不信覆盖区间、按页断点续跑。
         // 0.9.13：2026-11-01 全项目复审的 56 条修复 + 两轮独立复审追加的 7 条回归修复，
         // 无新增功能（只修正确性与稳定性）。完整清单见 CHANGELOG.md。
-        versionCode = 27
-        versionName = "0.9.13"
+        // 0.9.14：修浏览博主抓图「缩略图全空白 / 长按大图加载失败」（sinaimg 热链保护
+        // 需要 Referer；大图字节上限按尺寸分档），并把预览图改成「可见才加载、按顺序
+        // 一格一格来」。完整清单见 CHANGELOG.md。
+        versionCode = 28
+        versionName = "0.9.14"
     }
 
     signingConfigs {
