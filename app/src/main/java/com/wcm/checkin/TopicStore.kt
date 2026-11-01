@@ -65,8 +65,6 @@ object TopicStore {
     @Volatile
     private var loaded = false
 
-    /** 幂等：首次调用把磁盘上的全部快照读进内存。 */
-    @Synchronized
     /** 预热入口：放到 IO 线程调，避免首页/超话页在主线程遍历 prefs。 */
     fun warm(ctx: Context) {
         runCatching {
@@ -75,6 +73,14 @@ object TopicStore {
         }
     }
 
+    /**
+     * 幂等：首次调用把磁盘上的全部快照读进内存。
+     *
+     * 必须持类锁：首页与超话页会并发首载，两边各解析一遍 prefs.all 还只是浪费，
+     * 更糟的是后完成的那次 `_state.value = all` 会把另一线程刚 save 进去的
+     * 新快照覆盖掉 —— 用户看到的是「刚刷出来的超话列表又变回旧的」。
+     */
+    @Synchronized
     fun ensureLoaded(ctx: Context) {
         if (loaded) return
         val all = HashMap<String, Snapshot>()
@@ -127,7 +133,8 @@ object TopicStore {
         if (uid.isEmpty()) return
         ensureLoaded(ctx)
         prefs(ctx).edit { remove(SNAP_PREFIX + uid) }
-        _state.value = _state.value - uid
+        // 同样要 update 而不是 value - uid：两次 .value 之间可能插入别的 uid 的 save()
+        _state.update { it - uid }
     }
 
     // ---- 超话详情 ----

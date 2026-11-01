@@ -646,6 +646,13 @@ class CrawlIndex private constructor(
                 return true
             } catch (e: Exception) {
                 tmp.delete()
+                // 兜底：上面的「备份 → 替换」链条若连 bak.renameTo(mainFile) 都失败，
+                // 主文件此刻已不存在、全部数据只剩 .bak。不在这里还原，下次 open()
+                // 会当成全新索引（lines=0 且不算 degraded），用户看到的是图库全量重下。
+                runCatching {
+                    val bak = File(dir, "$treeTag.ndjson.bak")
+                    if (!mainFile.exists() && bak.exists()) bak.renameTo(mainFile)
+                }
                 return false
             }
         }

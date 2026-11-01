@@ -601,6 +601,7 @@ class TopicFragment : Fragment() {
             toast(getString(R.string.busy))
             return
         }
+        val key = row.uid + "|" + row.topic.key
         val ctx = requireContext()
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             var message: String
@@ -647,9 +648,13 @@ class TopicFragment : Fragment() {
                 throw e
             } catch (e: Exception) {
                 message = ctx.getString(R.string.topic_checkin_fail_fmt, e.message ?: "异常")
+            } finally {
+                // 解闸必须无条件执行：checkinBusy 是 Fragment 级字段、onDestroyView 不清，
+                // 取消（重抛 CancellationException）走不到下面的 withContext 就会永久泄漏，
+                // 该超话之后每次点都只弹「正忙」。
+                checkinBusy.remove(key)
             }
             withContext(Dispatchers.Main + NonCancellable) {
-                checkinBusy.remove(row.uid + "|" + row.topic.key)
                 if (isAdded) {
                     toast(message)
                     render()

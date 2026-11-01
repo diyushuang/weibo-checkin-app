@@ -341,6 +341,24 @@ object Crawler {
     }
 
     /**
+     * 勾选抓取要记成「待补」的槽位 = 全部槽位 - 本次只处理的槽位。
+     *
+     * 只有**初次勾选抓取**（countNotPicked = true）才算：结果会并进该帖的 missing，
+     * 让它进不了终态，之后的增量/重试才补得回来 —— 否则只勾两张的帖会被判 DONE，
+     * 剩下那几张以后再也不会被任何一轮抓取碰到（见 Crawler.crawlPicked 的注释）。
+     *
+     * 重试路径绝不能算（countNotPicked = false）：它传进来的 onlySlots 本身就是上一轮的
+     * missing，补集恰好是「这一轮已经抽到的槽位」，并进 missing 会让集合在
+     * {已抽} / {未抽} 之间永久乒乓 —— 该帖永远到不了终态、待重试计数永不归零，
+     * 每轮还要白拉一次详情。
+     */
+    internal fun notPickedSlots(
+        allSlots: Set<Int>,
+        onlySlots: Set<Int>?,
+        countNotPicked: Boolean,
+    ): Set<Int> = if (onlySlots == null || !countNotPicked) emptySet() else allSlots - onlySlots
+
+    /**
      * 勾选抓取：浏览页 / 选图页提交的一批任务，逐帖拉详情后按槽位落盘。
      *
      * 与 [crawlSinglePost] 的差别只在「哪些槽位要落」：
@@ -407,7 +425,11 @@ object Crawler {
 
                 val want = if (slots == null) assets.picIds.size else slots.size
                 log("── 勾选抓取 $prefix（${assets.picIds.size} 图，选 ${want} 张）──")
-                val outcome = savePost(ctx, state, prefix, postId, at, assets, slots, log)
+                // 这是唯一一次「只抓勾选的几张」：没勾的槽位要记成待补，
+                // 否则 failed 为空会判 DONE，其余图再也补不回来。
+                val outcome = savePost(
+                    ctx, state, prefix, postId, at, assets, slots, log, countNotPicked = true,
+                )
                 posts++
                 saved += outcome.saved
                 failed += outcome.failed.size
@@ -1287,6 +1309,7 @@ object Crawler {
         assets: PostAssets,
         onlySlots: Set<Int>?,
         log: (String) -> Unit,
+        countNotPicked: Boolean = false,
     ): SaveOutcome {
         var saved = 0
         val failed = LinkedHashSet<Int>()
@@ -1303,8 +1326,7 @@ object Crawler {
             allSlots.add(if (assets.liveByIndex[i] == null) stillSlot(i) else pairedLiveSlot(i))
         }
         for (n in assets.liveExtras.indices) allSlots.add(extraLiveSlot(n))
-        val notPicked: Set<Int> =
-            if (onlySlots == null) emptySet() else allSlots.filter { it !in onlySlots }.toSet()
+        val notPicked = notPickedSlots(allSlots, onlySlots, countNotPicked)
 
         /** 落盘第 i 张配图的静图；返回是否新写了文件。 */
         suspend fun saveStill(i: Int): Boolean {

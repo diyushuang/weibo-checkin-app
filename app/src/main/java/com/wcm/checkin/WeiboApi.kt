@@ -633,8 +633,11 @@ private val NEGATIVE_WORDS = listOf(
         val code = payload.opt("code")?.toString() ?: ""
         val data = payload.optJSONObject("data") ?: JSONObject()
         val msg = payload.optString("msg", "").trim()
-        val errno = (payload.opt("errno")?.toString() ?: data.opt("errno")?.toString() ?: "")
-            .toIntOrNull() ?: 0
+        // 必须用 optInt 而不是 opt(...)?.toString()：opt 对值为 JSON null 的键返回
+        // JSONObject.NULL（非 Kotlin null），前者的 elvis 链就断在那儿了 —— 外层 errno
+        // 为 null、真实错误码在 data.errno 里（例如 100015）时会被读成 0，于是把
+        // 「需要验证」判成签到成功。optInt 既能吃数字也能吃 "100015" 这种数字字符串。
+        val errno = payload.optInt("errno", data.optInt("errno", 0))
         // 否定语要先看：「签到未成功」「领取失败」这类文案里同样含「成功」二字，
         // 单靠 SUCCESS_WORDS 的 contains 会把明确的失败判成成功 ——
         // 用户于是永远收不到失败提示，连续漏签也无感。

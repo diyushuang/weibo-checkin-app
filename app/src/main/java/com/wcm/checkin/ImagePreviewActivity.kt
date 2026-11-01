@@ -22,6 +22,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -218,50 +219,61 @@ class ImagePreviewActivity : AppCompatActivity() {
         deleting = true
         val resolver = contentResolver
         lifecycleScope.launch(Dispatchers.IO) {
-            val ok = try {
-                android.provider.DocumentsContract.deleteDocument(resolver, item.uri)
-            } catch (e: Exception) {
-                false
-            }
-            if (ok) {
-                // 顺序铁律：先物理删除成功，再回退索引。
-                // 反过来一旦删除失败，索引以为丢了会重下，而文件其实还在 → L1 又认领回来 → 死循环。
-                runCatching { rollbackIndex(item.name) }
-            }
-            withContext(Dispatchers.Main) {
-                deleting = false
-                if (isFinishing || isDestroyed) return@withContext
-                if (!ok) {
-                    Toast.makeText(this@ImagePreviewActivity, R.string.preview_delete_fail, Toast.LENGTH_SHORT).show()
-                    return@withContext
+            // 正常路径由下面的主线程块解闸：解闸与 items 变更在同一段主线程代码里，
+            // 中间不给第二次删除插空的机会。协程被取消 / 抛异常则走不到那里，
+            // 用 finally 兜底 —— 否则本实例的删除按钮从此永久失效（deleting 恒为 true）。
+            var released = false
+            try {
+                val ok = try {
+                    android.provider.DocumentsContract.deleteDocument(resolver, item.uri)
+                } catch (e: Exception) {
+                    false
                 }
-                contentChanged = true
-                // 位置必须按 uri 复核：挂起期间列表可能已经变了（另一次删除、
-                // 或返回图库后重载），拿挂起前的 pos 去 removeAt 会移掉另一张，
-                // 或用越界的 pos 直接抛 IndexOutOfBoundsException。
-                val at = items.indexOfFirst { it.uri == item.uri }
-                if (at < 0) {
-                    // 防御分支：挂起期间列表里已经没有这张了。当前只有 deleteCurrent 一处会改
-                    // items 且有 deleting 闸门，正常路径进不来；这里数据本身已是最新，
-                    // 只需把可能越界的当前页拉回来，不必整体重绑（重绑会把已解码的大图全丢掉）。
+                if (ok) {
+                    // 顺序铁律：先物理删除成功，再回退索引。
+                    // 反过来一旦删除失败，索引以为丢了会重下，而文件其实还在 → L1 又认领回来 → 死循环。
+                    runCatching { rollbackIndex(item.name) }
+                }
+                withContext(Dispatchers.Main) {
+                    released = true
+                    deleting = false
+                    if (isFinishing || isDestroyed) return@withContext
+                    if (!ok) {
+                        Toast.makeText(this@ImagePreviewActivity, R.string.preview_delete_fail, Toast.LENGTH_SHORT).show()
+                        return@withContext
+                    }
+                    contentChanged = true
+                    // 位置必须按 uri 复核：挂起期间列表可能已经变了（另一次删除、
+                    // 或返回图库后重载），拿挂起前的 pos 去 removeAt 会移掉另一张，
+                    // 或用越界的 pos 直接抛 IndexOutOfBoundsException。
+                    val at = items.indexOfFirst { it.uri == item.uri }
+                    if (at < 0) {
+                        // 防御分支：挂起期间列表里已经没有这张了。当前只有 deleteCurrent 一处会改
+                        // items 且有 deleting 闸门，正常路径进不来；这里数据本身已是最新，
+                        // 只需把可能越界的当前页拉回来，不必整体重绑（重绑会把已解码的大图全丢掉）。
+                        if (items.isEmpty()) {
+                            finish()
+                        } else {
+                            pager.setCurrentItem(pager.currentItem.coerceIn(0, items.size - 1), false)
+                            updateInfo()
+                        }
+                        return@withContext
+                    }
+                    items.removeAt(at)
+                    // 只删了这一页：精确通知单条移除，ViewPager2 会用它做删除动画，
+                    // 也不会把其它页已加载好的大图丢掉重解
+                    pagerAdapter.notifyItemRemoved(at)
                     if (items.isEmpty()) {
                         finish()
                     } else {
-                        pager.setCurrentItem(pager.currentItem.coerceIn(0, items.size - 1), false)
+                        pager.setCurrentItem(at.coerceIn(0, items.size - 1), false)
                         updateInfo()
                     }
-                    return@withContext
                 }
-                items.removeAt(at)
-                // 只删了这一页：精确通知单条移除，ViewPager2 会用它做删除动画，
-                // 也不会把其它页已加载好的大图丢掉重解
-                pagerAdapter.notifyItemRemoved(at)
-                if (items.isEmpty()) {
-                    finish()
-                } else {
-                    pager.setCurrentItem(at.coerceIn(0, items.size - 1), false)
-                    updateInfo()
-                }
+            } finally {
+                // 兜底解闸也回主线程写：deleting 不是 @Volatile，全程只在主线程读写
+                // 才谈得上可见性（deleteCurrent 也是在主线程判它的）。
+                if (!released) withContext(NonCancellable + Dispatchers.Main) { deleting = false }
             }
         }
     }

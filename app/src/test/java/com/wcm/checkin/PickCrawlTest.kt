@@ -75,6 +75,41 @@ class PickCrawlTest {
         assertEquals(setOf(5), Crawler.slotsForPics(a, setOf("c")))
     }
 
+    // ---------- notPickedSlots ----------
+
+    @Test
+    fun `first picked crawl marks unpicked slots as pending`() {
+        // 只勾了第 1 张（slot 0）：其余槽位必须是「待补」，否则这批帖被判 DONE，
+        // 剩下两张以后再也不会被任何一轮抓取碰到。
+        assertEquals(
+            setOf(2, 4),
+            Crawler.notPickedSlots(setOf(0, 2, 4), setOf(0), countNotPicked = true),
+        )
+    }
+
+    @Test
+    fun `retry never marks the complement as pending`() {
+        // RETRY 传进来的 onlySlots 就是上一轮的 missing，它的补集是「已经抽到的槽位」。
+        // 一旦并进 missing，集合就在 {已抽} / {未抽} 之间永久乒乓。
+        assertEquals(
+            emptySet<Int>(),
+            Crawler.notPickedSlots(setOf(0, 2, 4), setOf(0), countNotPicked = false),
+        )
+    }
+
+    @Test
+    fun `whole post crawl has nothing pending`() {
+        assertEquals(emptySet<Int>(), Crawler.notPickedSlots(setOf(0, 1), null, countNotPicked = true))
+    }
+
+    @Test
+    fun `every slot picked leaves nothing pending`() {
+        assertEquals(
+            emptySet<Int>(),
+            Crawler.notPickedSlots(setOf(0, 2), setOf(0, 2), countNotPicked = true),
+        )
+    }
+
     // ---------- sanitizeThumbUrl ----------
 
     @Test

@@ -783,7 +783,11 @@ class HomeFragment : Fragment() {
             logLines.addLast(line)
             while (logLines.size > LOG_MAX_LINES) logLines.removeFirst()
         }
-        panel?.render()
+        // render() 直接改 TextView（tv.text / tv.append），而本函数绝大多数调用点
+        // 在 AppScope(Dispatchers.IO) 的签到协程里 —— 视图 attach 时改 View 会直接抛
+        // CalledFromWrongThreadException。旧实现走 LogPanel.append，内部自带 host.post，
+        // 这次把缓冲提到 Fragment 后必须自己把这段兜底补回来。
+        view?.post { panel?.render() }
     }
 
     /** 展开 / 收起日志区；[logExpanded] 记住用户选择，视图重建后恢复。 */
