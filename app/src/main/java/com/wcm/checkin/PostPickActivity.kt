@@ -26,6 +26,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -73,6 +74,10 @@ class PostPickActivity : AppCompatActivity() {
     private var loaded = false
     private var submitting = false
 
+    /** 重建后待恢复的勾选与滚动（图清单本身不缓存，[loadDetail] 会重拉一次详情）。 */
+    private var pendingSelected: Set<String> = emptySet()
+    private var pendingScroll = -1
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -82,6 +87,11 @@ class PostPickActivity : AppCompatActivity() {
         if (bid.isEmpty()) {
             finish()
             return
+        }
+        if (savedInstanceState != null) {
+            pendingSelected =
+                savedInstanceState.getStringArrayList(KEY_SELECTED)?.toSet() ?: emptySet()
+            pendingScroll = savedInstanceState.getInt(KEY_SCROLL, -1)
         }
         toolbar = findViewById(R.id.pickToolbar)
         recycler = findViewById(R.id.pickGrid)
@@ -119,6 +129,15 @@ class PostPickActivity : AppCompatActivity() {
         loadDetail()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putStringArrayList(KEY_SELECTED, ArrayList(selected))
+        outState.putInt(
+            KEY_SCROLL,
+            (recycler.layoutManager as? GridLayoutManager)?.findFirstVisibleItemPosition() ?: 0,
+        )
+    }
+
     private fun measureCells() {
         val w = recycler.width
         if (w <= 0) return
@@ -138,7 +157,7 @@ class PostPickActivity : AppCompatActivity() {
         val ctx = applicationContext
         lifecycleScope.launch(Dispatchers.IO) {
             val result = runCatching {
-                val cookie = Crawler.pickCrawlCookie(AccountStore.load(ctx), {})
+                val cookie = Crawler.pickCrawlCookie(this@PostPickActivity, AccountStore.load(ctx), {})
                     ?: throw IllegalStateException(ctx.getString(R.string.browse_need_cookie))
                 WeiboApi.fetchPostDetail(cookie, bid)
             }
@@ -149,8 +168,18 @@ class PostPickActivity : AppCompatActivity() {
                     onSuccess = { detail ->
                         loaded = true
                         parseItems(detail)
+                        // 重建恢复：只保留仍在清单里的勾选（pic_ids 可能已变）
+                        if (pendingSelected.isNotEmpty()) {
+                            val keep = pendingSelected
+                            selected.addAll(items.map { it.picId }.filter { it in keep })
+                            pendingSelected = emptySet()
+                        }
                         measureCells()
                         render()
+                        if (pendingScroll > 0) {
+                            recycler.scrollToPosition(pendingScroll)
+                            pendingScroll = -1
+                        }
                     },
                     onFailure = { e ->
                         tvEmpty.text = getString(R.string.pick_load_fail, e.message ?: "")
@@ -204,7 +233,11 @@ class PostPickActivity : AppCompatActivity() {
         val url = pic.optJSONObject("large")?.optString("url", "")
             ?: pic.optString("url", "")
         if (url.isNotEmpty()) {
-            return url.substringAfterLast('/')
+            // 先剥 query / fragment 再剥扩展名：URL 带 ?from=... 时，
+            // "abc.jpg?from=x" 剥完扩展名不是 "abc" 而是原样，pid 与 pic_ids 对不上，
+            // 这张图就丢了 livephoto / gif 类型标记与大图 URL，静默回落成普通缩略图。
+            val bare = url.substringBefore('?').substringBefore('#')
+            return bare.substringAfterLast('/')
                 .replace(Regex("\\.(jpg|jpeg|png|gif|webp)$", RegexOption.IGNORE_CASE), "")
         }
         return pic.optString("pid", "")
@@ -396,11 +429,25 @@ class PostPickActivity : AppCompatActivity() {
             holder.bind(items[position], position)
         }
 
+        override fun onViewRecycled(holder: Holder) {
+            // 不复用前先掐掉还没回来的缩略图请求：单帖最多 18 格，翻来翻去会堆一串 Job
+            holder.cancelLoad()
+            super.onViewRecycled(holder)
+        }
+
         inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
             private val image = view.findViewById<ImageView>(R.id.pickImage)
             private val badge = view.findViewById<TextView>(R.id.pickBadge)
             private val scrim = view.findViewById<View>(R.id.pickScrim)
             private val check = view.findViewById<ImageView>(R.id.pickCheck)
+
+            /** 当前格的缩略图请求；换绑/回收时取消，避免 Job 堆积与错位回填。 */
+            private var thumbJob: Job? = null
+
+            fun cancelLoad() {
+                thumbJob?.cancel()
+                thumbJob = null
+            }
 
             fun bind(item: PicItem, position: Int) {
                 image.setImageDrawable(null)
@@ -414,7 +461,8 @@ class PostPickActivity : AppCompatActivity() {
                 // 远程缩略图：tag 防错位（快速滚动时旧请求回来不能盖到新格子）
                 val key = item.thumbUrl
                 image.tag = key
-                lifecycleScope.launch(Dispatchers.IO) {
+                thumbJob?.cancel()
+                thumbJob = lifecycleScope.launch(Dispatchers.IO) {
                     val bmp = runCatching { RemoteThumb.load(item.thumbUrl) }.getOrNull()
                     withContext(Dispatchers.Main) {
                         if (image.tag == key && bmp != null) {
@@ -429,7 +477,10 @@ class PostPickActivity : AppCompatActivity() {
                     render()
                 }
                 itemView.setOnLongClickListener {
-                    showFullPreview(position)
+                    // 用实时位置而不是闭包里捕获的 position：整表重绑（勾选态刷新）
+                    // 之后旧闭包的 position 会指到别的图，大图页打开错那张。
+                    val at = bindingAdapterPosition
+                    if (at != RecyclerView.NO_POSITION) showFullPreview(at)
                     true
                 }
             }
@@ -438,6 +489,8 @@ class PostPickActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_BID = "bid"
+        private const val KEY_SELECTED = "pick_selected"
+        private const val KEY_SCROLL = "pick_scroll"
 
         fun start(ctx: Context, bid: String) {
             ctx.startActivity(

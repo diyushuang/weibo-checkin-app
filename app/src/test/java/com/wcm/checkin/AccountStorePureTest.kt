@@ -54,11 +54,14 @@ class AccountStorePureTest {
 
     @Test
     fun mergeAccounts_overlaysCookieAndResultForExistingUid() {
+        // 快照比库里新（任务期间刷新过 cookie）→ 快照胜出
         val current = listOf(
-            acc("1001", cookie = "SUB=old", lastResult = "旧状态"),
+            acc("1001", cookie = "SUB=old", lastResult = "旧状态").copy(cookieSeenAt = 100L),
             acc("1002", cookie = "SUB=b", lastResult = "未动"),
         )
-        val snapshot = listOf(acc("1001", cookie = "SUB=new", lastResult = "签到 5/5"))
+        val snapshot = listOf(
+            acc("1001", cookie = "SUB=new", lastResult = "签到 5/5").copy(cookieSeenAt = 900L)
+        )
 
         val merged = AccountStore.mergeAccounts(current, snapshot)
 
@@ -67,6 +70,38 @@ class AccountStorePureTest {
         assertEquals("签到 5/5", merged[0].lastResult)
         assertEquals("SUB=b", merged[1].cookie)      // 快照里没有的账号原样保留
         assertEquals("未动", merged[1].lastResult)
+    }
+
+    @Test
+    fun mergeAccounts_staleSnapshotNeverClobbersNewerCookie() {
+        // BUG-007 回归：后台保活 Worker 拿着「任务开始前」的旧快照结束时，
+        // 用户可能已经在前台重新扫码登录过。旧实现无条件用快照覆盖 cookie，
+        // 用户于是立刻掉登录，界面还显示「刚刚验证」。
+        val current = listOf(
+            acc("1001", cookie = "SUB=fresh", lastResult = "签到 3/3").copy(cookieSeenAt = 9_000L)
+        )
+        val snapshot = listOf(
+            acc("1001", cookie = "SUB=stale", lastResult = "签到 0/3").copy(cookieSeenAt = 1_000L)
+        )
+
+        val merged = AccountStore.mergeAccounts(current, snapshot)
+
+        assertEquals("SUB=fresh", merged[0].cookie)
+        assertEquals("签到 3/3", merged[0].lastResult)
+        // 时间锚点仍取更大值（谁的「最近有效」更晚就记谁）
+        assertEquals(9_000L, merged[0].cookieSeenAt)
+    }
+
+    @Test
+    fun mergeAccounts_noAnchorsFallsBackToCurrent() {
+        // 两份都没有时间锚点（老版本数据）时保持库里的那份：宁可不动，也不要写回旧 cookie
+        val current = listOf(acc("1001", cookie = "SUB=keep", lastResult = "库里的"))
+        val snapshot = listOf(acc("1001", cookie = "SUB=snap", lastResult = "快照的"))
+
+        val merged = AccountStore.mergeAccounts(current, snapshot)
+
+        assertEquals("SUB=keep", merged[0].cookie)
+        assertEquals("库里的", merged[0].lastResult)
     }
 
     @Test

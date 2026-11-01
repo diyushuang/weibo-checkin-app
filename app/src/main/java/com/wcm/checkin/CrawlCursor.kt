@@ -158,8 +158,13 @@ object CrawlDate {
         Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString()
 
     /** epoch 秒 → (+0800) "yyyy-MM-dd"，用于日志与 UI 回显。 */
-    fun dateOf(epochSec: Long): String =
+    fun dateOf(epochSec: Long): String = try {
         Instant.ofEpochSecond(epochSec).atZone(WEIBO_ZONE).toLocalDate().toString()
+    } catch (e: Exception) {
+        // 异常 epoch（历史脏数据 / 时区缺失的设备）此前会在这里抛 DateTimeException，
+        // 而调用点都在 UI 渲染路径上 —— 一次脏游标就能让页面崩掉。
+        ""
+    }
 }
 
 /** 游标演算（纯函数，JVM 单测覆盖）。 */
@@ -205,8 +210,13 @@ object CursorLogic {
             else -> minOf(c.oldestCoveredAt, coverageLow)
         },
         anchorPostId = anchorPostId.ifEmpty { c.anchorPostId },
-        anchorAt = if (anchorAt > 0L) anchorAt else c.anchorAt,
-        anchorPageHint = hintPage.coerceAtLeast(1),
+        // 锚点只能变老：历史阶段是在往更早的方向推进，回退会让同一段反复重扫
+        anchorAt = when {
+            anchorAt <= 0L -> c.anchorAt
+            c.anchorAt <= 0L -> anchorAt
+            else -> minOf(anchorAt, c.anchorAt)
+        },
+        anchorPageHint = if (hintPage >= 1) hintPage else c.anchorPageHint,
         reachedBottom = c.reachedBottom || reachedBottom,
         historyParked = c.historyParked || parked,
     )

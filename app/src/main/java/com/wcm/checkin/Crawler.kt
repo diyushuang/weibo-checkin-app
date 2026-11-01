@@ -93,17 +93,31 @@ object Crawler {
         fun save(name: String, mime: String, bytes: ByteArray): Boolean {
             if (hasCanonical(name)) return true
             if (bytes.isEmpty()) return false
-            return try {
-                val docUri = DocumentsContract.createDocument(resolver, rootUri, mime, name)
-                    ?: return false
-                resolver.openOutputStream(docUri)?.use { it.write(bytes) } ?: return false
-                remember(name, bytes.size.toLong())
-                true
+            val docUri = try {
+                DocumentsContract.createDocument(resolver, rootUri, mime, name)
+            } catch (e: Exception) {
+                null
+            } ?: return false
+            // createDocument 已经把文档建出来了；写入失败若就这样返回 false，
+            // 相册里会留下一个 0 字节 / 截断的坏图，而下次 loadExisting() 会把它收进
+            // canonicals → 判 EXISTS → 永远不再重下。所以失败必须回滚（删掉空文档）。
+            val wrote = try {
+                resolver.openOutputStream(docUri)?.use { out ->
+                    out.write(bytes)
+                    out.flush()
+                    true
+                } ?: false
             } catch (e: IOException) {
                 false
             } catch (e: Exception) {
                 false
             }
+            if (!wrote) {
+                runCatching { DocumentsContract.deleteDocument(resolver, docUri) }
+                return false
+            }
+            remember(name, bytes.size.toLong())
+            return true
         }
     }
 
@@ -167,10 +181,21 @@ object Crawler {
         val picIds = ArrayList<String>()
         val idsArr = detail.optJSONArray("pic_ids")
         if (idsArr != null) {
-            for (i in 0 until idsArr.length()) picIds.add(idsArr.optString(i, ""))
+            // 空串 / 空白 pid 必须剔掉：它们会占掉一个槽位却永远下不下来，
+            // expectedFiles 因此永远大于实际落盘数 —— 这条帖永远判不成完成，
+            // 每轮抓取都重试一次，日志里无限重复同一帖。
+            for (i in 0 until idsArr.length()) {
+                val id = idsArr.optString(i, "").trim()
+                if (id.isNotEmpty()) picIds.add(id)
+            }
         }
         val pics = normPics(detail.opt("pics"))
-        if (picIds.isEmpty()) pics.forEach { picIds.add(pidOf(it)) }
+        if (picIds.isEmpty()) {
+            pics.forEach { p ->
+                val id = pidOf(p).trim()
+                if (id.isNotEmpty()) picIds.add(id)
+            }
+        }
 
         val liveByIndex = HashMap<Int, String>()
         val usedLiveUrls = HashSet<String>()
@@ -210,6 +235,7 @@ object Crawler {
      * 只有在游客失效或缺图时才用这里的结果做兜底。
      */
     fun pickCrawlCookie(
+        ctx: Context,
         accounts: List<AccountStore.Account>,
         log: (String) -> Unit,
     ): String? {
@@ -223,6 +249,10 @@ object Crawler {
                 val v = WeiboApi.verify(acc.cookie)
                 if (v.login) {
                     if (index > 0) log("抓图身份回退到「$label」")
+                    // 探活已经证明这个 cookie 可用、也顺手拿到了轮换后的新 cookie：
+                    // 不回写的话下一个阶段（相册 → 时间线回退）会再 verify 一遍，
+                    // 白耗一次请求，也继续用着旧 cookie。
+                    AccountStore.markVerified(ctx, acc.uid, v.cookie, acc.name)
                     return v.cookie
                 }
                 log("账号「$label」登录态失效")
@@ -238,7 +268,7 @@ object Crawler {
 
     /** 抓取一条微博的全部原图与 Live。幂等：三层去重，不占用增量进度。 */
     suspend fun crawlSinglePost(ctx: Context, bid: String, log: (String) -> Unit) {
-        val cookie = pickCrawlCookie(AccountStore.load(ctx), log) ?: return
+        val cookie = pickCrawlCookie(ctx, AccountStore.load(ctx), log) ?: return
         val treeUriRaw = AccountStore.crawlTreeUri(ctx)
         if (treeUriRaw.isEmpty()) {
             log("✗ 请先选择相册目录")
@@ -323,9 +353,10 @@ object Crawler {
         ctx: Context,
         tasks: List<PickTask>,
         log: (String) -> Unit,
+        onEvent: (CrawlEvent) -> Unit = {},
         isStopped: () -> Boolean = { false },
     ): PickedSummary {
-        val cookie = pickCrawlCookie(AccountStore.load(ctx), log) ?: return PickedSummary()
+        val cookie = pickCrawlCookie(ctx, AccountStore.load(ctx), log) ?: return PickedSummary()
         val treeUriRaw = AccountStore.crawlTreeUri(ctx)
         if (treeUriRaw.isEmpty()) {
             log("✗ 请先选择相册目录")
@@ -336,6 +367,9 @@ object Crawler {
         var failed = 0
         var stopped = false
         withCrawlContext(ctx, treeUriRaw, log) { state ->
+            if (tasks.isNotEmpty()) {
+                onEvent(CrawlEvent.Phase(CrawlPhase.PICK, tasks.size, 0))
+            }
             for ((taskIdx, task) in tasks.withIndex()) {
                 if (isStopped()) {
                     log("⏹ 勾选抓取已停止（已处理 $taskIdx/${tasks.size}）")
@@ -344,18 +378,24 @@ object Crawler {
                 }
                 val detail = try {
                     WeiboApi.fetchPostDetail(cookie, task.bid)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     log("✗ 帖 ${task.bid} 详情获取失败：${e.message}")
+                    // 跳过也算「处理过一帖」，否则进度条会停在这里不动
+                    onEvent(CrawlEvent.Post(0, 0))
                     continue
                 }
                 val assets = assetsFromDetail(detail)
                 if (assets.picIds.isEmpty()) {
                     log("· 帖 ${task.bid} 没有图片（或为视频微博），跳过")
+                    onEvent(CrawlEvent.Post(0, 0))
                     continue
                 }
                 val slots = slotsForPics(assets, task.picIds)
                 if (slots != null && slots.isEmpty()) {
                     log("· 帖 ${task.bid} 选中的图片不在其中（可能已被删帖），跳过")
+                    onEvent(CrawlEvent.Post(0, 0))
                     continue
                 }
                 val postId = detail.optString("id", "").ifEmpty { task.bid }
@@ -371,6 +411,7 @@ object Crawler {
                 posts++
                 saved += outcome.saved
                 failed += outcome.failed.size
+                onEvent(CrawlEvent.Post(outcome.saved, outcome.failed.size))
                 log(
                     if (outcome.saved > 0) "✓ 完成，新增 ${outcome.saved} 个文件（目录累计 ${state.store.count()}）"
                     else "✓ 完成（文件均已存在，无新增）"
@@ -419,7 +460,7 @@ object Crawler {
             }
             return
         }
-        val cookie = pickCrawlCookie(accounts, log) ?: return
+        val cookie = pickCrawlCookie(ctx, accounts, log) ?: return
         // 索引是按目录共享的：pendingRetry 没有 uid 维度，单博主跑重试会把别人的失败一起补掉。
         // 与其偷偷扩大范围，不如跳过并把入口指给「待重试」——用户点哪个范围就只跑哪个范围。
         val scoped = onlyUids.isNotEmpty()
@@ -610,7 +651,7 @@ object Crawler {
         fun account(): String? {
             if (!accountResolved) {
                 accountResolved = true
-                accountCookie = pickCrawlCookie(accounts, log)
+                accountCookie = pickCrawlCookie(ctx, accounts, log)
             }
             return accountCookie
         }
@@ -660,14 +701,26 @@ object Crawler {
                     log("  已到起始日期（$sinceDate）之前，停止翻页")
                     return AlbumPass(enumerated, saved, "", true)
                 }
+                var pageDone = true
                 for (mid in page.mids) {
-                    if (isStopped() || handled >= maxPosts) break
-                    if (System.currentTimeMillis() - startedAt > ALBUM_MAX_MILLIS) break
+                    if (isStopped() || handled >= maxPosts ||
+                        System.currentTimeMillis() - startedAt > ALBUM_MAX_MILLIS
+                    ) {
+                        pageDone = false
+                        break
+                    }
                     if (state.index.isTerminal(mid) && state.index.failedSlots(mid).isEmpty()) continue
                     handled++
                     saved += processAlbumPost(ctx, uid, mid, target, state, log, onEvent, guest) { account() }
                 }
                 pages++
+                // 本页没走完就中断：游标必须停在**页首**。相册墙的 nextSinceId 是
+                // 「本页最后一条」的位置，提前推进等于把本页剩下的 mid 直接跳过，
+                // 而它们既不在 failed 槽位里、也不会进 RETRY —— 那些图永久缺失。
+                if (!pageDone) {
+                    log("  · 本轮在第 $pages 页中断（未处理完），游标留在页首，下轮从这条继续")
+                    return AlbumPass(enumerated, saved, cursor, false)
+                }
                 if (page.nextSinceId.isEmpty() || !seen.add(page.nextSinceId)) {
                     return AlbumPass(enumerated, saved, "", true)
                 }
@@ -767,7 +820,9 @@ object Crawler {
 
         val d = detail
         if (d == null) {
-            log("  ✗ $mid 取不到详情，本贴跳过（下轮重试）")
+            // 同 processPost：不落索引就等于「这帖从未来过」，相册游标会把整页翻过去
+            state.index.onPostUnknown(mid)
+            log("  ✗ $mid 取不到详情（已记入待重试）")
             onEvent(CrawlEvent.Post(saved = 0, failed = 0))
             return 0
         }
@@ -843,59 +898,67 @@ object Crawler {
     ) {
         val treeTag = CrawlIndex.treeTagOf(treeUriRaw)
         val store = TreeStore(ctx.contentResolver, treeUriRaw.toUri())
-        store.loadExisting()
-        val index = CrawlIndex.open(ctx.filesDir, treeTag)
-        val report = index.load()
-        if (report.degraded) log("⚠ 索引有 ${report.skipped} 行损坏，已降级为「仅文件名去重」")
-
-        // 旧版 crawl_done 一次性迁移（反向不可逆：失败槽位无法从旧数据还原）
-        val legacy = AccountStore.crawlDoneLegacy(ctx)
-        if (legacy.isNotEmpty()) {
-            val n = index.migrateLegacy(legacy)
-            AccountStore.clearCrawlDoneLegacy(ctx)
-            if (n > 0) log("索引迁移：$n 帖从旧进度接管")
-        }
-
-        // 目录首次进入本索引：接管已有文件（按大小预筛，仅在撞车时算哈希）
-        if (index.fileCount() == 0) {
-            val all = try {
-                GalleryFiles.listAll(ctx.contentResolver, treeUriRaw.toUri())
-            } catch (e: Exception) {
-                emptyList()
-            }
-            if (all.isNotEmpty()) {
-                val resolver = ctx.contentResolver
-                val byName = HashMap<String, Uri>(all.size)
-                all.forEach { byName[AssetName.canonical(it.name)] = it.uri }
-                val rep = Takeover.claimAll(
-                    all.map { Takeover.Candidate(AssetName.canonical(it.name), it.size) },
-                    index,
-                ) { c ->
-                    val uri = byName[c.name] ?: return@claimAll null
-                    try {
-                        resolver.openInputStream(uri)?.use { Hashing.sha256Hex128(it) }
-                    } catch (e: Exception) {
-                        null
-                    }
-                }
-                log("相册目录已有 ${all.size} 个文件，${rep.summary}")
-            } else {
-                log("相册目录已有 ${store.count()} 个文件")
-            }
-        } else {
-            log("相册目录已有 ${store.count()} 个文件（索引 ${index.fileCount()} 条）")
-        }
-
+        // 打开索引**之后**的所有准备动作（load / migrateLegacy / Takeover.claimAll）
+        // 都可能抛异常（SAF 目录被删、磁盘满、迁移写盘失败…）。此前这些操作在 try
+        // 之外，一旦抛出 index.close() 就永远不会执行 —— 索引句柄与临时文件泄漏，
+        // 同一目录反复重试会不断累积。所以整个生命周期都塞进 try/finally。
+        var index: CrawlIndex? = null
         try {
-            block(CrawlContext(store, index, treeTag))
-        } finally {
-            index.maybeCompact()
-            index.flush()
-            // 索引写失败此前是完全静默的：用户只会看到「进度回退 / 图片重复下载」
-            index.lastWriteError?.let {
-                log("⚠ 抓取索引写盘失败（$it）：进度可能没保存下来，已下载的文件不受影响")
+            store.loadExisting()
+            val idx = CrawlIndex.open(ctx.filesDir, treeTag)
+            index = idx
+            val report = idx.load()
+            if (report.degraded) log("⚠ 索引有 ${report.skipped} 行损坏，已降级为「仅文件名去重」")
+
+            // 旧版 crawl_done 一次性迁移（反向不可逆：失败槽位无法从旧数据还原）
+            val legacy = AccountStore.crawlDoneLegacy(ctx)
+            if (legacy.isNotEmpty()) {
+                val n = idx.migrateLegacy(legacy)
+                AccountStore.clearCrawlDoneLegacy(ctx)
+                if (n > 0) log("索引迁移：$n 帖从旧进度接管")
             }
-            index.close()
+
+            // 目录首次进入本索引：接管已有文件（按大小预筛，仅在撞车时算哈希）
+            if (idx.fileCount() == 0) {
+                val all = try {
+                    GalleryFiles.listAll(ctx.contentResolver, treeUriRaw.toUri())
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                if (all.isNotEmpty()) {
+                    val resolver = ctx.contentResolver
+                    val byName = HashMap<String, Uri>(all.size)
+                    all.forEach { byName[AssetName.canonical(it.name)] = it.uri }
+                    val rep = Takeover.claimAll(
+                        all.map { Takeover.Candidate(AssetName.canonical(it.name), it.size) },
+                        idx,
+                    ) { c ->
+                        val uri = byName[c.name] ?: return@claimAll null
+                        try {
+                            resolver.openInputStream(uri)?.use { Hashing.sha256Hex128(it) }
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                    log("相册目录已有 ${all.size} 个文件，${rep.summary}")
+                } else {
+                    log("相册目录已有 ${store.count()} 个文件")
+                }
+            } else {
+                log("相册目录已有 ${store.count()} 个文件（索引 ${idx.fileCount()} 条）")
+            }
+
+            block(CrawlContext(store, idx, treeTag))
+        } finally {
+            index?.let { idx ->
+                idx.maybeCompact()
+                idx.flush()
+                // 索引写失败此前是完全静默的：用户只会看到「进度回退 / 图片重复下载」
+                idx.lastWriteError?.let {
+                    log("⚠ 抓取索引写盘失败（$it）：进度可能没保存下来，已下载的文件不受影响")
+                }
+                idx.close()
+            }
         }
     }
 
@@ -941,7 +1004,9 @@ object Crawler {
                 details++
                 downloaded += processPost(
                     ctx, cookie, rec.postId, uid, target, state, log,
-                    onlySlots = rec.failed.toSet(), onEvent = onEvent,
+                    // expected < 0 = 上次详情没取到、槽位未知：整帖重跑，不能按空集合跳过
+                    onlySlots = if (rec.expected < 0) null else rec.failed.toSet(),
+                    onEvent = onEvent,
                 )
             }
         }
@@ -1156,7 +1221,11 @@ object Crawler {
         val detail = try {
             WeiboApi.fetchPostDetail(cookie, postId)
         } catch (e: Exception) {
-            log("  ✗ $postId 详情失败：${e.message}")
+            // 什么都不写会让索引根本不知道这帖存在，而游标仍按「页」推进 →
+            // 它落在覆盖区间内部，planNew/planHistory 都判「已覆盖」跳过，永不补抓。
+            // 落一条 OPEN（expected = -1 表示语义未知），RETRY 队列会反复捞起它。
+            state.index.onPostUnknown(postId)
+            log("  ✗ $postId 详情失败：${e.message}（已记入待重试）")
             onEvent(CrawlEvent.Post(saved = 0, failed = 0))
             return 0
         }
@@ -1226,6 +1295,17 @@ object Crawler {
         // 重试只跑部分槽位：未成功的槽位要先继承下来，否则会把上次的失败记录抹掉
         if (onlySlots != null) failed.addAll(onlySlots)
 
+        // 本贴理论上应有的全部槽位。勾选抓取时，**没勾选**的那些槽位既没下载、
+        // 也不会进 failed —— 若不开除，failed 为空就会被判 DONE，永久毒化该帖：
+        // 之后增量/历史/全量都用 isTerminal 跳过它，那几张图再也补不回来。
+        val allSlots = HashSet<Int>()
+        for (i in assets.picIds.indices) {
+            allSlots.add(if (assets.liveByIndex[i] == null) stillSlot(i) else pairedLiveSlot(i))
+        }
+        for (n in assets.liveExtras.indices) allSlots.add(extraLiveSlot(n))
+        val notPicked: Set<Int> =
+            if (onlySlots == null) emptySet() else allSlots.filter { it !in onlySlots }.toSet()
+
         /** 落盘第 i 张配图的静图；返回是否新写了文件。 */
         suspend fun saveStill(i: Int): Boolean {
             val slot = stillSlot(i)
@@ -1233,7 +1313,7 @@ object Crawler {
             val picId = assets.picIds[i]
             val name = AssetName.stillName(prefix, i + 1)
             val r = saveOne(
-                ctx, state, postId, slot, CrawlIndex.Kind.STILL,
+                state, postId, slot, CrawlIndex.Kind.STILL,
                 picId, name, "image/jpeg", log,
             ) { fetchBytes(WeiboApi.originalImageUrl(picId), name, log) }
             return when (r) {
@@ -1312,7 +1392,11 @@ object Crawler {
             }
         }
 
-        state.index.onPostSealed(postId, at, assets.expectedFiles, saved > 0 || failed.isEmpty(), failed)
+        state.index.onPostSealed(
+            postId, at, assets.expectedFiles,
+            saved > 0 || (failed.isEmpty() && notPicked.isEmpty()),
+            failed + notPicked,
+        )
         return SaveOutcome(saved, failed)
     }
 
@@ -1343,7 +1427,6 @@ object Crawler {
 
     /** 单张静图：L2 → L1 → 下载 → L3。 */
     private suspend fun saveOne(
-        ctx: Context,
         state: CrawlContext,
         postId: String,
         slot: Int,

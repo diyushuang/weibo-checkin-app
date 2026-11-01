@@ -28,6 +28,16 @@ object WebAjax {
         .callTimeout(25, TimeUnit.SECONDS)
         .build()
 
+    /**
+     * 命中就算「身份问题」的拒绝文案（HTTP 200 + ok=0 时检查）。
+     *
+     * 微博把登录墙 / 风控也包装成 200 + ok=0，只按 HTTP 码判会漏掉 ——
+     * 而这正是「刷新游客身份就能恢复」的那一类错误。
+     */
+    private val IDENTITY_MSG = listOf(
+        "请先登录", "请登录", "登录后", "未登录", "身份", "visitor", "风控", "异常",
+    )
+
     /** 相册墙上的一张图（同一个 mid 会出现多次，说明该帖有多图）。 */
     data class WallItem(
         val mid: String,
@@ -125,8 +135,13 @@ object WebAjax {
                 )
             }
             if (payload.optInt("ok", 1) == 0) {
+                val msg = payload.optString("message", payload.optString("msg", ""))
+                // HTTP 200 + ok=0 是微博最常见的拒绝方式（"请先登录"、"身份异常"）。
+                // 这里不置 identitySuspect 的话，Crawler 的「刷新游客身份再重试」
+                // 永远不会触发 —— 一次登录墙就让整轮相册抓取退化成时间线模式。
                 throw WeiboApi.WeiboException(
-                    "$what 接口拒绝：${payload.optString("message", payload.optString("msg", ""))}",
+                    "$what 接口拒绝：$msg",
+                    identitySuspect = IDENTITY_MSG.any { msg.contains(it) },
                 )
             }
             payload

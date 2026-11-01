@@ -45,9 +45,17 @@ class SettingsFragment : Fragment() {
         etUrl.setText(AccountStore.panelUrl(ctx))
         etToken.setText(AccountStore.panelToken(ctx))
 
+        // 已经配过面板就在进页面时申请一次：以前只在点「保存」时才申请，
+        // 用户升级到 Android 17 后不重新保存就永远拿不到局域网权限，同步一直失败。
+        AccountStore.panelUrl(ctx)
+            .takeIf { it.isNotEmpty() }
+            ?.let { runCatching { PanelUrl.parse(it) }.getOrNull() }
+            ?.let { ensureLocalNetworkPermission(it) }
+
         view.findViewById<View>(R.id.btnSavePanel).setOnClickListener {
             val raw = etUrl.text?.toString()?.trim() ?: ""
-            val token = etToken.text?.toString() ?: ""
+            // token 也要 trim：从剪贴板粘贴常带尾部换行，原样存进去每次同步都 401
+            val token = etToken.text?.toString()?.trim() ?: ""
             if (raw.isEmpty()) {
                 // 留空 = 关闭面板同步
                 AccountStore.savePanel(ctx, "", token)
@@ -62,6 +70,10 @@ class SettingsFragment : Fragment() {
                 return@setOnClickListener
             }
             AccountStore.savePanel(ctx, parsed.base, token)
+            // 回填规范化后的值：用户输入 "https://host/" 会被解析成 base，
+            // 输入框里留着他写的那份，下次看一眼会以为存的不是这个
+            etUrl.setText(parsed.base)
+            etToken.setText(token)
             Toast.makeText(ctx, R.string.settings_saved, Toast.LENGTH_SHORT).show()
             ensureLocalNetworkPermission(parsed)
         }

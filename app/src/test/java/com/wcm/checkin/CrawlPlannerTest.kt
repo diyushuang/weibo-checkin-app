@@ -278,6 +278,23 @@ class CrawlPlannerTest {
         assertEquals(StopReason.PAGE_EXHAUSTED, plan.stop)
     }
 
+    /** 同 [scan_singleEmptyPageIsNotBottom]：历史阶段也不能被一页空响应永久停掉。 */
+    @Test
+    fun history_singleEmptyPageIsNotBottom() {
+        val pages = mapOf(
+            1 to listOf(post("a", 3000)),
+            2 to emptyList<PostRef>(),
+            3 to listOf(post("b", 1000)),
+        )
+        val c = cursor(newestAt = 3000, oldest = 3000).copy(anchorAt = 3000)
+        // 预算卡在第 3 页：否则第 4、5 页也空，够两连空就会被判到底
+        val plan = CrawlPlanner.planHistory(c, view("a"), "", fetcher(pages), Budget(maxPages = 3))
+        assertFalse(plan.reachedBottom)
+        assertEquals(listOf("b"), plan.batch.map { it.id })
+        assertEquals(3, plan.lastPage)
+        assertEquals(StopReason.BUDGET, plan.stop)
+    }
+
     @Test
     fun history_alreadyParkedDoesNothing() {
         val c = cursor(newestAt = 3000, oldest = 3000).copy(historyParked = true)
@@ -455,15 +472,40 @@ class CrawlPlannerTest {
         val pages = mapOf(
             3 to listOf(post("x", 1000)),
             4 to emptyList<PostRef>(),
+            5 to listOf(post("y", 500)),
         )
         val fetch: (Int) -> PageOutcome = { p ->
             fetched.add(p)
             PageOutcome.ok(p, pages[p] ?: emptyList())
         }
-        val plan = CrawlPlanner.planScan(scanCursor(scanPage = 3), view(), "", fetch, Budget(maxPages = 5))
+        val plan = CrawlPlanner.planScan(scanCursor(scanPage = 3), view(), "", fetch, Budget(maxPages = 3))
         assertEquals(3, plan.startPage)
-        assertEquals(listOf(3, 4), fetched)
-        assertEquals(StopReason.PAGE_EXHAUSTED, plan.stop)
+        // 第 4 页空只是「疑似到底」，必须再确认一页才收工（见 EMPTY_STREAK_TO_BOTTOM）
+        assertEquals(listOf(3, 4, 5), fetched)
+        assertFalse(plan.reachedBottom)
+        assertEquals(StopReason.BUDGET, plan.stop)
+        assertEquals(5, plan.lastPage)
+        assertEquals(listOf("y", "x"), plan.batch.map { it.id })
+        assertEquals(6, CrawlPlanner.nextScanPage(plan))
+    }
+
+    /**
+     * 单页空**不能**当成到底：接口风控时会返回空列表，
+     * 那时若置 reachedBottom，历史/全量就永久停摆，缺口再也补不回来。
+     */
+    @Test
+    fun scan_singleEmptyPageIsNotBottom() {
+        val pages = mapOf(
+            1 to listOf(post("a", 3000)),
+            2 to emptyList<PostRef>(),
+            3 to listOf(post("b", 1000)),
+        )
+        // 预算卡在第 3 页，否则第 4、5 页也空，两连空会被判到底（那条判据另有用例覆盖）
+        val plan = CrawlPlanner.planScan(scanCursor(), view("a"), "", fetcher(pages), Budget(maxPages = 3))
+        assertFalse(plan.reachedBottom)
+        assertEquals(listOf("b"), plan.batch.map { it.id })
+        assertEquals(3, plan.lastPage)
+        assertEquals(StopReason.BUDGET, plan.stop)
     }
 
     /** 起始日期是硬下界：全量也不越过用户设定的边界。 */
@@ -504,5 +546,45 @@ class CrawlPlannerTest {
         val pages = mapOf(1 to listOf(post("t", 3000, pics = 0), post("g", 2500)))
         val plan = CrawlPlanner.planScan(scanCursor(), view(), "", fetcher(pages), Budget(maxPages = 1))
         assertEquals(listOf("g"), plan.batch.map { it.id })
+    }
+
+    // ========================= 回归：置顶锚点 / 起始页失败 =========================
+
+    /**
+     * BUG-003 回归：置顶老帖不能当历史锚点。
+     *
+     * 置顶帖是被顶起来的**老帖**，时间不代表页面位置。一旦选中它，
+     * 下一轮 locateAnchor 按 id+时间都找不到（它已不在那个位置），
+     * 历史阶段永久停摆，后面的图再也抓不到。
+     */
+    @Test
+    fun history_anchorSkipsPinnedPost() {
+        val pages = mapOf(
+            1 to listOf(
+                post("pin", 100, pinned = true),   // 最老，但是置顶
+                post("n1", 3000),
+                post("n2", 2500),
+            ),
+        )
+        val plan = CrawlPlanner.planHistory(cursor(newestAt = 3000), view(), "", fetcher(pages))
+        assertEquals("n2", plan.anchorPostId)
+        assertEquals(2500L, plan.anchorAt)
+    }
+
+    /**
+     * BUG-015 回归：起始页（scanPage hint）本身就是失败页时，断点必须留在该页。
+     *
+     * lastPage 是「最后一个成功页」，首页就失败时它是 0；旧实现返回 lastPage + 1 = 1，
+     * 断点从 41 掉回 1，下一轮白爬 40 页，稳定失败页还会在 1 与 41 之间往返。
+     */
+    @Test
+    fun scan_firstPageErrorAtHintKeepsStartPage() {
+        val plan = CrawlPlanner.planScan(
+            scanCursor(scanPage = 7), view(), "", fetcher(emptyMap(), failing = setOf(7)),
+        )
+        assertEquals(StopReason.PAGE_ERROR, plan.stop)
+        assertEquals(0, plan.lastPage)
+        assertEquals(7, plan.startPage)
+        assertEquals(7, CrawlPlanner.nextScanPage(plan))
     }
 }

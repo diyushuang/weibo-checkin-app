@@ -15,6 +15,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -239,14 +240,16 @@ class HomeFragment : Fragment() {
 
         val ctx = requireContext()
         var autoCheckinStarted = false
-        if (!autoHandled) {
-            autoHandled = true
-            val lastAuto = AccountStore.lastAutoAt(ctx)
-            if (AccountStore.autoOnOpen(ctx) && AccountStore.load(ctx).isNotEmpty()
-                && System.currentTimeMillis() - lastAuto > 6 * 3600_000L
-            ) {
+        // autoHandled 是「本进程只自动签一次」的闩；但如果这次没真的跑起来
+        // （没账号 / 已关自动 / runAll 因 busy 早退），闩住就等于把整次开机机会吞掉，
+        // 6 小时内都不会再试。所以：条件成立才置位，时间戳等确实启动后再落。
+        if (!autoHandled && AccountStore.autoOnOpen(ctx) && AccountStore.load(ctx).isNotEmpty()
+            && System.currentTimeMillis() - AccountStore.lastAutoAt(ctx) > 6 * 3600_000L
+        ) {
+            val started = runAll(true)
+            if (started) {
+                autoHandled = true
                 AccountStore.setLastAutoAt(ctx, System.currentTimeMillis())
-                runAll(true)
                 autoCheckinStarted = true
             }
         }
@@ -334,6 +337,8 @@ class HomeFragment : Fragment() {
 
     private fun render() {
         if (!isAdded) return
+        // 视图重建后按真实运行态回填按钮文案（见 renderRunButtons 的说明）
+        renderRunButtons()
         val ctx = requireContext()
         val accounts = AccountStore.load(ctx)
         val panelReady = AccountStore.panelUrl(ctx).isNotEmpty() &&
@@ -766,10 +771,19 @@ class HomeFragment : Fragment() {
 
     // ========================= 日志（可滚动，不打断阅读） =========================
 
-    /** 追加一行日志（实现见 [LogPanel]：只有本来就贴底时才自动滚到底）。 */
+    /**
+     * 追加一行日志（渲染细节见 [LogPanel]：只有本来就贴底时才自动滚到底）。
+     *
+     * 缓冲 [logLines] 是 Fragment 级的，**不随视图销毁**：旋转/切页期间签到还在跑，
+     * 原先没面板就直接 return 会把这段日志整段丢掉，回来只剩半截。
+     * 所以先无条件入缓冲，有面板时再触发渲染（重建时 onViewCreated 会 render 一次）。
+     */
     private fun log(line: String) {
-        val p = panel ?: return
-        p.append(line)
+        synchronized(logLines) {
+            logLines.addLast(line)
+            while (logLines.size > LOG_MAX_LINES) logLines.removeFirst()
+        }
+        panel?.render()
     }
 
     /** 展开 / 收起日志区；[logExpanded] 记住用户选择，视图重建后恢复。 */
@@ -793,12 +807,25 @@ class HomeFragment : Fragment() {
      */
     private fun setBusy(value: Boolean) {
         busy = value
+        renderRunButtons()
+    }
+
+    /**
+     * 按当前 busy / busySyncing 重设两枚运行按钮的文案。
+     *
+     * 必须能脱离 setBusy 单独调用：setBusy 在 view == null 时会提前返回，
+     * 而此时 busy 已经改了 —— 旋转屏幕 / 切页回来重建视图后，按钮还显示
+     * 「立即签到」，真实状态却是在跑（点了只弹「正忙」）。
+     * 所以 render 里也要调一次，按真实状态回填。
+     */
+    private fun renderRunButtons() {
         val host = view ?: return
+        val running = busy
         // 两枚按钮各自说自己正在干什么：同步时把「立即签到」改成「正在签到…」会误导
-        val syncing = value && busySyncing
+        val syncing = running && busySyncing
         host.findViewById<MaterialButton>(R.id.btnCheckin)?.apply {
             text = getString(
-                if (value && !syncing) R.string.btn_checkin_running else R.string.btn_checkin
+                if (running && !syncing) R.string.btn_checkin_running else R.string.btn_checkin
             )
             isEnabled = true
         }
@@ -870,7 +897,16 @@ class HomeFragment : Fragment() {
                     if (verify == null || !verify.login) {
                         // 只有「探活明确判未登录」才记失效；抛异常（断网/风控）不代表号掉了
                         if (verify != null) AccountStore.markDead(ctx, acc.uid)
-                        setTopicState(acc.uid, TopicState(atMs = System.currentTimeMillis(), error = ctx.getString(R.string.home_cookie_dead)))
+                        // 用旧快照 copy：整条 TopicState 新建会把 topics 冲成空表，
+                        // 首页「待签 N」角标会在一次失败刷新后瞬间清零
+                        setTopicState(
+                            acc.uid,
+                            (topicStates[acc.uid] ?: TopicState()).copy(
+                                atMs = System.currentTimeMillis(),
+                                error = ctx.getString(R.string.home_cookie_dead),
+                                loading = false,
+                            )
+                        )
                         TopicStore.saveError(ctx, acc.uid, ctx.getString(R.string.home_cookie_dead))
                         log("  ✗ $label：${ctx.getString(R.string.home_cookie_dead)}")
                         postRender()
@@ -880,7 +916,14 @@ class HomeFragment : Fragment() {
                     val topics = try {
                         WeiboApi.listTopics(verify.cookie)
                     } catch (e: Exception) {
-                        setTopicState(acc.uid, TopicState(atMs = System.currentTimeMillis(), error = e.message ?: "超话列表失败"))
+                        setTopicState(
+                            acc.uid,
+                            (topicStates[acc.uid] ?: TopicState()).copy(
+                                atMs = System.currentTimeMillis(),
+                                error = e.message ?: "超话列表失败",
+                                loading = false,
+                            )
+                        )
                         TopicStore.saveError(ctx, acc.uid, e.message ?: "超话列表失败")
                         log("  ✗ $label：${e.message}")
                         postRender()
@@ -935,12 +978,13 @@ class HomeFragment : Fragment() {
 
     // ========================= 签到 / 同步 =========================
 
-    private fun runAll(auto: Boolean) {
+    /** @return 是否真的启动了（被 busy 拦下或没有账号时返回 false，供自动签到判定）。 */
+    private fun runAll(auto: Boolean): Boolean {
         if (busy) {
             // busy 只是界面态：真在跑才拦，否则（协程被取消后残留的 latch）归位后照常开跑
             if (taskJob?.isActive == true) {
                 toast(getString(R.string.busy))
-                return
+                return false
             }
             setBusy(false)
         }
@@ -952,7 +996,7 @@ class HomeFragment : Fragment() {
             setLogExpanded(true)
             log(getString(R.string.home_no_account))
             toast(getString(R.string.home_no_account))
-            return
+            return false
         }
         setBusy(true)
         setLogExpanded(true)            // 运行时自动展开日志，进度可见
@@ -975,6 +1019,12 @@ class HomeFragment : Fragment() {
                         log("自动抓图中断：${e.message}")
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // 这里以前没有 catch：markVerified / log 抛出的异常会直接冒到线程默认
+                // 处理器 —— 进程崩溃，日志区连一行痕迹都没有。现在至少留下原因。
+                log("签到异常终止：${e.message ?: e.javaClass.simpleName}")
             } finally {
                 // finally 里先做「必须完成」的事：落盘失败也绝不能连带跳过下面的状态复位，
                 // 否则 busy 会永久为 true，按钮从此对点击无反应。
@@ -995,6 +1045,7 @@ class HomeFragment : Fragment() {
                 }
             }
         }
+        return true
     }
 
     /**
@@ -1230,16 +1281,38 @@ class HomeFragment : Fragment() {
                     log("  ✗ 账号已不存在")
                     return@launch
                 }
+                // 弹窗打开时抓的 st / scheme 有时效：用户会犹豫、会切后台，可能已经过期。
+                // 补签前先 verify 一次换新 cookie + 新 st（与 TopicFragment.checkin 同口径），
+                // 否则整批都会失败在「登录状态异常」上，还要白等风控间隔。
+                var cookie = acc.cookie
+                var freshSt = st
+                try {
+                    val v = WeiboApi.verify(cookie)
+                    if (v.login) {
+                        cookie = v.cookie
+                        if (!v.st.isNullOrEmpty()) freshSt = v.st
+                        AccountStore.markVerified(ctx, uid, v.cookie, acc.name)
+                    } else {
+                        log("  ✗ 登录状态已失效，请到超话页重新登录后再补签")
+                        return@launch
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log("  ! 探活失败，沿用弹窗里的登录态：${e.message}")
+                }
                 var ok = 0
                 var fail = 0
                 for (topic in topics) {
                     delay(Random.nextLong(3000, 8000))
                     try {
-                        if (WeiboApi.sign(acc.cookie, topic.scheme ?: "", st)) {
+                        if (WeiboApi.sign(cookie, topic.scheme ?: "", freshSt)) {
                             ok++; log("  ✓ ${topic.name}")
                         } else {
                             fail++; log("  ✗ ${topic.name}")
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         fail++; log("  ✗ ${topic.name}：${e.message}")
                     }

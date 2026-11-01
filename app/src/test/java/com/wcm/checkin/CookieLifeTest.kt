@@ -87,8 +87,9 @@ class CookieLifeTest {
     // ---------- 本机锚点（未同步） ----------
 
     @Test
-    fun describe_localUsesEarliestAnchor() {
-        // 面板端取 min(issued, rotated, seen)，App 侧未同步时同口径
+    fun describe_localUsesNewestAnchor() {
+        // 未配面板时取「最近一次拿到这个 cookie 的时刻」= max(issued, rotated, seen)。
+        // 取 min 会把基准钉在首次登录上：天天 markVerified 的账号第 7 天起恒定显示已过期。
         val v = CookieLife.describe(
             cookie = "SUB=x",
             issuedAt = now - 3 * day,
@@ -97,8 +98,19 @@ class CookieLifeTest {
             now = now,
         )
         assertEquals(CookieLife.State.OK, v.state)
-        assertEquals(now - 3 * day + 7 * day, v.deadlineAt)
+        assertEquals(now + 7 * day, v.deadlineAt)
         assertFalse(v.fromPanel)
+    }
+
+    @Test
+    fun describe_oldIssuedAtAloneStillExpires() {
+        // 反向保证：只有 issuedAt 一个锚点（很久以前登的）时，仍然按它判过期，不会被放过。
+        val v = CookieLife.describe(
+            cookie = "SUB=x",
+            issuedAt = now - 30 * day,
+            now = now,
+        )
+        assertEquals(CookieLife.State.EXPIRED, v.state)
     }
 
     // ---------- ALF 与经验寿命取最早 ----------

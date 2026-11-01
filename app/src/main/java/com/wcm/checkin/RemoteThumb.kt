@@ -27,6 +27,9 @@ object RemoteThumb {
     private const val THUMB_SIZE = 360   // orj360 的尺寸段对齐，避免过度解码
     private const val FULL_SIZE = 2048
 
+    /** 单张缩略图字节上限：网格图正常 20-80KB，超过这个量级说明拿到的不是缩略图。 */
+    private const val MAX_BYTES = 256 * 1024
+
     private val cache: LruCache<String, Bitmap> by lazy {
         object : LruCache<String, Bitmap>(cacheKb()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
@@ -45,12 +48,16 @@ object RemoteThumb {
     suspend fun loadFull(url: String): Bitmap? = load(url, FULL_SIZE)
 
     private suspend fun load(url: String, reqSize: Int): Bitmap? {
-        cache.get(url)?.let { return it }
+        // key 必须带请求尺寸：同一个 URL 既可能按 360 加载（网格），也可能按 2048
+        // 加载（全屏预览）。只按 URL 做 key 会让后到的 360 小图直接把 2048 大图
+        // 顶掉，全屏打开就是一张糊图。
+        val key = "$reqSize|$url"
+        cache.get(key)?.let { return it }
         val bytes = withContext(Dispatchers.IO) {
             gate.withPermit { fetch(url) }
         } ?: return null
         val bmp = decodeSampled(bytes, reqSize) ?: return null
-        cache.put(url, bmp)
+        cache.put(key, bmp)
         return bmp
     }
 
@@ -64,7 +71,14 @@ object RemoteThumb {
                 .build()
             WeiboApi.client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return null
-                resp.body?.bytes()?.takeIf { it.isNotEmpty() }
+                val body = resp.body ?: return null
+                // 无上限的 bytes() 是 OOM 入口：这个 URL 一旦被重定向到原图
+                // （CDN 常见行为），单张就是几 MB，网格滚动时叠着 4 个并发直接爆内存。
+                // 与 Crawler 的 64MB 闸门口径一致，但缩略图应该更严。
+                if (body.contentLength() > MAX_BYTES) return null
+                val bytes = body.bytes()
+                if (bytes.isEmpty() || bytes.size > MAX_BYTES) return null
+                bytes
             }
         } catch (e: Exception) {
             null

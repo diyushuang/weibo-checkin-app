@@ -77,18 +77,24 @@ object ThumbLoader {
      * 坐标映射会跟着变；这里要的正是 density=NONE，只能显式传 null。
      */
     @Suppress("UseKtx")
-    fun fullDrawable(resolver: ContentResolver, uri: Uri): Drawable? {
+    fun fullDrawable(
+        resolver: ContentResolver,
+        uri: Uri,
+        maxSize: Int = FULL_SIZE,
+    ): Drawable? {
+        // 调用方可按屏幕长边要更小的图：低端机没必要为一张满屏图解 2048
+        val req = if (maxSize > 0) maxSize else FULL_SIZE
         if (Build.VERSION.SDK_INT >= 28) {
             try {
                 val source = ImageDecoder.createSource(resolver, uri)
                 return ImageDecoder.decodeDrawable(source) { decoder, info, _ ->
-                    val sample = computeInSampleSize(info.size.width, info.size.height, FULL_SIZE)
+                    val sample = computeInSampleSize(info.size.width, info.size.height, req)
                     if (sample > 1) decoder.setTargetSampleSize(sample)
                 }
             } catch (e: Exception) {
                 // 回退静态帧
             }
         }
-        return decodeSampled(resolver, uri, FULL_SIZE)?.let { BitmapDrawable(null, it) }
+        return decodeSampled(resolver, uri, req)?.let { BitmapDrawable(null, it) }
     }
 }

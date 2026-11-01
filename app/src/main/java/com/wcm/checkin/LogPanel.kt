@@ -38,6 +38,16 @@ internal class LogPanel(
 
     private fun str(id: Int): String = host.context.getString(id)
 
+    /**
+     * 上一次渲染进 TextView 的完整文本。
+     *
+     * 旧实现每次 append 都「joinToString(换行) + setText」全量重建：500 行缓冲时
+     * 每来一行日志就拼接并重建一次 Spannable —— O(n²)，抓取高峰期日志自己就是卡顿源。
+     * 现在只有「新文本以旧文本为前缀」（最常见的纯追加）时走增量 append，
+     * 一旦触到 maxLines 截断或内容被替换，就退回全量重建。
+     */
+    private var rendered = ""
+
     /** 追加一行（线程安全：IO 线程也会调，统一切到宿主线程再改）。 */
     fun append(line: String) {
         host.post {
@@ -55,7 +65,13 @@ internal class LogPanel(
         // 先取「是否贴底」，再赋新文本 —— 赋值会 requestLayout，反过来读就依赖
         // "此刻还没重新测量" 这一时序巧合。
         val wasAtBottom = !view.canScrollVertically(1)
-        tv.text = synchronized(lines) { lines.joinToString("\n") }.ifEmpty { str(emptyTextRes) }
+        val joined = synchronized(lines) { lines.joinToString("\n") }.ifEmpty { str(emptyTextRes) }
+        if (rendered.isNotEmpty() && joined.length > rendered.length && joined.startsWith(rendered)) {
+            tv.append("\n" + joined.substring(rendered.length))
+        } else {
+            tv.text = joined
+        }
+        rendered = joined
         text(summaryId)?.text = synchronized(lines) {
             lines.lastOrNull { it.isNotBlank() } ?: str(emptyTextRes)
         }

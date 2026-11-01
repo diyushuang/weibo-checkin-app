@@ -8,6 +8,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
@@ -28,6 +29,8 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
         val panelUrl = AccountStore.panelUrl(ctx)
         val panelToken = AccountStore.panelToken(ctx)
         var alive = 0
+        // 明确判未登录的账号数：全部失效说明再重试也没用，不该让 WorkManager 反复拉起
+        var dead = 0
 
         // OkHttp 的 execute() 是阻塞调用：CoroutineWorker 默认跑在 Dispatchers.Default 上，
         // 直接在里面阻塞会占住计算线程池（账号多时更明显），显式切到 IO。
@@ -69,7 +72,11 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
                     } else {
                         // 探活明确判未登录：记一笔失效，首页 Cookie 卡会直接标红提示重新登录
                         AccountStore.markDead(ctx, acc.uid)
+                        dead++
                     }
+                } catch (e: CancellationException) {
+                    // 取消必须原样抛出：吞掉会让 doWork 谎报成功，WorkManager 以为跑完了
+                    throw e
                 } catch (e: Exception) {
                     // 网络抖动/风控：下一轮再说
                 }
@@ -77,9 +84,14 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
         }
         // 合并式写回：整轮跑下来要几分钟，期间用户新增/删除的账号不被旧快照覆盖
         AccountStore.mergeSave(ctx, accounts)
-        // 一个都没保住（离线 / 全部失效）→ 交给 WorkManager 退避重试，
-        // 否则要等满 6 小时才轮到下一次。
-        return if (accounts.isNotEmpty() && alive == 0) Result.retry() else Result.success()
+        // 一个都没保住 → 交给 WorkManager 退避重试，否则要等满 6 小时才轮到下一次。
+        // 但如果「一个都没保住」的原因是全部账号明确失效（dead 全中），重试毫无意义：
+        // 探活照样返回未登录，只会按指数退避反复拉起，白耗电还刷风控。这种直接成功退出。
+        return if (accounts.isNotEmpty() && alive == 0 && dead < accounts.size) {
+            Result.retry()
+        } else {
+            Result.success()
+        }
     }
 
     companion object {

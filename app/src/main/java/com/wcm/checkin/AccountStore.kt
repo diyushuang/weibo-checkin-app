@@ -76,14 +76,40 @@ object AccountStore {
      */
     private val LOCK = Any()
 
+    /** [load] 的解析缓存：prefs 原文没变就不重复做一次 JSON 解析。 */
+    private var cacheRaw: String? = null
+    private var cacheList: List<Account> = emptyList()
+
+    /**
+     * 读账号表。
+     *
+     * 调用点很多都在 UI 线程（首页每次 render、列表 bind），而这里是「取 prefs 字符串 +
+     * 全量 JSON 解析」。SharedPreferences 本身读的是内存快照，真正的开销在解析上，
+     * 所以按原文做一层缓存：只有真正写盘后原文变了才重新解析。
+     * [Account] 是不可变数据类，返回的 MutableList 每次都是新壳，调用方随便改。
+     */
     fun load(ctx: Context): MutableList<Account> {
         val raw = SafePrefs.string(prefs(ctx), KEY_ACCOUNTS, "[]")
-        return deserializeAccounts(raw).toMutableList()
+        val cached = synchronized(LOCK) {
+            if (raw == cacheRaw) {
+                cacheList
+            } else {
+                val parsed = deserializeAccounts(raw)
+                cacheRaw = raw
+                cacheList = parsed
+                parsed
+            }
+        }
+        return cached.toMutableList()
     }
 
     fun save(ctx: Context, accounts: List<Account>) {
         synchronized(LOCK) {
-            prefs(ctx).edit { putString(KEY_ACCOUNTS, serializeAccounts(accounts)) }
+            val raw = serializeAccounts(accounts)
+            prefs(ctx).edit { putString(KEY_ACCOUNTS, raw) }
+            // 顺手把缓存对齐，省掉紧随其后的那次重新解析
+            cacheRaw = raw
+            cacheList = accounts
         }
     }
 
@@ -155,14 +181,20 @@ object AccountStore {
      * 失效标记（`cookieDead`）**不从快照合并**：它只由 [markDead] / [markVerified]
      * 直接写库，而快照是"任务开始前"的状态。按 OR 合并会让刚探活成功的账号被旧快照
      * 重新标成失效，按快照覆盖又会抹掉任务中途刚记下的失效 —— 保持库里那份最稳。
+     *
+     * cookie / lastResult 按「谁新用谁」：旧实现无条件用快照胜出，而时间锚点却用 maxOf，
+     * 方向自相矛盾 —— 后台保活 Worker 跑着时用户前台重新扫码登录，Worker 结束时
+     * 会把**任务开始前的旧 cookie** 写回去，用户立刻掉登录，界面还显示「刚刚验证」。
      */
     fun mergeAccounts(current: List<Account>, snapshot: List<Account>): List<Account> =
         current.map { cur ->
             snapshot.firstOrNull { snap -> snap.uid.isNotEmpty() && snap.uid == cur.uid }
                 ?.let { snap ->
+                    // 最新锚点决定谁是「新的那一份」
+                    val snapNewer = newestAnchor(snap) > newestAnchor(cur)
                     cur.copy(
-                        cookie = snap.cookie,
-                        lastResult = snap.lastResult,
+                        cookie = if (snapNewer) snap.cookie else cur.cookie,
+                        lastResult = if (snapNewer) snap.lastResult else cur.lastResult,
                         name = if (needsNameResolve(cur) && !needsNameResolve(snap)) {
                             snap.name
                         } else {
@@ -176,6 +208,10 @@ object AccountStore {
                 }
                 ?: cur
         }
+
+    /** 一份账号「最新」的时间锚点：比较新旧时只看这个。 */
+    internal fun newestAnchor(a: Account): Long =
+        maxOf(a.cookieRotatedAt, a.cookieSeenAt, a.cookieSyncedAt, a.cookieIssuedAt)
 
     /** 合并式写回：先读当前库再按 [mergeAccounts] 合并，用于长任务结束时的落盘。 */
     fun mergeSave(ctx: Context, snapshot: List<Account>) {
@@ -385,11 +421,18 @@ object AccountStore {
         val old = crawlTreeUri(ctx)
         prefs(ctx).edit { putString(KEY_CRAWL_TREE, uri) }
         if (old.isNotEmpty() && old != uri) {
-            runCatching {
-                CrawlIndex.prune(
-                    ctx.filesDir,
-                    setOf(CrawlIndex.treeTagOf(uri), CrawlIndex.treeTagOf(old)),
-                )
+            // prune 会遍历并删除旧目录的索引文件（NDJSON 可能几十 MB），
+            // 而调用点是图库页选择目录的回调（主线程）—— 同步做就是一次 ANR 风险。
+            // 挪到应用级 IO 作用域；目录键已先落盘，即使进程在删除中段被杀，
+            // 下一次进入抓取也会重新剪枝（prune 是幂等的）。
+            val app = ctx.applicationContext
+            AppScope.launch {
+                runCatching {
+                    CrawlIndex.prune(
+                        app.filesDir,
+                        setOf(CrawlIndex.treeTagOf(uri), CrawlIndex.treeTagOf(old)),
+                    )
+                }
             }
         }
     }

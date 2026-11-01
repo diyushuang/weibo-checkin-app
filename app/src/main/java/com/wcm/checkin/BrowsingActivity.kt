@@ -73,8 +73,22 @@ class BrowsingActivity : AppCompatActivity() {
     private lateinit var targetsScroll: HorizontalScrollView
 
     private var uid = ""
+
+    /**
+     * 列表数据（posts / visible）**只归主线程**：IO 协程只负责网络，
+     * 入库统一切 Dispatchers.Main。以前 IO 直接 posts.addAll 而 chip 点击在主线程
+     * applyFilter() 迭代同一个 ArrayList → 必然偶发 ConcurrentModificationException。
+     *
+     * 下面这几个开关会被两侧读写，标 @Volatile 保证可见性（否则一次过期读会让
+     * 翻页/筛选静默失效）。
+     */
+    @Volatile
     private var page = 0
+
+    @Volatile
     private var hasMore = true
+
+    @Volatile
     private var listBusy = false
     private var filterOriginal = true
     private var filterPic = true
@@ -163,10 +177,76 @@ class BrowsingActivity : AppCompatActivity() {
         chipPic.applyChipStyle(filterPic)
 
         renderTargets()
-        // 预填：从图片页点进来时若只有一个抓取目标，直接载入它
-        val prefill = intent.getStringExtra(EXTRA_UID) ?: ""
-        if (prefill.isNotEmpty()) {
-            etInput.setText(prefill)
+        if (savedInstanceState == null) {
+            // 全新进入：丢掉上一次遗留的进程级缓存，避免串页
+            keptPosts = null
+            keptUid = ""
+            // 预填：从图片页点进来时若只有一个抓取目标，直接载入它
+            val prefill = intent.getStringExtra(EXTRA_UID) ?: ""
+            if (prefill.isNotEmpty()) {
+                etInput.setText(prefill)
+                startBrowse()
+            }
+        } else {
+            restoreState(savedInstanceState)
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(KEY_UID, uid)
+        outState.putInt(KEY_PAGE, page)
+        outState.putBoolean(KEY_HAS_MORE, hasMore)
+        outState.putBoolean(KEY_FILTER_ORIGINAL, filterOriginal)
+        outState.putBoolean(KEY_FILTER_PIC, filterPic)
+        outState.putBoolean(KEY_SELECT, selectMode)
+        outState.putStringArrayList(KEY_SELECTED, ArrayList(selectedBids))
+        outState.putString(KEY_INPUT, etInput.text?.toString().orEmpty())
+        outState.putInt(
+            KEY_SCROLL,
+            (recycler.layoutManager as? LinearLayoutManager)?.findFirstVisibleItemPosition() ?: 0,
+        )
+        // 列表本体：配置变更后仍是同一进程，直接留指针（拷贝一份防后续改动）
+        keptPosts = ArrayList(posts)
+        keptUid = uid
+        keptPage = page
+        keptHasMore = hasMore
+    }
+
+    /** 重建后恢复：先还原标量并重贴 chip，再决定是复用缓存还是重新翻页。 */
+    private fun restoreState(saved: Bundle) {
+        filterOriginal = saved.getBoolean(KEY_FILTER_ORIGINAL, true)
+        filterPic = saved.getBoolean(KEY_FILTER_PIC, true)
+        chipOriginal.applyChipStyle(filterOriginal)
+        chipPic.applyChipStyle(filterPic)
+        etInput.setText(saved.getString(KEY_INPUT) ?: "")
+
+        val savedUid = saved.getString(KEY_UID) ?: ""
+        val cached = keptPosts
+        if (cached != null && savedUid.isNotEmpty() && keptUid == savedUid) {
+            uid = savedUid
+            page = keptPage
+            hasMore = keptHasMore
+            posts.clear()
+            posts.addAll(cached)
+            applyFilter()
+            // 勾选态：只保留仍在列表里的 bid（缓存可能是上一轮的）
+            saved.getStringArrayList(KEY_SELECTED)?.forEach { bid ->
+                if (posts.any { it.bid == bid }) selectedBids.add(bid)
+            }
+            if (saved.getBoolean(KEY_SELECT, false) && selectedBids.isNotEmpty()) {
+                selectMode = true
+                backCallback.isEnabled = true
+                selectBar.visibility = View.VISIBLE
+                tvHint.text = getString(R.string.browse_select_mode_hint)
+                renderSelectBar()
+                adapter.notifyDataSetChanged()
+            }
+            val at = saved.getInt(KEY_SCROLL, 0)
+            if (at > 0) recycler.scrollToPosition(at)
+        } else if (savedUid.isNotEmpty()) {
+            // 进程被杀：列表没了，按恢复出的 uid 重跑一次首屏
+            etInput.setText(savedUid)
             startBrowse()
         }
     }
@@ -190,7 +270,9 @@ class BrowsingActivity : AppCompatActivity() {
             toast(getString(R.string.browse_need_uid))
             return
         }
-        if (listBusy) {
+        // 提交中 / 多选态下不允许重新载入：startBrowse 会清空 posts 与 selectedBids，
+        // 用户辛苦勾的一批帖（以及正在跑的任务列表）会被无声抹掉。
+        if (listBusy || submitting || selectMode) {
             toast(getString(R.string.busy))
             return
         }
@@ -219,7 +301,7 @@ class BrowsingActivity : AppCompatActivity() {
                     failList(getString(R.string.browse_need_cookie))
                     return@launch
                 }
-                val cookie = Crawler.pickCrawlCookie(accounts) { }
+                val cookie = Crawler.pickCrawlCookie(this@BrowsingActivity, accounts) { }
                     ?: run {
                         failList(getString(R.string.browse_need_cookie))
                         return@launch
@@ -232,7 +314,9 @@ class BrowsingActivity : AppCompatActivity() {
                 }
                 // 首屏拉到「可见 ≥ 6」或 3 页为止：前几条常是置顶/转发，一页筛完可能只剩两三张卡
                 var fetched = 0
-                while (hasMore && fetched < 3 && visibleCount() < 6) {
+                while (fetched < 3) {
+                    val want = withContext(Dispatchers.Main) { hasMore && visible.size < 6 }
+                    if (!want) break
                     if (!fetchOnePage(cookie)) break
                     fetched++
                 }
@@ -243,23 +327,24 @@ class BrowsingActivity : AppCompatActivity() {
         }
     }
 
-    /** 拉一页并入库；返回是否拉到了内容。网络失败抛给上层。 */
+    /**
+     * 拉一页并入库；返回是否拉到了内容。网络失败抛给上层。
+     *
+     * 网络部分留在 IO，**数据变更全部切主线程** —— 见 posts / visible 的线程归属说明。
+     */
     private suspend fun fetchOnePage(cookie: String): Boolean {
         WeiboThrottle.await(KEY_BROWSE_PAGE, 700)
         val (_, list) = WeiboApi.fetchUserPosts(cookie, uid, page + 1)
         if (list.isEmpty()) {
-            hasMore = false
+            withContext(Dispatchers.Main) { hasMore = false }
             return false
         }
-        page++
-        posts.addAll(list)
-        applyFilter()
+        withContext(Dispatchers.Main) {
+            page++
+            posts.addAll(list)
+            applyFilter()
+        }
         return true
-    }
-
-    private fun visibleCount(): Int {
-        // applyFilter 里已同步 visible；这里只是读数
-        return visible.size
     }
 
     private suspend fun failList(msg: String) {
@@ -273,7 +358,7 @@ class BrowsingActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun onListArrived() {
+    private fun onListArrived() {
         listBusy = false
         loading.visibility = View.GONE
         if (isFinishing || isDestroyed) return
@@ -291,7 +376,7 @@ class BrowsingActivity : AppCompatActivity() {
         AppScope.launch {
             try {
                 val accounts = AccountStore.load(ctx)
-                val cookie = Crawler.pickCrawlCookie(accounts) { }
+                val cookie = Crawler.pickCrawlCookie(this@BrowsingActivity, accounts) { }
                 if (cookie == null) {
                     failList(getString(R.string.browse_need_cookie))
                     return@launch
@@ -299,7 +384,8 @@ class BrowsingActivity : AppCompatActivity() {
                 fetchOnePage(cookie)
                 withContext(Dispatchers.Main) { onListArrived() }
             } catch (e: Exception) {
-                hasMore = false
+                // 一次 429/断网不等于「已经到底」：hasMore 一旦置 false，滚动监听
+                // 首行就直接 return，底部永久不再加载。错误提示走 failList 即可。
                 failList(e.message ?: e.javaClass.simpleName)
             }
         }
@@ -307,6 +393,7 @@ class BrowsingActivity : AppCompatActivity() {
 
     // ---------- 筛选与渲染 ----------
 
+    /** 重建 visible 并刷新列表。**只能在主线程调用**（数据全部归主线程）。 */
     private fun applyFilter() {
         visible.clear()
         for (p in posts) {
@@ -314,13 +401,10 @@ class BrowsingActivity : AppCompatActivity() {
             if (filterPic && p.picNum <= 0 && p.thumbs.isEmpty()) continue
             visible.add(p)
         }
-        if (!listBusy && !isDestroyed) {
-            runOnUiThread {
-                adapter.notifyDataSetChanged()
-                tvEmpty.visibility = if (visible.isEmpty()) View.VISIBLE else View.GONE
-                renderCount()
-            }
-        }
+        if (isDestroyed || isFinishing) return
+        adapter.notifyDataSetChanged()
+        tvEmpty.visibility = if (visible.isEmpty()) View.VISIBLE else View.GONE
+        renderCount()
     }
 
     private fun renderCount() {
@@ -341,6 +425,9 @@ class BrowsingActivity : AppCompatActivity() {
         targetsScroll.visibility = View.VISIBLE
         val padH = resources.getDimensionPixelSize(R.dimen.pill_padding_horizontal) * 2
         val padV = resources.getDimensionPixelSize(R.dimen.space_xs)
+        // 不能用 cellGap：它在 measureCells() 里才被赋值，而 renderTargets() 在 onCreate
+        // 就跑完了，于是间距恒为 0（且之后再没人调 renderTargets）。
+        val gap = resources.getDimensionPixelSize(R.dimen.gallery_gutter)
         targets.forEachIndexed { idx, t ->
             val chip = TextView(this).apply {
                 text = t.name.ifEmpty { "UID ${t.uid}" }
@@ -357,7 +444,7 @@ class BrowsingActivity : AppCompatActivity() {
             }
             targetsRow.addView(chip)
             (chip.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
-                if (idx < targets.size - 1) lp.marginEnd = cellGap
+                if (idx < targets.size - 1) lp.marginEnd = gap
             }
         }
     }
@@ -386,7 +473,9 @@ class BrowsingActivity : AppCompatActivity() {
 
     private fun renderSelectBar() {
         tvSelected.text = getString(R.string.browse_selected_fmt, selectedBids.size)
-        btnDownload.isEnabled = selectedBids.isNotEmpty()
+        // submitting 必须参与：setSubmitting 先设 isEnabled = false，紧接着调本函数
+        // 又被无条件赋回 true，提交中还能再点一次（第二次弹「正忙」）
+        btnDownload.isEnabled = selectedBids.isNotEmpty() && !submitting
         btnDownload.text = getString(R.string.browse_download_fmt, selectedBids.size)
     }
 
@@ -395,7 +484,10 @@ class BrowsingActivity : AppCompatActivity() {
             toast(getString(R.string.browse_none_selected))
             return
         }
-        val tasks = visible.filter { it.bid in selectedBids }.map { Crawler.PickTask(it.bid, null) }
+        // 任务必须从 selectedBids 生成：visible 是「当前筛选结果」，
+        // 勾选后被筛掉的帖若被无声丢弃，用户会看到「下载选中(5)」却只抓了 2 条。
+        val tasks = posts.filter { it.bid in selectedBids }.map { Crawler.PickTask(it.bid, null) }
+        val missing = selectedBids.size - tasks.size
         val ctx = applicationContext
         setSubmitting(true)
         AppScope.launch {
@@ -423,6 +515,10 @@ class BrowsingActivity : AppCompatActivity() {
                         }
                         toast(getString(R.string.browse_done_fmt, summary.saved, suffix))
                     }
+                }
+                if (missing > 0) {
+                    // 重新载入后旧勾选会脱离列表，明确告知而不是静默少抓
+                    toast("⚠️ " + missing + " " + getString(R.string.browse_missing_skipped))
                 }
                 exitSelectMode()
             }
@@ -565,6 +661,27 @@ class BrowsingActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_UID = "uid"
         private const val KEY_BROWSE_PAGE = "browse-page"
+
+        // ---- 旋转 / 深浅色切换的恢复现场 ----
+        //
+        // `WeiboApi.RawPost` 不是 Parcelable，塞不进 Bundle；而重建一次就重跑一遍
+        // `resolveUid` + 最多 3 页请求（还覆盖用户输入、丢筛选与勾选）显然不可接受。
+        // 所以列表本体放在进程级静态字段（配置变更时天然还在），Bundle 只存标量；
+        // 进程被杀后静态字段为空，那时按恢复出来的 uid 重新翻页。
+        private const val KEY_UID = "browse_uid"
+        private const val KEY_PAGE = "browse_page"
+        private const val KEY_HAS_MORE = "browse_has_more"
+        private const val KEY_FILTER_ORIGINAL = "browse_filter_original"
+        private const val KEY_FILTER_PIC = "browse_filter_pic"
+        private const val KEY_SELECT = "browse_select"
+        private const val KEY_SELECTED = "browse_selected"
+        private const val KEY_INPUT = "browse_input"
+        private const val KEY_SCROLL = "browse_scroll"
+
+        @Volatile private var keptPosts: List<WeiboApi.RawPost>? = null
+        @Volatile private var keptUid: String = ""
+        @Volatile private var keptPage: Int = 0
+        @Volatile private var keptHasMore: Boolean = true
 
         fun start(ctx: Context, uid: String = "") {
             ctx.startActivity(

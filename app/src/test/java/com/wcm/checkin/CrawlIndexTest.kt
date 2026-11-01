@@ -211,6 +211,36 @@ class CrawlIndexTest {
         assertTrue(idx.pendingRetries(System.currentTimeMillis() + 100_000_000L).isEmpty())
     }
 
+    /**
+     * BUG-002 回归：详情没取到的帖必须落进 RETRY 队列。
+     *
+     * 旧实现什么都不写 —— 索引不知道这帖存在，游标却照样按页推进，
+     * 它落进覆盖区间内部后 planNew/planHistory 都判「已覆盖」跳过，永不补抓。
+     */
+    @Test
+    fun onPostUnknown_entersRetryQueueButIsNotTerminal() {
+        val idx = open()
+        idx.onPostUnknown("u1", 7L)
+        assertFalse(idx.isTerminal("u1"))
+        assertEquals(-1, idx.expectedSlots("u1"))
+        // 退避窗口内不捞、窗口外必捞（attempts = 1 → 30 分钟）
+        assertTrue(idx.pendingRetries(System.currentTimeMillis()).isEmpty())
+        val later = System.currentTimeMillis() + 40L * 60_000L
+        assertEquals(listOf("u1"), idx.pendingRetries(later).map { it.postId })
+        assertEquals(1, idx.pendingRetryCount())
+    }
+
+    /** 已有结论的帖不能被一次详情失败降级（否则已完成的原图会重新变成待重试）。 */
+    @Test
+    fun onPostUnknown_doesNotDowngradeTerminal() {
+        val idx = open()
+        idx.onPostSealed("d1", 6L, 1, savedAny = true, failed = emptySet())
+        idx.onPostUnknown("d1", 7L)
+        assertTrue(idx.isTerminal("d1"))
+        assertEquals(1, idx.expectedSlots("d1"))
+        assertTrue(idx.pendingRetries(System.currentTimeMillis() + 100_000_000L).isEmpty())
+    }
+
     // ---------- 迁移 ----------
 
     @Test

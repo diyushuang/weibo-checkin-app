@@ -145,6 +145,7 @@
     <string name="browse_exit_select">退出多选</string>
     <string name="browse_done_fmt">抓取完成：新增 %1$d 个文件%2$s</string>
     <string name="browse_fail_suffix_fmt">，%1$d 张失败（待重试）</string>
+    <string name="browse_missing_skipped">条勾选帖不在当前列表里，已跳过</string>
     <string name="browse_stopped">，任务被停止</string>
     <string name="browse_none_selected">先勾选至少一张图或一帖</string>
 
@@ -360,7 +361,6 @@
     <string name="gallery_filter_all">全部</string>
     <string name="gallery_filter_still">静图</string>
     <string name="gallery_filter_gif">动图</string>
-    <string name="gallery_filter_mov">视频</string>
     <string name="gallery_sort_label">排序方式</string>
     <string name="gallery_sort_newest">最新在前</string>
     <string name="gallery_sort_oldest">最早在前</string>
@@ -393,6 +393,7 @@
     <string name="crawl_phase_retry">补失败</string>
     <string name="crawl_phase_new">补新</string>
     <string name="crawl_phase_history">补历史</string>
+    <string name="crawl_phase_pick">勾选抓取</string>
     <string name="crawl_phase_done">完成</string>
     <string name="crawl_stage_fmt">%1$s · %2$d/%3$d</string>
     <string name="crawl_counts_fmt">已下载 %1$d · 跳过 %2$d · 待重试 %3$d</string>

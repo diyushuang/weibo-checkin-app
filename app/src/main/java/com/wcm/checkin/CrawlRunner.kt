@@ -153,7 +153,11 @@ object CrawlRunner {
             )
         )
         try {
-            return Crawler.crawlPicked(ctx, tasks, log, isStopped = { stopFlag.get() })
+            return Crawler.crawlPicked(
+                ctx, tasks, log,
+                onEvent = ::emit,
+                isStopped = { stopFlag.get() },
+            )
         } finally {
             _state.value = RunState.Idle
             stopFlag.set(false)
@@ -164,6 +168,20 @@ object CrawlRunner {
     /** 请求停止当前任务：Crawler 在每帖 / 每阶段之间检查这个标志。 */
     fun requestStop() {
         stopFlag.set(true)
+    }
+
+    /**
+     * 事件 → 状态快照。事件在 IO 线程发，[MutableStateFlow] 的赋值本身是线程安全的；
+     * 只在 Running 时累加，任务已收尾后迟到的 Post 事件不会再造出一个「假进行中」。
+     *
+     * 抽成单点：勾选抓取（[runPicked]）与增量抓取（[guarded]）都必须能画出进度，
+     * 以前 runPicked 没有 emit，进度条恒为 0。
+     */
+    private fun emit(event: CrawlEvent) {
+        val current = _state.value
+        if (current is RunState.Running) {
+            _state.value = RunState.Running(reduce(current.progress, event))
+        }
     }
 
     private suspend fun guarded(
@@ -179,15 +197,8 @@ object CrawlRunner {
                 since = System.currentTimeMillis(),
             )
         )
-        // 事件在 IO 线程发；StateFlow 的赋值本身是线程安全的
-        val emit: (CrawlEvent) -> Unit = { event ->
-            val current = _state.value
-            if (current is RunState.Running) {
-                _state.value = RunState.Running(reduce(current.progress, event))
-            }
-        }
         try {
-            block(emit) { stopFlag.get() }
+            block(::emit) { stopFlag.get() }
             return RunResult.Done
         } finally {
             _state.value = RunState.Idle

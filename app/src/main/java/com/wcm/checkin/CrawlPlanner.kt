@@ -19,6 +19,15 @@ object CrawlPlanner {
     const val MAX_PAGES = 200          // 单账号硬墙：每页 10 条，最多 2000 帖
     private const val ANCHOR_HOPS = 3  // 锚点定位最多跳 3 页
 
+    /**
+     * 连续几页空才算「真的到底」。
+     *
+     * 取 2 而不是 1：微博列表接口会在风控/降级时返回空的 data 列表（HTTP 仍 200），
+     * 单页空就置 `reachedBottom` 等于把「翻到底」永久写死，此后历史阶段与全量扫描
+     * 都会直接返回 ALL_COVERED —— 缺口永远补不回来。多翻一页的成本只有一次请求。
+     */
+    private const val EMPTY_STREAK_TO_BOTTOM = 2
+
     /** 列表页里的最小帖信息（`at` 已解析成 epoch 秒）。 */
     data class PostRef(
         val id: String,
@@ -34,9 +43,6 @@ object CrawlPlanner {
 
     data class PageSlice(val page: Int, val posts: List<PostRef>) {
 
-        /** 只保留时间可解析的帖：`at == 0` 参与边界计算会把边界拉到 0。 */
-        private val timed: List<PostRef> get() = posts.filter { it.at > 0L }
-
         /**
          * 参与「本页位于时间线的哪个位置」计算的帖。
          *
@@ -45,12 +51,15 @@ object CrawlPlanner {
          * 覆盖下界被一路拉到置顶帖那天，配合起始日期就会让历史阶段永久停摆
          * （`shouldRunHistory` 认为「已推到起始日期以下」），中间那段图再也抓不到。
          * 整页都是置顶帖的极端情况下退回全量，避免算出 0。
+         *
+         * 构造时算一次并复用：原先写成 getter，每个 `minAt` / `maxAt` 访问都要重建
+         * 两个 List（一页里被读 4-6 次），翻页高峰期纯是 GC 垃圾。
          */
-        private val positionHint: List<PostRef>
-            get() = timed.filter { !it.pinned }.ifEmpty { timed }
+        private val positionHint: List<PostRef> =
+            posts.filter { it.at > 0L }.let { timed -> timed.filter { !it.pinned }.ifEmpty { timed } }
 
-        val minAt: Long get() = positionHint.minOfOrNull { it.at } ?: 0L
-        val maxAt: Long get() = positionHint.maxOfOrNull { it.at } ?: 0L
+        val minAt: Long = positionHint.minOfOrNull { it.at } ?: 0L
+        val maxAt: Long = positionHint.maxOfOrNull { it.at } ?: 0L
     }
 
     /** `slice == null` 且 `error != null` 表示这一页没取回（网络/接口错误）。 */
@@ -208,6 +217,7 @@ object CrawlPlanner {
         var lastPage = 0
         var low = Long.MAX_VALUE
         var reachedBottom = false
+        var emptyStreak = 0
         var parked = false
         var oldestPost: PostRef? = null
         var skipped = 0
@@ -221,14 +231,27 @@ object CrawlPlanner {
                 break
             }
             if (slice.posts.isEmpty()) {
-                reachedBottom = true
-                stop = StopReason.PAGE_EXHAUSTED
-                break
+                // 单页空**不等于**到底：接口偶发返回空列表（风控抖动、该页恰好被过滤）
+                // 就把 reachedBottom 置上，历史阶段此后永久不再跑 —— 缺口再也不会被补。
+                // 要求连续 [EMPTY_STREAK_TO_BOTTOM] 页为空才认定到底。
+                emptyStreak++
+                if (emptyStreak >= EMPTY_STREAK_TO_BOTTOM) {
+                    reachedBottom = true
+                    stop = StopReason.PAGE_EXHAUSTED
+                    break
+                }
+                if (page == endPage) {
+                    stop = if (endPage >= MAX_PAGES) StopReason.HARD_CAP else StopReason.BUDGET
+                }
+                continue
             }
+            emptyStreak = 0
             lastPage = page
             if (slice.minAt > 0L && slice.minAt < low) low = slice.minAt
-            // 锚点取「时间可解析」的最老帖：at == 0 的帖不能当锚点，否则锚点恒为 0
-            val pageOldest = slice.posts.filter { it.at > 0L }.minByOrNull { it.at }
+            // 锚点取「时间可解析」的最老帖：at == 0 的帖不能当锚点，否则锚点恒为 0；
+            // 置顶帖同样要排除 —— 它是被置顶的老帖，时间不代表页面位置，
+            // 一旦被选成锚点，下一轮 locateAnchor 永远找不到它，历史阶段就永久停摆
+            val pageOldest = slice.posts.filter { it.at > 0L && !it.pinned }.minByOrNull { it.at }
             val curOldest = oldestPost
             if (pageOldest != null && (curOldest == null || pageOldest.at < curOldest.at)) {
                 oldestPost = pageOldest
@@ -312,6 +335,7 @@ object CrawlPlanner {
         var low = Long.MAX_VALUE
         var high = 0L
         var reachedBottom = false
+        var emptyStreak = 0
         var skipped = 0
 
         val endPage = minOf(startPage + budget.maxPages - 1, MAX_PAGES)
@@ -323,10 +347,20 @@ object CrawlPlanner {
                 break
             }
             if (slice.posts.isEmpty()) {
-                reachedBottom = true
-                stop = StopReason.PAGE_EXHAUSTED
-                break
+                // 同 [planHistory]：单页空不能当成到底，否则中途一次空响应就让
+                // 「全量扫描」永远停在那儿（断点 0 = 已完成），后面的历史再也补不到。
+                emptyStreak++
+                if (emptyStreak >= EMPTY_STREAK_TO_BOTTOM) {
+                    reachedBottom = true
+                    stop = StopReason.PAGE_EXHAUSTED
+                    break
+                }
+                if (page == endPage) {
+                    stop = if (endPage >= MAX_PAGES) StopReason.HARD_CAP else StopReason.BUDGET
+                }
+                continue
             }
+            emptyStreak = 0
             lastPage = page
             if (slice.minAt > 0L && slice.minAt < low) low = slice.minAt
             if (slice.maxAt > high) high = slice.maxAt
@@ -375,7 +409,10 @@ object CrawlPlanner {
      * - 到底 / 推到起始日期 / 触达 200 页硬墙 → 本轮全量扫描完成。
      */
     fun nextScanPage(plan: Plan): Int = when (plan.stop) {
-        StopReason.BUDGET, StopReason.PAGE_ERROR -> (plan.lastPage + 1).coerceAtMost(MAX_PAGES)
+        // lastPage 是「最后一个成功页」。首页就失败时它是 0，此时必须保留 startPage，
+        // 否则断点从 41 掉回 1，下一轮白爬 40 页（稳定失败页还会在 1 与 41 之间往返）
+        StopReason.BUDGET, StopReason.PAGE_ERROR ->
+            if (plan.lastPage > 0) (plan.lastPage + 1).coerceAtMost(MAX_PAGES) else plan.startPage
         else -> 0
     }
 
@@ -405,8 +442,9 @@ object CrawlPlanner {
     private fun crossesAnchor(slice: PageSlice, cursor: CrawlCursor): Boolean {
         if (cursor.anchorPostId.isNotEmpty() && slice.posts.any { it.id == cursor.anchorPostId }) return true
         if (cursor.anchorAt <= 0L) return false
-        val hasNewer = slice.posts.any { it.at >= cursor.anchorAt }
-        val hasOlder = slice.posts.any { it.at <= cursor.anchorAt }
+        // 置顶帖的时间是被置顶那一刻的旧时间，不能用来判定「页面跨过锚点」
+        val hasNewer = slice.posts.any { !it.pinned && it.at >= cursor.anchorAt }
+        val hasOlder = slice.posts.any { !it.pinned && it.at <= cursor.anchorAt }
         return hasNewer && hasOlder
     }
 

@@ -25,6 +25,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -88,6 +89,12 @@ class TopicFragment : Fragment() {
 
     private val timeFmt = SimpleDateFormat("HH:mm", Locale.CHINA)
 
+    /** 跨天用的格式器：SimpleDateFormat 构造不便宜，不要每次渲染都 new 一个。 */
+    private val dateFmt = SimpleDateFormat("M月d日 HH:mm", Locale.CHINA)
+
+    /** 当前打开的只读弹窗（原始 JSON / 字段说明），视图销毁时手动关掉。 */
+    private var textDialog: androidx.appcompat.app.AlertDialog? = null
+
     private enum class Filter { ALL, PENDING, DONE, LEVEL7 }
     private enum class Sort { PENDING_FIRST, LEVEL_DESC, NAME }
 
@@ -147,6 +154,13 @@ class TopicFragment : Fragment() {
         }
     }
 
+    override fun onDestroyView() {
+        // 视图没了就把自建弹窗关掉，否则窗口挂着已 detach 的 Activity → WindowLeaked
+        textDialog?.dismiss()
+        textDialog = null
+        super.onDestroyView()
+    }
+
     override fun onResume() {
         super.onResume()
         if (!isHidden) render()
@@ -162,6 +176,9 @@ class TopicFragment : Fragment() {
 
     private fun maybeAutoRefresh() {
         if (!isAdded || loading) return
+        // 本页是「全部 add + hide/show」式 tab：隐藏时 onViewCreated 照样执行，
+        // 于是每建一次超话页都会先打一轮接口，和首页 runAll 的自动刷新撞车。
+        if (isHidden) return
         val ctx = requireContext()
         val accounts = AccountStore.load(ctx)
         if (accounts.isEmpty()) return
@@ -227,6 +244,10 @@ class TopicFragment : Fragment() {
             rotateCookie(ctx, acc.uid, verify.cookie)
             val topics = WeiboApi.listTopics(verify.cookie)
             TopicStore.save(ctx, acc.uid, topics)
+        } catch (e: CancellationException) {
+            // 取消不是失败：不拦住就会被写成「Job was cancelled」并落盘，
+            // 重启后这条假错误还挂在快照上，用户以为账号出问题了。
+            throw e
         } catch (e: Exception) {
             TopicStore.saveError(ctx, acc.uid, e.message ?: "超话列表失败")
         }
@@ -236,11 +257,10 @@ class TopicFragment : Fragment() {
     /** 顺带把轮换后的 cookie 写回账号表（否则下一轮会用到过期的 SUB）。 */
     private fun rotateCookie(ctx: Context, uid: String, cookie: String) {
         if (cookie.isEmpty()) return
-        val accounts = AccountStore.load(ctx)
-        val index = accounts.indexOfFirst { it.uid == uid }
-        if (index < 0 || accounts[index].cookie == cookie) return
-        accounts[index] = accounts[index].copy(cookie = cookie)
-        AccountStore.save(ctx, accounts)
+        // 必须走 patchAccount：只改 cookie 会漏掉 cookieDead = false 与各时间锚点，
+        // 失效标记会一直挂着，CookieLife 的倒计时也会停在旧值上；而且整表 save()
+        // 没有加 AccountStore.LOCK，会与首页/Worker 的 patchAccount 互相吞写
+        AccountStore.markVerified(ctx, uid, cookie)
     }
 
     /**
@@ -265,7 +285,7 @@ class TopicFragment : Fragment() {
     private fun topicStateTime(at: Long): String = when {
         at <= 0L -> ""
         TopicStore.isToday(at) -> timeFmt.format(Date(at))
-        else -> SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(at))
+        else -> dateFmt.format(Date(at))
     }
 
     // ========================= 渲染 =========================
@@ -292,8 +312,12 @@ class TopicFragment : Fragment() {
         // 概览永远统计「全部已加载的超话」，不受筛选影响 —— 筛选是看的方式，不是事实。
         // 但「今日已签 / 待签」是按天的结论：快照跨天时这里必须显示占位符，
         // 否则会把昨天的已签数当成今天的结果（待签还会变成 0）。
-        val error = errorOf(snaps)
-        val at = updatedAt(snaps)
+        // 只认当前账号的快照：删掉的账号留下的错误提示/时间会一直挂在副标题上，
+        // 用户看到「登录已失效」却找不到是哪个账号（它已经不在列表里了）。
+        val liveUids = accounts.mapTo(HashSet()) { it.uid }
+        val liveSnaps = snaps.filterKeys { it in liveUids }
+        val error = errorOf(liveSnaps)
+        val at = updatedAt(liveSnaps)
         val atLabel = topicStateTime(at)
         val staleDay = anyStaleDay(accounts, snaps)
 
@@ -326,20 +350,24 @@ class TopicFragment : Fragment() {
         }
 
         // 空态 / 错误态：错误优先（否则会把"失败"伪装成"没有超话"）
-        val showError = rows.isEmpty() && error.isNotEmpty() && !loading
-        val showEmpty = rows.isEmpty() && !showError && !loading
+        //
+        // 判空必须按**筛选后**的 shown，不能按 rows：筛选命中 0 条时 rows 非空，
+        // 于是既不显示空态、list 又显示空表 —— 整屏一片空白，而且
+        // topic_empty_filter 那段文案永远走不到。
+        val showError = shown.isEmpty() && error.isNotEmpty() && !loading
+        val showEmpty = shown.isEmpty() && !showError && !loading
         errorBox.visibility = if (showError) View.VISIBLE else View.GONE
         host.findViewById<TextView>(R.id.tvTopicError).text =
             getString(R.string.topic_subtitle_failed, error)
         emptyBox.visibility = if (showEmpty) View.VISIBLE else View.GONE
         host.findViewById<TextView>(R.id.tvTopicEmpty).text = when {
             accounts.isEmpty() -> getString(R.string.topic_empty_no_account)
-            rows.isEmpty() && shown.isEmpty() && filter == Filter.ALL -> getString(R.string.topic_empty_no_topic)
+            rows.isEmpty() -> getString(R.string.topic_empty_no_topic)
             else -> getString(R.string.topic_empty_filter)
         }
         host.findViewById<View>(R.id.btnTopicEmptyAction).visibility =
             if (accounts.isEmpty()) View.VISIBLE else View.GONE
-        list.visibility = if (rows.isEmpty()) View.GONE else View.VISIBLE
+        list.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
     }
 
     private fun errorOf(snaps: Map<String, TopicStore.Snapshot>): String =
@@ -500,6 +528,8 @@ class TopicFragment : Fragment() {
                         TopicStore.saveDetail(ctx, detail)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 error = e.message ?: "详情加载失败"
             }
@@ -559,9 +589,18 @@ class TopicFragment : Fragment() {
         showTextDialog(getString(R.string.topic_json_title, row.topic.name), body)
     }
 
+    /** 正在签到的超话（key = uid + 超话 key），防连点并发打同一批接口。 */
+    private val checkinBusy = java.util.Collections.synchronizedSet(HashSet<String>())
+
     /** 签到一个超话：缓存里的链接会过期，先按需重新取一次最新列表。 */
     private fun checkin(row: TopicRow) {
         if (!isAdded) return
+        // 连点会起 N 个协程同时 verify + sign：多花风控额度，还会叠 N 个 Toast。
+        // 详情拉取那边早就有 detailBusy，签到这条路径漏了。
+        if (!checkinBusy.add(row.uid + "|" + row.topic.key)) {
+            toast(getString(R.string.busy))
+            return
+        }
         val ctx = requireContext()
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             var message: String
@@ -604,10 +643,13 @@ class TopicFragment : Fragment() {
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 message = ctx.getString(R.string.topic_checkin_fail_fmt, e.message ?: "异常")
             }
             withContext(Dispatchers.Main + NonCancellable) {
+                checkinBusy.remove(row.uid + "|" + row.topic.key)
                 if (isAdded) {
                     toast(message)
                     render()
@@ -669,6 +711,9 @@ class TopicFragment : Fragment() {
     private fun showTextDialog(title: String, body: String) {
         if (!isAdded) return
         val ctx = requireContext()
+        // 用 requireContext 建的 Dialog 不归 Fragment 管：视图销毁（旋转/切页）时
+        // 窗口还挂在已经 detach 的 Activity 上 → WindowLeaked。留个引用手动 dismiss。
+        textDialog?.dismiss()
         val density = resources.displayMetrics.density
         val pad = (16 * density).toInt()
 
@@ -691,7 +736,7 @@ class TopicFragment : Fragment() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             height,
         )
-        MaterialAlertDialogBuilder(ctx)
+        textDialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(title)
             .setView(scroll)
             .setPositiveButton(android.R.string.ok, null)

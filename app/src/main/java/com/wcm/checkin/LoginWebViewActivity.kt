@@ -132,6 +132,11 @@ class LoginWebViewActivity : AppCompatActivity() {
                 blockNavigation(view, url.toUri())
         }
 
+        // pauseTimers 是**进程级**开关：onDestroy 里停掉之后，下一次登录新建的
+        // WebView 里所有 JS 定时器都不会再跑（登录页的轮询/跳转直接卡死）。
+        // 官方文档要求「每次使用前 resumeTimers」，两边必须成对。
+        webView.resumeTimers()
+
         val cm = CookieManager.getInstance()
         // 每次进入都是干净会话：添加第二个账号时不继承第一个的登录。
         // 清库是异步的，等回调确认清完再加载页面，避免轮询读到残留 cookie 误判已登录。
@@ -297,7 +302,9 @@ class LoginWebViewActivity : AppCompatActivity() {
                 var why: String? = null
                 for (cookie in candidates) {
                     try {
-                        val v = WeiboApi.verify(cookie)
+                        // 登录轮询必须看实时状态：verify 有 90s 结果缓存，
+                        // 进登录页前刚做过探活时会直接命中旧结果，判出「假登录」
+                        val v = WeiboApi.verify(cookie, force = true)
                         if (v.login) {
                             ok = v
                             break
@@ -394,7 +401,16 @@ class LoginWebViewActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        // 官方要求的销毁顺序：先停定时器 → 移出视图树 → 停止加载 → destroy。
+        // 少了 removeView + pauseTimers，部分 ROM 上 WebView 的 JS 定时器会在
+        // Activity 结束后继续跑（后台耗电），个别机型还会报 "WebView.destroy()
+        // called while this WebView is still attached to a window"。
+        webView.pauseTimers()
+        (webView.parent as? android.view.ViewGroup)?.removeView(webView)
         webView.stopLoading()
+        webView.loadUrl("about:blank")
+        webView.clearHistory()
+        webView.removeAllViews()
         webView.destroy()
         super.onDestroy()
     }

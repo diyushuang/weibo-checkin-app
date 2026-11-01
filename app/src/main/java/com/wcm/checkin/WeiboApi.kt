@@ -112,6 +112,16 @@ object WeiboApi {
 
     private const val BASE = "https://m.weibo.cn"
 
+    /**
+     * 拼进 URL 的 id 一律过一遍编码。
+     *
+     * uid / bid 目前都是上游校验过的数字或 base62，但抓取目标与「单帖浏览」的
+     * bid 来自用户输入：一个带 & 或 # 的输入就能把 query 拆坏（参数注入到别的接口
+     * 参数上）。这一层成本是零，收益是「永不因为脏输入构造出错误请求」。
+     */
+    private fun q(value: String): String =
+        java.net.URLEncoder.encode(value, "UTF-8")
+
     /** Web 端（weibo.com 下的 ajax 接口族）的基址：游客身份只在这一侧成立。 */
     private const val WEB_BASE = "https://weibo.com"
 
@@ -132,6 +142,16 @@ object WeiboApi {
 
     /** 签到成功文案（接口偶发 `ok=0` 但文案写着成功，与面板同口径）。 */
     private val SUCCESS_WORDS = listOf("成功", "已签到", "已簽到")
+
+/**
+ * 否定语：出现任意一个就判失败，**优先级高于 [SUCCESS_WORDS]**。
+ *
+ * 微博的失败文案常写成「签到未成功」「领取失败」—— 它们同样包含「成功」，
+ * 只按 contains 判成功会让核心结果判定完全失效。
+ */
+private val NEGATIVE_WORDS = listOf(
+    "未成功", "不成功", "没有成功", "失败", "未签到", "未簽到", "无法签到", "不能签到",
+)
 
     /** 连续两次超话详情请求的最小间隔：详情只在用户点开时触发，仍要防连点打卡。 */
     private const val DETAIL_MIN_GAP_MS = 1200L
@@ -469,7 +489,7 @@ object WeiboApi {
 
     /** m 站用户主页：`getIndex?type=uid`，昵称键名不固定，交给 [extractProfile] 容错。 */
     private fun mStationName(cookie: String, uid: String): String? = try {
-        val url = "$BASE/api/container/getIndex?type=uid&value=$uid"
+        val url = "$BASE/api/container/getIndex?type=uid&value=${q(uid)}"
         client.newCall(request(url, cookie)).execute().use { resp ->
             if (!resp.isSuccessful) return null
             val body = resp.body?.string().orEmpty()
@@ -613,17 +633,24 @@ object WeiboApi {
         val code = payload.opt("code")?.toString() ?: ""
         val data = payload.optJSONObject("data") ?: JSONObject()
         val msg = payload.optString("msg", "").trim()
-        val ok = parseLoginFlag(payload.opt("ok")) ||
-            parseLoginFlag(payload.opt("result")) ||
-            code == "100000" ||
-            SUCCESS_WORDS.any { msg.contains(it) }
+        val errno = (payload.opt("errno")?.toString() ?: data.opt("errno")?.toString() ?: "")
+            .toIntOrNull() ?: 0
+        // 否定语要先看：「签到未成功」「领取失败」这类文案里同样含「成功」二字，
+        // 单靠 SUCCESS_WORDS 的 contains 会把明确的失败判成成功 ——
+        // 用户于是永远收不到失败提示，连续漏签也无感。
+        val negative = NEGATIVE_WORDS.any { msg.contains(it) }
+        val ok = !negative && errno == 0 && (
+            parseLoginFlag(payload.opt("ok")) ||
+                parseLoginFlag(payload.opt("result")) ||
+                code == "100000" ||
+                SUCCESS_WORDS.any { msg.contains(it) }
+            )
         return SignResult(
             ok = ok,
             alertTitle = data.optString("alert_title", "").trim(),
             alertSubtitle = data.optString("alert_subtitle", "").trim(),
             msg = msg,
-            errno = (payload.opt("errno")?.toString() ?: data.opt("errno")?.toString() ?: "")
-                .toIntOrNull() ?: 0,
+            errno = errno,
         )
     }
 
@@ -788,7 +815,7 @@ object WeiboApi {
      * 与签到共用同一份账号凭据 —— 这是现状，不是可以省掉的依赖。
      */
     fun fetchUserPosts(cookie: String, uid: String, page: Int): Pair<Int, List<RawPost>> {
-        val url = "$BASE/api/container/getIndex?containerid=107603$uid&page=$page"
+        val url = "$BASE/api/container/getIndex?containerid=107603${q(uid)}&page=$page"
         val req = Request.Builder().url(url)
             .header("User-Agent", UA)
             .header("Referer", "$BASE/u/$uid")
@@ -916,7 +943,7 @@ object WeiboApi {
      * 所以这里坚持 m 站口径。
      */
     fun fetchPostDetail(cookie: String, bid: String): JSONObject {
-        val url = "$BASE/statuses/show?id=$bid"
+        val url = "$BASE/statuses/show?id=${q(bid)}"
         val req = Request.Builder().url(url)
             .header("User-Agent", UA)
             .header("Referer", "$BASE/detail/$bid")
@@ -958,7 +985,7 @@ object WeiboApi {
 
     /** Web 端用户信息（游客可用）。返回 null 表示「这条路拿不到」，交给调用方回落。 */
     private fun webUserName(identity: String, uid: String): String? = try {
-        val req = Request.Builder().url("$WEB_BASE/ajax/profile/info?uid=$uid")
+        val req = Request.Builder().url("$WEB_BASE/ajax/profile/info?uid=${q(uid)}")
             .header("User-Agent", WEB_UA)
             .header("Referer", "$WEB_BASE/u/$uid")
             .header("Accept", "application/json, text/plain, */*")

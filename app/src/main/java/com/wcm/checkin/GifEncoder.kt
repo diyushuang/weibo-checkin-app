@@ -181,7 +181,6 @@ object GifEncoder {
         out: IntArray,
     ) {
         val w = frame.width
-        val h = frame.height
         val px = frame.pixels
         // 15bit (5R5G5B) 量化缓存：同一量化色 + 同一抖动档 → 同一索引
         val cache = IntArray(32768) { -1 }

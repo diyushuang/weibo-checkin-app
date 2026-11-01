@@ -37,7 +37,10 @@ object WeiboThrottle {
      */
     suspend fun await(key: String, gapMs: Long) {
         if (gapMs <= 0L) return
-        val mutex = locks.getOrPut(key) { Mutex() }
+        // 必须用 computeIfAbsent：ConcurrentHashMap 的 getOrPut 是「先查再放」两步，
+        // 并发首次调用会各自 new 一个 Mutex —— 两个调用者各持一把锁，节流直接被击穿
+        // （请求量翻倍，最容易吃 429）。
+        val mutex = locks.computeIfAbsent(key) { Mutex() }
         mutex.withLock {
             val last = lastAt[key] ?: 0L
             val wait = gapMs - (System.currentTimeMillis() - last)

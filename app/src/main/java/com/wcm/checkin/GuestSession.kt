@@ -52,6 +52,9 @@ object GuestSession {
     /** 单次获取最多握手几轮（第一轮失败时立刻重试一次，避开偶发风控抖动）。 */
     private const val HANDSHAKE_ATTEMPTS = 2
 
+    /** [refresh] 的合并窗口：这段时间内刚握手成功过就不再重复握手。 */
+    private const val REFRESH_REUSE_MS = 30_000L
+
     private const val GEN_VISITOR = "https://passport.weibo.com/visitor/genvisitor2"
     private const val VISITOR = "https://passport.weibo.com/visitor/visitor"
     private const val WEB_HOME = "https://weibo.com/"
@@ -97,19 +100,18 @@ object GuestSession {
      * 失败返回 null（原因见 [lastError]），调用方应回落到账号身份。
      */
     fun cookie(): String? {
-        peek()?.let { return it }
-
-        val now = System.currentTimeMillis()
-        val disk = loadDisk()
-        if (disk != null && now - disk.second < TTL_MS) {
-            cached = disk.first
-            cachedAt = disk.second
-            return disk.first
-        }
-
         synchronized(gate) {
             // 双检：并发进来的线程只握手一次
             peek()?.let { return it }
+            // 磁盘读与缓存写都必须在锁内：这两个字段是 [handshake] / [clear]
+            // 共用的状态。放在锁外会与「刚判失效的 clear()」竞争 ——
+            // 旧 cookie 被写回内存、cachedAt 刷成当前时间，又能再活 365 天。
+            val disk = loadDisk()
+            if (disk != null && System.currentTimeMillis() - disk.second < TTL_MS) {
+                cached = disk.first
+                cachedAt = disk.second
+                return disk.first
+            }
             return handshake()
         }
     }
@@ -122,6 +124,10 @@ object GuestSession {
      */
     fun refresh(): String? {
         synchronized(gate) {
+            // 并发失效（多线程同时撞「身份可疑」）会排队各握手一次，每次两个请求。
+            // 刚刷新成功的话直接复用：REFRESH_REUSE_MS 内的多次 refresh 合并成一次。
+            val age = System.currentTimeMillis() - cachedAt
+            peek()?.let { if (cachedAt > 0 && age in 0 until REFRESH_REUSE_MS) return it }
             clear()
             return handshake()
         }

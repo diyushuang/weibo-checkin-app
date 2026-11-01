@@ -13,7 +13,14 @@ package com.wcm.checkin
  * 抓取阶段。v0.9.12 增加 [SCAN]：全量扫描既不是「补新」也不是「补历史」，
  * 它是一条从最新连续下行的独立通道，进度文案必须说「全量」而不是骗人的「补新」。
  */
-enum class CrawlPhase { IDLE, PREPARE, RETRY, NEW, HISTORY, SCAN, DONE }
+/**
+ * 抓取阶段。
+ *
+ * - [SCAN]：全量扫描既不是「补新」也不是「补历史」，是一条从最新连续下行的独立通道；
+ * - [PICK]：勾选抓取（浏览页 / 选图页提交）逐帖拉详情，量小但同样要能画出进度
+ *   —— 以前它在整个过程中只停在 [PREPARE]，进度条恒为 0，用户以为卡死。
+ */
+enum class CrawlPhase { IDLE, PREPARE, RETRY, NEW, HISTORY, SCAN, PICK, DONE }
 
 data class CrawlProgress(
     val phase: CrawlPhase = CrawlPhase.IDLE,
@@ -94,7 +101,9 @@ fun reduce(prev: CrawlProgress, event: CrawlEvent, now: Long = System.currentTim
 /** 进度百分比：分母还没算出来时返回 0（不显示一个假的满格）。 */
 fun percent(progress: CrawlProgress): Int {
     if (progress.discovered <= 0) return 0
-    return (progress.processed * 100 / progress.discovered).coerceIn(0, 100)
+    // 用 Long 乘：Int 的 processed * 100 在 2147 万以上会溢出成负数，
+    // 百分比直接翻转。当前量级到不了，但这是纯粹的语义错误，顺手修掉。
+    return (progress.processed.toLong() * 100 / progress.discovered).toInt().coerceIn(0, 100)
 }
 
 /** 失败清单的可读摘要：`postId · 缺 N 张`。 */

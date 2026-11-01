@@ -1,5 +1,7 @@
 package com.wcm.checkin
 
+import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,7 +21,16 @@ import kotlinx.coroutines.launch
  */
 object AppScope {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /**
+     * 兜底：SupervisorJob 只保证兄弟协程不被连带取消，**不负责捕获异常** ——
+     * 没有 handler 时，未捕获异常会走默认处理器直接崩进程。长任务里任何一处
+     * 意外（写盘 IO、日志追加、UI 回调）都不该把整个 App 带走。
+     */
+    private val handler = CoroutineExceptionHandler { _, e ->
+        Log.e("AppScope", "未捕获的协程异常", e)
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + handler)
 
     fun launch(block: suspend CoroutineScope.() -> Unit): Job = scope.launch(block = block)
 }

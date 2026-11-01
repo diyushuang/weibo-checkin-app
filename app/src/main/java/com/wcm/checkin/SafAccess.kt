@@ -40,12 +40,20 @@ object SafAccess {
             val rootId = DocumentsContract.getTreeDocumentId(uri)
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(uri, rootId)
             // 只取一列、只读第一行：确认 provider 真的能打开，而不是遍历整个目录
-            ctx.contentResolver.query(
+            val cursor = ctx.contentResolver.query(
                 children,
                 arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
                 null, null, null,
-            )?.use { cursor -> cursor.moveToFirst() }
+            )
+            // query 返回 null = provider 没应答（U 盘拔出 / 云盘掉线），
+            // 旧实现把它和「查询成功」混成同一个 Ok 分支 —— 自检形同虚设，
+            // 抓取照常开始然后每一张图都失败，用户完全看不出根因。
+            if (cursor == null) return Status.Unreadable("目录 provider 无响应")
+            cursor.use { it.moveToFirst() }
             Status.Ok
+        } catch (e: SecurityException) {
+            // 授权没了抛的是 SecurityException：这是「重新选目录」而不是「设备/网络问题」
+            Status.NoPermission
         } catch (e: Exception) {
             Status.Unreadable(e.message ?: "目录不可读")
         }

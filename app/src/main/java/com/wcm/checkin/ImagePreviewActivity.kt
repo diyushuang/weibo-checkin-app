@@ -19,8 +19,12 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /**
@@ -37,6 +41,29 @@ class ImagePreviewActivity : AppCompatActivity() {
     private lateinit var pager: ViewPager2
     private lateinit var tvIndex: TextView
     private lateinit var tvName: TextView
+
+    /** 删除闸门：连点两次「删除」会并发两个 IO 删除，第二个用旧位置移除 = 删错图。 */
+    private var deleting = false
+
+    /**
+     * 全屏大图并发上限。
+     *
+     * ViewPager2 常驻 3 页、每张最长边 2048 的位图约 12-16MB，没有闸门时快速连滑
+     * 会同时解出十几张 → 低端机直接 OOM。2 个槽位够「当前页 + 预取下一页」。
+     */
+    private val fullLoadSlot = Semaphore(2)
+
+    /**
+     * 全屏图请求的长边：按屏幕长边取，最多 2048。
+     *
+     * 不缓存全尺寸图是刻意的：ThumbLoader 的 LruCache 缓存的是 256px 缩略图，
+     * 塞进几张大图（每张 12MB+）会把整个网格缓存挤空，退回图库页时缩略图全量重解，
+     * 反而更卡。这里靠「取消 + 并发上限 + 降采样」控住内存。
+     */
+    private val previewMaxSize: Int by lazy {
+        val dm = resources.displayMetrics
+        maxOf(dm.widthPixels, dm.heightPixels).coerceIn(720, 2048)
+    }
 
     private val pageCallback = object : ViewPager2.OnPageChangeCallback() {
         override fun onPageSelected(position: Int) {
@@ -172,6 +199,8 @@ class ImagePreviewActivity : AppCompatActivity() {
     }
 
     private fun confirmDelete() {
+        // 删除进行中不再弹第二个确认框（第二次点进来用的会是错位的位置）
+        if (deleting) return
         val item = currentItem() ?: return
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.preview_delete_title)
@@ -182,9 +211,11 @@ class ImagePreviewActivity : AppCompatActivity() {
     }
 
     private fun deleteCurrent() {
+        if (deleting) return
         val pos = pager.currentItem
         if (pos !in items.indices) return
         val item = items[pos]
+        deleting = true
         val resolver = contentResolver
         lifecycleScope.launch(Dispatchers.IO) {
             val ok = try {
@@ -198,20 +229,37 @@ class ImagePreviewActivity : AppCompatActivity() {
                 runCatching { rollbackIndex(item.name) }
             }
             withContext(Dispatchers.Main) {
+                deleting = false
                 if (isFinishing || isDestroyed) return@withContext
                 if (!ok) {
                     Toast.makeText(this@ImagePreviewActivity, R.string.preview_delete_fail, Toast.LENGTH_SHORT).show()
                     return@withContext
                 }
                 contentChanged = true
-                items.removeAt(pos)
+                // 位置必须按 uri 复核：挂起期间列表可能已经变了（另一次删除、
+                // 或返回图库后重载），拿挂起前的 pos 去 removeAt 会移掉另一张，
+                // 或用越界的 pos 直接抛 IndexOutOfBoundsException。
+                val at = items.indexOfFirst { it.uri == item.uri }
+                if (at < 0) {
+                    // 防御分支：挂起期间列表里已经没有这张了。当前只有 deleteCurrent 一处会改
+                    // items 且有 deleting 闸门，正常路径进不来；这里数据本身已是最新，
+                    // 只需把可能越界的当前页拉回来，不必整体重绑（重绑会把已解码的大图全丢掉）。
+                    if (items.isEmpty()) {
+                        finish()
+                    } else {
+                        pager.setCurrentItem(pager.currentItem.coerceIn(0, items.size - 1), false)
+                        updateInfo()
+                    }
+                    return@withContext
+                }
+                items.removeAt(at)
                 // 只删了这一页：精确通知单条移除，ViewPager2 会用它做删除动画，
                 // 也不会把其它页已加载好的大图丢掉重解
-                pagerAdapter.notifyItemRemoved(pos)
+                pagerAdapter.notifyItemRemoved(at)
                 if (items.isEmpty()) {
                     finish()
                 } else {
-                    pager.setCurrentItem(pos.coerceIn(0, items.size - 1), false)
+                    pager.setCurrentItem(at.coerceIn(0, items.size - 1), false)
                     updateInfo()
                 }
             }
@@ -254,17 +302,32 @@ class ImagePreviewActivity : AppCompatActivity() {
             holder.bind(items[position])
         }
 
+        override fun onViewRecycled(holder: Holder) {
+            super.onViewRecycled(holder)
+            holder.cancel()
+        }
+
         inner class Holder(val zoomView: ZoomableImageView) : RecyclerView.ViewHolder(zoomView) {
+
+            /** 当前这张大图的解码任务；换绑/回收时必须取消，否则滑过去还在解。 */
+            private var job: Job? = null
+
             fun bind(item: GalleryFiles.GalleryItem) {
                 // 放大态停用翻页手势，回到 1x 恢复
                 zoomView.onZoomChanged = { zoomed -> pager.isUserInputEnabled = !zoomed }
                 zoomView.setImageDrawable(null)
                 val key = item.uri.toString()
                 zoomView.tag = key
+                job?.cancel()
                 val resolver = contentResolver
-                lifecycleScope.launch(Dispatchers.IO) {
+                job = lifecycleScope.launch(Dispatchers.IO) {
                     val drawable = try {
-                        ThumbLoader.fullDrawable(resolver, item.uri)
+                        // 并发闸门：同一时刻最多解 2 张，快速连滑时排队而不是一起 OOM
+                        fullLoadSlot.withPermit {
+                            ThumbLoader.fullDrawable(resolver, item.uri, previewMaxSize)
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         null
                     }
@@ -274,6 +337,12 @@ class ImagePreviewActivity : AppCompatActivity() {
                         }
                     }
                 }
+            }
+
+            /** 视图被回收：取消未完成的解码，别让它在后台继续占着内存。 */
+            fun cancel() {
+                job?.cancel()
+                job = null
             }
         }
     }

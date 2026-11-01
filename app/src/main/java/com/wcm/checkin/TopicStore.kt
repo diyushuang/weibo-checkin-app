@@ -3,6 +3,7 @@ package com.wcm.checkin
 import android.content.Context
 import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
@@ -44,6 +45,16 @@ object TopicStore {
     /** 详情缓存的默认新鲜期：超过就重新拉（用户主动点开时才会触发）。 */
     const val DETAIL_TTL_MS = 30 * 60_000L
 
+    /** 详情缓存的保留上限：超过 7 天没人看就淘汰，最多留 400 条。 */
+    private const val DETAIL_KEEP_MS = 7 * 24 * 60 * 60 * 1000L
+    private const val DETAIL_MAX = 400
+
+    /** 每写 N 次详情做一次淘汰（写路径上不做全量扫描）。 */
+    private const val DETAIL_PRUNE_EVERY = 32
+
+    /** 详情内存缓存条数上限（大约覆盖十来个超话的来回切换）。 */
+    private const val DETAIL_CACHE_MAX = 64
+
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     // ---- 进程内共享状态：首页与超话页读同一份，避免两边各读一次 prefs ----
@@ -56,6 +67,14 @@ object TopicStore {
 
     /** 幂等：首次调用把磁盘上的全部快照读进内存。 */
     @Synchronized
+    /** 预热入口：放到 IO 线程调，避免首页/超话页在主线程遍历 prefs。 */
+    fun warm(ctx: Context) {
+        runCatching {
+            ensureLoaded(ctx)
+            pruneDetails(ctx)
+        }
+    }
+
     fun ensureLoaded(ctx: Context) {
         if (loaded) return
         val all = HashMap<String, Snapshot>()
@@ -87,17 +106,21 @@ object TopicStore {
         ensureLoaded(ctx)
         val snap = Snapshot(uid = uid, at = at, topics = topics, error = "")
         prefs(ctx).edit { putString(SNAP_PREFIX + uid, serializeSnapshot(snap)) }
-        _state.value = _state.value + (uid to snap)
+        // 读改写必须原子：并发 save / saveError 用 value + ... 会互相丢更新
+        _state.update { it + (uid to snap) }
     }
 
     /** 记录一次失败：保留上一次的 topic 列表与时间戳，只把错误写进去。 */
     fun saveError(ctx: Context, uid: String, message: String) {
         if (uid.isEmpty()) return
         ensureLoaded(ctx)
-        val prev = _state.value[uid] ?: Snapshot(uid = uid)
-        val snap = prev.copy(error = message)
+        // 同一个临界区里读旧值、写新值：分开写会让并发的 save() 结果被覆盖
+        var snap = Snapshot(uid = uid)
+        _state.update { cur ->
+            snap = (cur[uid] ?: Snapshot(uid = uid)).copy(error = message)
+            cur + (uid to snap)
+        }
         prefs(ctx).edit { putString(SNAP_PREFIX + uid, serializeSnapshot(snap)) }
-        _state.value = _state.value + (uid to snap)
     }
 
     fun clear(ctx: Context, uid: String) {
@@ -109,20 +132,77 @@ object TopicStore {
 
     // ---- 超话详情 ----
 
+    /**
+     * 详情的内存缓存（进程级）。
+     *
+     * 列表 bind 时每行都要读一次详情：原先每次都走 prefs 取串 + JSON 解析，
+     * 滚动几屏就是几百次解析，全在 UI 线程上。缓存有上限，超出按写入顺序丢最旧的。
+     */
+    private val detailCache = object : LinkedHashMap<String, WeiboApi.TopicDetail>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, WeiboApi.TopicDetail>?): Boolean =
+            size > DETAIL_CACHE_MAX
+    }
+
     fun detail(ctx: Context, topicId: String): WeiboApi.TopicDetail? {
         if (topicId.isEmpty()) return null
+        synchronized(detailCache) { detailCache[topicId] }?.let { return it }
         val raw = SafePrefs.string(prefs(ctx), DETAIL_PREFIX + topicId)
         if (raw.isEmpty()) return null
-        return deserializeDetail(topicId, raw)
+        val parsed = deserializeDetail(topicId, raw) ?: return null
+        synchronized(detailCache) { detailCache[topicId] = parsed }
+        return parsed
     }
 
     fun saveDetail(ctx: Context, d: WeiboApi.TopicDetail) {
         if (d.topicId.isEmpty()) return
-        prefs(ctx).edit { putString(DETAIL_PREFIX + d.topicId, serializeDetail(d)) }
+        synchronized(detailCache) { detailCache[d.topicId] = d }
+        val p = prefs(ctx)
+        p.edit { putString(DETAIL_PREFIX + d.topicId, serializeDetail(d)) }
+        // 详情缓存是「只增不减」的：每次点开超话就多一个键，一年下来几百上千条，
+        // 全都压在 prefs 的 XML 里（ensureLoaded 的 prefs.all 会把它整份读进内存）。
+        // 这里按次数抽样淘汰，写路径上不做全量扫描。
+        if (++detailSaves % DETAIL_PRUNE_EVERY == 0) pruneDetails(ctx)
+    }
+
+    @Volatile
+    private var detailSaves = 0
+
+    /**
+     * 淘汰过期详情缓存。
+     *
+     * 只删「解析得出来且明显过期」的项；解析失败的坏数据一并清掉（本来也读不出来）。
+     * 顺带保底：条目数超过 [DETAIL_MAX] 时按 fetchedAt 从旧到新删到上限以内，
+     * 防止用户在短时间内翻遍大量超话把 XML 撑大。
+     */
+    fun pruneDetails(ctx: Context, now: Long = System.currentTimeMillis()) {
+        val p = prefs(ctx)
+        runCatching {
+            val entries = p.all.entries
+                .filter { it.key.startsWith(DETAIL_PREFIX) && it.value is String }
+                .map { it.key to (it.value as String) }
+            if (entries.isEmpty()) return
+            val stale = ArrayList<String>()
+            val alive = ArrayList<Pair<String, Long>>()
+            entries.forEach { (key, raw) ->
+                val at = runCatching { JSONObject(raw).optLong("at", 0L) }.getOrDefault(0L)
+                if (at <= 0L || now - at > DETAIL_KEEP_MS) stale.add(key) else alive.add(key to at)
+            }
+            if (alive.size > DETAIL_MAX) {
+                alive.sortedBy { it.second }
+                    .take(alive.size - DETAIL_MAX)
+                    .forEach { stale.add(it.first) }
+            }
+            if (stale.isEmpty()) return
+            p.edit {
+                stale.forEach { remove(it) }
+            }
+            synchronized(detailCache) { stale.forEach { detailCache.remove(it.removePrefix(DETAIL_PREFIX)) } }
+        }
     }
 
     fun clearDetail(ctx: Context, topicId: String) {
         if (topicId.isEmpty()) return
+        synchronized(detailCache) { detailCache.remove(topicId) }
         prefs(ctx).edit { remove(DETAIL_PREFIX + topicId) }
     }
 

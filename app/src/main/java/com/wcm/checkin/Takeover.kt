@@ -64,11 +64,13 @@ object Takeover {
                 continue
             }
             val h = hashOf?.invoke(c)
-            hashed++
             if (h == null) {
+                // 读不出字节（或调用方根本没给 hashOf）：没算成哈希就不能记进 hashed，
+                // 否则「哈希确认 N」这个数字会虚高，接管报告失去诊断价值。
                 conflict++
                 continue
             }
+            hashed++
             if (existing.hash.isEmpty() || existing.hash == h) {
                 index.adopt(canonical, c.size, h)
                 claimed++

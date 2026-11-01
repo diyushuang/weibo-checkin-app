@@ -19,7 +19,9 @@ package com.wcm.checkin
  *
  * - 面板的 `cookie_issued_at` 在**每次手机同步时被重置**（`database.update_account`
  *   会自动把生命周期基准打成同步时刻），所以已同步账号的锚点用 [AccountStore.Account.cookieSyncedAt]；
- * - 还没同步过的账号，锚点退回本机的录入 / 换发 / 探活三个时刻里最早的那个。
+ * - 还没同步过的账号，锚点退回本机的录入 / 换发 / 探活三个时刻里**最晚**的那个：
+ *   issuedAt 只在首次登记时写一次，用它当基准会让天天探活成功的账号第 7 天起恒报过期；
+ *   rotatedAt / seenAt 都是「这个 cookie 仍然有效」的新证据，取更晚者是对寿命的上界估计。
  *
  * 这里只做纯计算（不碰 Android、不触网），JVM 单测直接覆盖。
  */
@@ -91,11 +93,15 @@ object CookieLife {
         ttlDays: Int = TTL_DAYS,
         warnDays: Double = WARN_DAYS.toDouble(),
     ): View {
+        // 本地锚点取「最近一次拿到这个 cookie 的时刻」而不是最早：
+        // issuedAt 只在首次登记时写一次，用它当基准会让一个用得好好、天天 markVerified
+        // 的账号在第 7 天起恒定显示「已过期」。rotatedAt / seenAt 都是「cookie 仍然有效」
+        // 的新证据，取更晚的那个才是对有效期的上界估计。
         val localAnchors = listOf(issuedAt, rotatedAt, seenAt).filter { it > 0 }
         val fromPanel = syncedAt > 0
         val anchor = when {
             fromPanel -> syncedAt
-            localAnchors.isNotEmpty() -> localAnchors.min()
+            localAnchors.isNotEmpty() -> localAnchors.max()
             else -> 0L
         }
         val ttl = ttlDays.coerceAtLeast(1) * DAY_MS

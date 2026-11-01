@@ -91,6 +91,10 @@ class CrawlIndex private constructor(
     private var lastCompactBytes = 0L
     private var loaded = false
 
+    /** 待重试计数的节流缓存（-1 = 无缓存），见 [writeRetryHint]。 */
+    private var retryHintCount = -1
+    private var retryHintAtMs = 0L
+
     val posts = HashMap<String, PostRec>()
     val filesByPic = HashMap<String, FileRec>()
     val filesByName = HashMap<String, FileRec>()
@@ -188,7 +192,9 @@ class CrawlIndex private constructor(
                 val pic = o.optString("g", "")
                 val name = o.optString("m", "")
                 if (name.isEmpty()) return false
-                filesByName[name]?.let { if (pic.isNotEmpty() && it.picId == pic) filesByPic.remove(it.picId) }
+                // 与运行期 onFileSaved 同条件（!=）：旧条件把「同一个 picId」当脏数据删掉，
+                // 重启后会残留另一条映射，picOwner 指错图 → 该图被误判 EXISTS 漏下
+                filesByName[name]?.let { if (pic.isNotEmpty() && it.picId != pic) filesByPic.remove(it.picId) }
                 val rec = FileRec(
                     postId = o.optString("i", ""),
                     slot = o.optInt("k", 0),
@@ -353,6 +359,34 @@ class CrawlIndex private constructor(
         }
     }
 
+    /**
+     * 详情没取到（网络 / 风控 / 接口报错）：帖的语义仍然未知。
+     *
+     * 三种写法都是错的：
+     * - 不写 —— 索引不知道它存在，游标照样按页推进，这帖落进覆盖区间内部，永不补抓；
+     * - 判 DONE —— 永久跳过；
+     * - 判 VOID —— 当作无图帖，同样永久跳过。
+     *
+     * 这里落 OPEN + expected = -1（槽位未知）：非终态（列表扫描会再命中），
+     * 同时进 RETRY 队列，按指数退避反复重试（上限 24h 一次）。
+     */
+    fun onPostUnknown(postId: String, at: Long = 0L) {
+        synchronized(LOCK) {
+            val p = posts.getOrPut(postId) { PostRec(postId, at, Status.OPEN, -1) }
+            // 已有结论（DONE / VOID）的帖不要被一次失败降级
+            if (p.terminal) return
+            p.at = if (at > 0L) at else p.at
+            p.expected = -1
+            p.status = Status.OPEN
+            p.attempts += 1
+            p.retryAt = System.currentTimeMillis() + backoffMs(p.attempts)
+            appendPost(p)
+            dirtySinceFlush = 0
+            flushLocked()
+            writeRetryHint()
+        }
+    }
+
     /** 视频帖 / 无图帖：标记 VOID，避免反复拉详情。 */
     fun onVoid(postId: String, at: Long) {
         synchronized(LOCK) {
@@ -426,17 +460,25 @@ class CrawlIndex private constructor(
         return rec
     }
 
-    /** 待重试：有失败槽位且退避时间已到。 */
+    /**
+     * 待重试：有失败槽位（或槽位未知，expected = -1）且退避时间已到。
+     *
+     * 「槽位未知」这批是详情请求失败的帖 —— 它们没有 failed 记录，
+     * 却同样需要被捞起来重试，否则只会在列表扫描里空转。
+     */
     fun pendingRetries(now: Long, limit: Int = 50): List<PostRec> = synchronized(LOCK) {
         posts.values
-            .filter { it.failed.isNotEmpty() && it.status != Status.VOID && it.retryAt <= now }
+            .filter { retryable(it) && it.retryAt <= now }
             .sortedBy { it.at }
             .take(limit)
     }
 
     fun pendingRetryCount(): Int = synchronized(LOCK) {
-        posts.values.count { it.failed.isNotEmpty() && it.status != Status.VOID }
+        posts.values.count { retryable(it) }
     }
+
+    private fun retryable(p: PostRec): Boolean =
+        p.status != Status.VOID && (p.failed.isNotEmpty() || p.expected < 0)
 
     /** 旧版 `crawl_done` 迁移：`{uid: {postId: 尝试槽位数}}` → `p` 记录（DONE）。 */
     fun migrateLegacy(legacy: Map<String, Map<String, Int>>): Int {
@@ -498,17 +540,34 @@ class CrawlIndex private constructor(
      * 页面直接读它；只有真要展开清单时才解析索引。
      */
     private fun writeRetryHint() {
+        // 全表 count（O(n)）+ 写文件：每封一帖都做一次就是 O(n²)，
+        // 而且全程占着进程级 LOCK，抓取主流程会被自己的进度写盘拖住。
+        // 这个计数只用于界面显示「待重试 N 帖」，节流到 2 秒一次完全够新。
+        val now = System.currentTimeMillis()
+        if (retryHintCount >= 0 && now - retryHintAtMs < HINT_MIN_INTERVAL_MS) return
+        val n = synchronized(LOCK) { posts.values.count { retryable(it) } }
+        retryHintCount = n
+        retryHintAtMs = now
         try {
-            retryFile.writeText(pendingRetryCount().toString())
+            retryFile.writeText(n.toString())
         } catch (e: Exception) {
             // 提示文件写不出来只影响展示，不影响抓取
         }
     }
 
+    /** 强制立即重算并落盘（close 时用，避免退出时 hint 是节流掉的旧值）。 */
+    private fun writeRetryHintNow() {
+        retryHintCount = -1
+        writeRetryHint()
+    }
+
     private fun flushLocked() {
         try {
             writer?.flush()
+            lastWriteError = null
         } catch (e: Exception) {
+            // 静默吞掉会让「进度莫名回退 / 图片重复下载」失去唯一的排查线索
+            lastWriteError = e.message ?: e.javaClass.simpleName
         }
         dirtySinceFlush = 0
     }
@@ -561,16 +620,29 @@ class CrawlIndex private constructor(
                     w.flush()
                     fos.fd.sync()
                 }
-                // 原子替换：先用 renameTo（同目录内等价于原子 rename），失败再退化为拷贝。
+                // 原子替换：renameTo 对已存在的目标就是原子覆盖（Linux/Android 的 rename(2)）。
+                // 旧实现先 delete 主文件再 rename —— 进程在这两步之间被杀，整份索引直接归零，
+                // 用户看到的是「所有图片被重新下载一遍」。
                 // 不用 java.nio.file.Files —— 那是 API 26+，本项目 minSdk 23。
-                if (mainFile.exists() && !mainFile.delete()) {
-                    throw java.io.IOException("无法替换索引文件：$mainFile")
-                }
                 if (!tmp.renameTo(mainFile)) {
-                    tmp.copyTo(mainFile, overwrite = true)
-                    tmp.delete()
+                    // 少数文件系统不支持覆盖式 rename：退化为「备份 → 替换 → 删备份」，
+                    // 任何一步失败都把备份还原，主文件在每一时刻都存在。
+                    val bak = File(dir, "$treeTag.ndjson.bak")
+                    bak.delete()
+                    if (mainFile.exists() && !mainFile.renameTo(bak)) {
+                        throw java.io.IOException("无法替换索引文件：$mainFile")
+                    }
+                    if (!tmp.renameTo(mainFile)) {
+                        if (bak.exists()) bak.renameTo(mainFile)
+                        throw java.io.IOException("无法替换索引文件：$mainFile")
+                    }
+                    bak.delete()
                 }
                 lastCompactBytes = mainFile.length()
+                // 兄弟实例（图库删图时另开的同文件实例）的 writer 还指向刚被替换掉的旧
+                // inode：不重开的话它们后续 append 全写进一个已 unlink 的文件，
+                // 删图墓碑静默丢失 → 被删的图下一轮又"复活"。
+                siblings().forEach { it.reopenWriter() }
                 return true
             } catch (e: Exception) {
                 tmp.delete()
@@ -591,7 +663,7 @@ class CrawlIndex private constructor(
     fun close() {
         synchronized(LOCK) {
             flushLocked()
-            writeRetryHint()
+            writeRetryHintNow()
             reopenWriter()
             unregister(this)
         }
@@ -616,6 +688,9 @@ class CrawlIndex private constructor(
          * 若各自用私有锁，删图的墓碑与抓取的状态写会互相覆盖 —— 被删的图再也补不回来。
          */
         private val LOCK = Any()
+
+        /** 待重试计数的最小重算间隔：hint 只用于界面展示，宁旧不卡。（BUG-023） */
+        private const val HINT_MIN_INTERVAL_MS = 2_000L
 
         /** 已加载的实例，按索引文件路径分组，用于把删除墓碑广播给同文件的其它实例。 */
         private val LIVE = HashMap<String, MutableSet<CrawlIndex>>()

@@ -53,6 +53,22 @@ class GalleryFragment : Fragment() {
 
         /** 日志行缓冲：进程级，旋转后不丢。 */
         private val logLines = ArrayDeque<String>()
+
+        /**
+         * 图库文件数缓存。
+         *
+         * `GalleryFiles.listImages` 是 SAF 全量枚举（一万张 = 一万次 IPC），而本函数
+         * 在 onViewCreated / onHiddenChanged / 每轮抓取收尾都会调 —— 切一次 Tab 就重数
+         * 一遍全目录纯属浪费。目录不变且没过期就复用；抓取收尾 / 删除后显式 `invalidateCount()`。
+         */
+        private const val COUNT_TTL_MS = 5 * 60_000L
+        @Volatile private var countUri: String = ""
+        @Volatile private var countValue: Int = -1
+        @Volatile private var countAt: Long = 0L
+
+        fun invalidateCount() {
+            countAt = 0L
+        }
     }
 
     private var logExpanded = false
@@ -91,7 +107,7 @@ class GalleryFragment : Fragment() {
                 }
                 AccountStore.setCrawlTreeUri(ctx, uri.toString())
                 renderDir()
-                refreshGalleryCount()
+                refreshGalleryCount(force = true)
                 toastShort(getString(R.string.crawl_dir_saved))
             }
         }
@@ -258,6 +274,7 @@ class GalleryFragment : Fragment() {
         CrawlPhase.NEW -> getString(R.string.crawl_phase_new)
         CrawlPhase.HISTORY -> getString(R.string.crawl_phase_history)
         CrawlPhase.SCAN -> getString(R.string.crawl_phase_scan)
+        CrawlPhase.PICK -> getString(R.string.crawl_phase_pick)
         CrawlPhase.DONE -> getString(R.string.crawl_phase_done)
     }
 
@@ -408,7 +425,7 @@ class GalleryFragment : Fragment() {
             } finally {
                 withContext(Dispatchers.Main + NonCancellable) {
                     busy = false
-                    refreshGalleryCount()
+                    refreshGalleryCount(force = true)
                     refreshRetryCount()
                 }
             }
@@ -427,8 +444,12 @@ class GalleryFragment : Fragment() {
         GalleryBrowseActivity.start(ctx, raw)
     }
 
-    /** 图库卡计数：目录不可读/为空显示空态文案。 */
-    private fun refreshGalleryCount() {
+    private fun countText(count: Int): CharSequence =
+        if (count <= 0) getString(R.string.gallery_count_none)
+        else getString(R.string.gallery_count_fmt, count)
+
+    /** 图库卡计数：目录不可读/为空显示空态文案。`force` 跳过期缓存（抓取收尾用）。 */
+    private fun refreshGalleryCount(force: Boolean = false) {
         // 与 refreshRetryCount 同理：这是收尾块里会调用的函数，页面可能已经销毁。
         val host = view ?: return
         val ctx = host.context
@@ -438,6 +459,12 @@ class GalleryFragment : Fragment() {
             tv.text = getString(R.string.gallery_count_none)
             return
         }
+        if (!force && raw == countUri && countValue >= 0 &&
+            System.currentTimeMillis() - countAt < COUNT_TTL_MS
+        ) {
+            tv.text = countText(countValue)
+            return
+        }
         val resolver = ctx.contentResolver
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             val count = try {
@@ -445,12 +472,14 @@ class GalleryFragment : Fragment() {
             } catch (e: Exception) {
                 -1
             }
+            if (count >= 0) {
+                countUri = raw
+                countValue = count
+                countAt = System.currentTimeMillis()
+            }
             withContext(Dispatchers.Main) {
                 if (!isAdded) return@withContext
-                tv.text = when {
-                    count <= 0 -> getString(R.string.gallery_count_none)
-                    else -> getString(R.string.gallery_count_fmt, count)
-                }
+                tv.text = countText(count)
             }
         }
     }
@@ -606,7 +635,7 @@ class GalleryFragment : Fragment() {
                     }
                     // 昵称走游客身份也能拿到：没有登录账号时依然能把博主名显示出来
                     val accounts = AccountStore.load(ctx)
-                    val cookie = if (accounts.isEmpty()) null else Crawler.pickCrawlCookie(accounts, ::log)
+                    val cookie = if (accounts.isEmpty()) null else Crawler.pickCrawlCookie(requireContext(), accounts, ::log)
                     val name = WeiboApi.fetchUserName(cookie, uid)
                     AccountStore.addCrawlTarget(ctx, AccountStore.CrawlTarget(uid, name))
                     withContext(Dispatchers.Main) { renderTargets() }
@@ -735,7 +764,7 @@ class GalleryFragment : Fragment() {
                     if (isAdded) {
                         setRunningUi(false)
                         renderTargets()          // 单博主抓完，目标行的「已覆盖 / 全量页码」要刷新
-                        refreshGalleryCount()
+                        refreshGalleryCount(force = true)
                     }
                 }
             }
@@ -777,7 +806,7 @@ class GalleryFragment : Fragment() {
                         log("✗ 无法识别输入：$input")
                         return@launch
                     }
-                    val cookie = Crawler.pickCrawlCookie(AccountStore.load(ctx), ::log)
+                    val cookie = Crawler.pickCrawlCookie(ctx, AccountStore.load(ctx), ::log)
                         ?: return@launch
                     log("正在拉取博主 $uid 的最近微博…")
                     val posts = ArrayList<WeiboApi.RawPost>()
@@ -853,7 +882,7 @@ class GalleryFragment : Fragment() {
                 busy = false
                 view?.findViewById<View>(R.id.btnCrawlStart)?.isEnabled = true
                 view?.findViewById<View>(R.id.btnSinglePost)?.isEnabled = true
-                refreshGalleryCount()
+                refreshGalleryCount(force = true)
             }
         }
     }

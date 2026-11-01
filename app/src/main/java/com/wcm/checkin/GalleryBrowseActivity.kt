@@ -88,6 +88,9 @@ class GalleryBrowseActivity : AppCompatActivity() {
     /** 已排队的尺寸重算（防止同一个布局帧内重复 post）。 */
     private var metricsScheduled = false
 
+    /** 重建后待恢复的滚动位置（-1 = 无需恢复）。 */
+    private var pendingScroll = -1
+
     private enum class GroupMode { NONE, DATE, AUTHOR }
 
     /** 网格里的两种行：跨行分组头 / 图片格。 */
@@ -166,6 +169,54 @@ class GalleryBrowseActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, backCallback)
         applyInsets()
+        if (savedInstanceState == null) load() else restoreState(savedInstanceState)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(KEY_QUERY, filter.query)
+        outState.putString(KEY_KIND, filter.kind.name)
+        outState.putString(KEY_LABEL, filter.label)
+        outState.putString(KEY_SORT, sort.name)
+        outState.putString(KEY_GROUP, groupMode.name)
+        outState.putBoolean(KEY_SELECT, selectMode)
+        outState.putStringArrayList(KEY_SELECTED, ArrayList(selected))
+        outState.putInt(
+            KEY_SCROLL,
+            (recycler.layoutManager as? GridLayoutManager)?.findFirstVisibleItemPosition() ?: 0,
+        )
+    }
+
+    /**
+     * 重建后恢复现场：筛选 / 排序 / 分组 / 多选 / 滚动。
+     *
+     * 行数据本身不缓存（10 万行约几十 MB，进程级静态字段会把内存钉死），
+     * 交给 [load] 重新扫一遍目录 —— 它在 IO 线程，用户只看得到一次刷新。
+     */
+    private fun restoreState(saved: Bundle) {
+        filter = GalleryFiles.Filter(
+            query = saved.getString(KEY_QUERY) ?: "",
+            kind = runCatching { GalleryFiles.KindFilter.valueOf(saved.getString(KEY_KIND) ?: "") }
+                .getOrDefault(GalleryFiles.KindFilter.ALL),
+            label = saved.getString(KEY_LABEL) ?: "",
+        )
+        sort = runCatching { GalleryFiles.SortOrder.valueOf(saved.getString(KEY_SORT) ?: "") }
+            .getOrDefault(GalleryFiles.SortOrder.NEWEST)
+        groupMode = runCatching { GroupMode.valueOf(saved.getString(KEY_GROUP) ?: "") }
+            .getOrDefault(GroupMode.DATE)
+        if (filter.query.isNotEmpty()) {
+            searchRow.visibility = View.VISIBLE
+            searchInput.setText(filter.query)
+            searchInput.setSelection(searchInput.text.length)
+        }
+        selected.clear()
+        saved.getStringArrayList(KEY_SELECTED)?.let { selected.addAll(it) }
+        if (saved.getBoolean(KEY_SELECT, false)) {
+            selectMode = true
+            backCallback.isEnabled = true
+            selectBar.visibility = View.VISIBLE
+        }
+        pendingScroll = saved.getInt(KEY_SCROLL, 0)
         load()
     }
 
@@ -228,6 +279,10 @@ class GalleryBrowseActivity : AppCompatActivity() {
 
                 override fun getSpanIndex(position: Int, spanCount: Int): Int =
                     if (gridAdapter.isHeader(position)) 0 else super.getSpanIndex(position, spanCount)
+            }.apply {
+                // 分组头的 spanSize 取决于位置，默认的 span-index 缓存会按「每项几个 span」
+                // 预处理整张表，遇到分组头就错位。关掉缓存让它在需要时现算。
+                isSpanIndexCacheEnabled = false
             }
         }
 
@@ -280,21 +335,23 @@ class GalleryBrowseActivity : AppCompatActivity() {
     }
 
     /**
-     * 过滤 / 排序 / 分组的后台计算结果。
+     * 过滤 / 排序 / 分组 / 摊平的**全部**后台计算结果。
      *
-     * 只带数据、不带文案：分组标题要用 `getString`，留到主线程拼（组数远小于图数）。
+     * items 也在这里生成：摊平要 new 出 n 个 GridItem，10 万张的库在主线程做这一趟
+     * 就是几十到几百毫秒 —— 主线程只该剩 dispatchUpdatesTo。
      */
     private class Computed(
         val sorted: List<GalleryFiles.Row>,
         val groups: List<GalleryFiles.Group>?,
+        val items: List<GridItem>,
     )
 
     /**
      * 过滤 → 排序 → 分组 → 摊平成「分组头 + 格子」的扁平列表。
      *
-     * 重活（过滤 O(n)、排序 O(n log n)、分组 O(n)）全部丢到 `Dispatchers.Default`：
+     * 重活（过滤 O(n)、排序 O(n log n)、分组 O(n)、摊平 O(n)）全部丢到 Default 线程：
      * 旧实现整串跑在主线程，搜索框每敲一个字都要跑一遍，10 万张的库直接卡到掉帧/ANR。
-     * 主线程只做「摊平 + 上屏」，且摊平是 O(n) 的一次 ArrayList 追加，代价在毫秒级。
+     * 主线程只剩 DiffUtil 与 dispatchUpdatesTo（超大列表见 GridAdapter.submit 的闸门）。
      */
     private fun rebuild() {
         val source = allRows
@@ -310,7 +367,19 @@ class GalleryBrowseActivity : AppCompatActivity() {
                     GroupMode.DATE -> GalleryFiles.groupByDate(sorted)
                     GroupMode.AUTHOR -> GalleryFiles.groupByLabel(sorted)
                 }
-                Computed(sorted, groups)
+                // 摊平（连同分组标题文案）也留在这里，主线程只上屏。
+                // 10 万张的库在主线程 new 出 10 万个 Cell 是几十到几百毫秒，
+                // resources.getString 是线程安全的，可以放心在 Default 线程拼标题。
+                val items = ArrayList<GridItem>(sorted.size + (groups?.size ?: 0))
+                if (groups == null) {
+                    sorted.forEach { items.add(GridItem.Cell(it)) }
+                } else {
+                    groups.forEach { group ->
+                        items.add(GridItem.Header(group.key, titleOf(group), group.count))
+                        group.rows.forEach { items.add(GridItem.Cell(it)) }
+                    }
+                }
+                Computed(sorted, groups, items)
             }
             if (isFinishing || isDestroyed) return@launch
             applyComputed(computed)
@@ -319,18 +388,8 @@ class GalleryBrowseActivity : AppCompatActivity() {
 
     private fun applyComputed(page: Computed) {
         shownRows = page.sorted
-
-        val items = ArrayList<GridItem>(page.sorted.size + (page.groups?.size ?: 0))
-        val groups = page.groups
-        if (groups == null) {
-            page.sorted.forEach { items.add(GridItem.Cell(it)) }
-        } else {
-            groups.forEach { group ->
-                items.add(GridItem.Header(group.key, titleOf(group), group.count))
-                group.rows.forEach { items.add(GridItem.Cell(it)) }
-            }
-        }
-        gridAdapter.submit(items)
+        // items 已在 Default 线程摊平完成，主线程只剩 DiffUtil + 上屏
+        gridAdapter.submit(page.items)
         renderFilters()
 
         toolbar.subtitle = if (page.sorted.size == allRows.size) {
@@ -357,6 +416,11 @@ class GalleryBrowseActivity : AppCompatActivity() {
                 updateSelectUi()
             }
         }
+        if (pendingScroll >= 0) {
+            val at = pendingScroll
+            pendingScroll = -1
+            if (at > 0) recycler.scrollToPosition(at)
+        }
     }
 
     private fun showEmptyState(message: String) {
@@ -382,11 +446,12 @@ class GalleryBrowseActivity : AppCompatActivity() {
     private fun renderFilters() {
         filtersRow.removeAllViews()
         val inflater = LayoutInflater.from(this)
+        // 只给「全部 / 静图 / 动图」三个：数据源（GalleryFiles.listImages）只收图片，
+        // live 照片的 .mov 是配对资源、从不单独进图库，所以「视频」是个永远空的死入口。
         val kinds = listOf(
             GalleryFiles.KindFilter.ALL to getString(R.string.gallery_filter_all),
             GalleryFiles.KindFilter.STILL to getString(R.string.gallery_filter_still),
             GalleryFiles.KindFilter.GIF to getString(R.string.gallery_filter_gif),
-            GalleryFiles.KindFilter.MOV to getString(R.string.gallery_filter_mov),
         )
         kinds.forEach { (kind, label) ->
             val chip = inflater.inflate(R.layout.item_chip, filtersRow, false) as TextView
@@ -619,7 +684,16 @@ class GalleryBrowseActivity : AppCompatActivity() {
          * 每格的缩略图重新解码、丢失条目动画、把滚动位置推到顶部。DiffUtil 只把
          * 真正新增/移除/变化的位置通知出去，代价是一次 O(n) 比较（n ≤ 几百，可忽略）。
          */
+        @Suppress("NotifyDataSetChanged")
         fun submit(list: List<GridItem>) {
+            // 规模闸门：DiffUtil 是 Myers O(n·D)，排序一变 D≈n，5 万行能在主线程卡死。
+            // 超大列表逐条动画本来也没有意义，直接整表重建。
+            if (items.size > DIFF_LIMIT || list.size > DIFF_LIMIT) {
+                items.clear()
+                items.addAll(list)
+                notifyDataSetChanged()
+                return
+            }
             val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
                 override fun getOldListSize(): Int = items.size
                 override fun getNewListSize(): Int = list.size
@@ -759,6 +833,24 @@ class GalleryBrowseActivity : AppCompatActivity() {
 
         /** 搜索防抖：输入停止 250ms 后才真正过滤。 */
         private const val SEARCH_DEBOUNCE_MS = 250L
+
+        /**
+         * DiffUtil 的规模闸门。
+         *
+         * DiffUtil 是 Myers O(n·D)：一次重排序 D ≈ n，5 万行就是 25 亿次比较，
+         * 跑在主线程必然 ANR。超过这个规模直接整表重建（大列表逐条动画本来也没意义）。
+         */
+        private const val DIFF_LIMIT = 5000
+
+        // ---- 旋转 / 深浅色切换的恢复现场 ----
+        private const val KEY_QUERY = "gb_query"
+        private const val KEY_KIND = "gb_kind"
+        private const val KEY_LABEL = "gb_label"
+        private const val KEY_SORT = "gb_sort"
+        private const val KEY_GROUP = "gb_group"
+        private const val KEY_SELECT = "gb_select"
+        private const val KEY_SELECTED = "gb_selected"
+        private const val KEY_SCROLL = "gb_scroll"
 
         const val EXTRA_TREE = "tree"
 
