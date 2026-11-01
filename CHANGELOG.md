@@ -35,6 +35,11 @@
 - 新增 `RemoteBytes.readBounded`：从响应流边读边卡上限，不信任 `Content-Length`
   （CDN 可能不给长度、也可能给的与真实体积不符，旧写法在这种情况下是无上限读，OOM 入口）；
   超限整张失败而不截断 —— 半张 JPEG 解码出来是一张灰图，比占位色更像 bug。补 7 条单测。
+- **发版流水线自动化**：新增 `.github/workflows/release-apk.yml` —— 推 `v*` tag 即构建
+  签名 release APK 并自动发布 GitHub Release（附件 `wcm-checkin-<版本>-release.apk`），
+  发布说明直接取本版 CHANGELOG 小节，不用再手打包、手传附件。tag 与 `versionName` /
+  CHANGELOG 小节不一致、或缺签名 Secret 时直接失败，避免发出装不上的包；
+  日常 push 的构建闸门仍是 `build-apk.yml`。
 - 单测 254 → 261；编译 0 告警（主源码 372 个 class）。
 
 ---

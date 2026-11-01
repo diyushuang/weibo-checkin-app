@@ -123,8 +123,12 @@ App 不申请存储、定位、通讯录、通知等任何其它权限。
 # 静态检查（NewApi 已设为硬错误，低版本兼容一旦被破坏会直接构建失败）
 ./gradlew lintDebug
 
-# 两者一起（与 CI 一致）
+# 两者一起（与日常 push 的 CI 一致）
 ./gradlew testDebugUnitTest assembleDebug
+
+# 与发版 CI 同口径的签名 release APK
+# → app/build/outputs/apk/release/app-release.apk
+./gradlew testDebugUnitTest assembleRelease
 ```
 
 Windows 用 `gradlew.bat`。也可以直接用 Android Studio 打开本目录（工程根即本目录，
@@ -136,6 +140,32 @@ Windows 用 `gradlew.bat`。也可以直接用 Android Studio 打开本目录（
 ```properties
 sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
 ```
+
+## 发版：推 tag 自动出 APK
+
+发版不用手动打包，推一个 `v*` tag 就行。`.github/workflows/release-apk.yml` 会依次：
+校验版本号 → 跑单测 → 构建签名 release APK → 发布 GitHub Release（APK 作为附件，
+发布页点一下就能下载安装，不用登录翻 Actions 产物）。
+
+```bash
+# 1. 三处同步版本号：app/build.gradle.kts 的 versionName / versionCode、
+#    CHANGELOG.md 的 ## [x.y.z] 小节、README 的功能标注
+# 2. 提交并推主干
+git commit -am "chore(release): x.y.z"
+git push
+# 3. 打 tag 推上去，剩下的交给 CI
+git tag v0.9.15 && git push origin v0.9.15
+```
+
+三个前置条件是硬校验，不满足直接失败，不会发出一个装不上的包：
+
+- tag `v0.9.15` 必须与 `versionName` 完全一致（`versionCode` 只进日志）；
+- `CHANGELOG.md` 必须有 `## [0.9.15]` 小节 —— 它就是发布说明的来源，发布标题取该版
+  第一个 `###` 小节（「修复：/改进：/工程：」前缀会去掉）；
+- Secret `WCM_KEYSTORE_B64` / `WCM_KEYSTORE_PASSWORD` 必须已配置。
+
+Release 附件名固定为 `wcm-checkin-<版本>-release.apk`；同一个 tag 重跑会覆盖同名附件
+与发布说明，不会堆出第二个包。
 
 ## APK 签名（覆盖安装升级的前提）
 
@@ -153,8 +183,9 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
      的 base64）；
    - `WCM_KEYSTORE_PASSWORD`：值为签名口令。
 
-   配置后 CI 构建的 APK 全部同签名，可直接覆盖升级；未配置时仍会构建并给出
-   warning，但签名退回一次性随机 debug 密钥。
+   配置后 CI 构建的 APK 全部同签名，可直接覆盖升级。未配置时两条流水线行为不同：
+   日常 `build-apk.yml` 仍会构建 debug APK，只给 warning（签名退回一次性随机
+   debug 密钥）；发版 `release-apk.yml` 直接失败 —— 发出去的包必须能覆盖升级。
 3. 首次启用前旧版 App 需**卸载一次**再装新 APK（签名不同无法覆盖；卸载会清掉
    App 本地保存的账号 Cookie，需重新登录），此后每次更新直接覆盖安装即可。
 4. 本地构建：把 `wcm-release.p12` 放在 `app/keystore/` 下，并在 `local.properties`
@@ -175,7 +206,9 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
 ├── gradle/wrapper/
 ├── CHANGELOG.md             # 版本变更（发版时与 versionName 同步）
 ├── docs/                    # design / research / review
-├── .github/workflows/build-apk.yml   # 单测 + assembleDebug + 上传 APK 产物
+├── .github/workflows/
+│   ├── build-apk.yml        # 日常 push：单测 + assembleDebug + 上传 APK 产物
+│   └── release-apk.yml      # 推 v* tag：签名 release APK + 自动发 GitHub Release
 └── app/                     # 唯一模块
     ├── build.gradle.kts     # namespace / applicationId / 签名 / 依赖
     ├── keystore/            # 固定签名 keystore（gitignore，需自行备份）

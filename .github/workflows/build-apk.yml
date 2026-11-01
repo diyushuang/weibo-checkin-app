@@ -1,17 +1,18 @@
 name: build-apk
 
-# 仅构建 Android 客户端 APK。本仓库即 Android 工程根（settings.gradle.kts 所在目录），
-# Gradle 命令直接在本仓库根执行，不再有 android-app/ 前缀。
+# 日常 push 的构建闸门：单测 + debug APK 产物，回答「这次改动还能不能编出来」。
+# 本仓库即 Android 工程根（settings.gradle.kts 所在目录），Gradle 命令直接在仓库根执行。
+#
+# 打 tag 的发版构建不在这里，见 release-apk.yml（签名 release APK + GitHub Release）。
 on:
   push:
     branches: [main]
-    tags: ['v*']
     paths:
       - 'app/**'
       - 'gradle/**'
       - '*.kts'
       - 'gradle.properties'
-      - '.github/workflows/build-apk.yml'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
