@@ -359,6 +359,18 @@ object Crawler {
     ): Set<Int> = if (onlySlots == null || !countNotPicked) emptySet() else allSlots - onlySlots
 
     /**
+     * 剔除「这帖已经没有的槽位」：只保留 [allSlots] 里真实存在的失败记录。
+     *
+     * 重试路径会先把上一轮的失败槽位整体灌进 failed，可槽位对应的图可能已经被博主删掉、
+     * 或详情被截断以致解析不出来 —— 那种槽位这一次根本不会被尝试，没人会把它从 failed
+     * 里拿走。留着它的后果是该帖永远「有失败」：停在 PARTIAL 到不了终态，每轮 RETRY
+     * 都要白拉一次详情，还占着单轮 50 帖的重试预算。
+     */
+    internal fun retainExistingSlots(failed: MutableSet<Int>, allSlots: Set<Int>) {
+        failed.retainAll(allSlots)
+    }
+
+    /**
      * 勾选抓取：浏览页 / 选图页提交的一批任务，逐帖拉详情后按槽位落盘。
      *
      * 与 [crawlSinglePost] 的差别只在「哪些槽位要落」：
@@ -1414,6 +1426,8 @@ object Crawler {
             }
         }
 
+        // notPicked 天然是 allSlots 的子集，这里只需剪掉 failed 里已经不存在的槽位。
+        retainExistingSlots(failed, allSlots)
         state.index.onPostSealed(
             postId, at, assets.expectedFiles,
             saved > 0 || (failed.isEmpty() && notPicked.isEmpty()),

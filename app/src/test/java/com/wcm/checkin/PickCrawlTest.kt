@@ -110,6 +110,25 @@ class PickCrawlTest {
         )
     }
 
+    // ---------- retainExistingSlots ----------
+
+    @Test
+    fun `stale failed slots are dropped`() {
+        // 重试会把上一轮的失败槽位整体灌进 failed；若其中某个槽位在这帖当前详情里
+        // 已经不存在（图被删 / 详情截断），它永远不会被尝试 —— 留着就让该帖永远
+        // 停在 PARTIAL，每轮 RETRY 白拉一次详情。
+        val failed = linkedSetOf(0, 5, 1000)
+        Crawler.retainExistingSlots(failed, setOf(0, 2, 4))
+        assertEquals(setOf(0), failed)
+    }
+
+    @Test
+    fun `retain keeps every slot that still exists`() {
+        val failed = linkedSetOf(0, 2)
+        Crawler.retainExistingSlots(failed, setOf(0, 2, 4))
+        assertEquals(setOf(0, 2), failed)
+    }
+
     // ---------- sanitizeThumbUrl ----------
 
     @Test
