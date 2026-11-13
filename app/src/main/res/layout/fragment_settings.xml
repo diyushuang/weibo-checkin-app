@@ -169,6 +169,40 @@
                         android:layout_height="wrap_content"
                         android:layout_marginStart="@dimen/sp_2" />
                 </LinearLayout>
+
+                <!-- 账号密码自动重登：默认开启，凭证按账号在首页 ⋮ 菜单里录入 -->
+                <LinearLayout
+                    android:id="@+id/rowAutoRelogin"
+                    style="@style/Widget.Wcm.ListRow"
+                    android:foreground="@drawable/fg_row_divider">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/Widget.Wcm.Text.RowTitle"
+                            android:text="@string/settings_auto_relogin" />
+
+                        <TextView
+                            style="@style/Widget.Wcm.Text.Hint"
+                            android:layout_marginTop="1dp"
+                            android:text="@string/settings_auto_relogin_desc" />
+
+                        <TextView
+                            style="@style/Widget.Wcm.Text.Hint"
+                            android:layout_marginTop="@dimen/sp_2"
+                            android:text="@string/settings_auto_relogin_note" />
+                    </LinearLayout>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switchAutoRelogin"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/sp_2" />
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

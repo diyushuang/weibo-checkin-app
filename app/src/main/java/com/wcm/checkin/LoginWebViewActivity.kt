@@ -345,15 +345,22 @@ class LoginWebViewActivity : AppCompatActivity() {
                     finished = true
                     val name = profile.first.ifEmpty { AccountStore.placeholderName(uid) }
                     val now = System.currentTimeMillis()
+                    val loginAt = verify.loginAt.takeIf { it > 0L } ?: now
+                    val serverExpires = verify.serverExpiresAt.takeIf { it > 0L }
+                        ?: CookieLife.serverExpiryOf(verify.cookie)
                     AccountStore.upsert(
                         this@LoginWebViewActivity,
                         AccountStore.Account(
                             uid = uid,
                             name = name,
                             cookie = verify.cookie,
-                            // 新录入的登录态：有效期从这里起算（7 天后到期，见 CookieLife）
+                            // 新录入的登录态：本机录入时刻 / 真实登录时刻 / 服务端到期分开记
                             cookieIssuedAt = now,
+                            cookieRotatedAt = now,
+                            cookieLoginAt = loginAt,
                             cookieSeenAt = now,
+                            cookieServerExpiresAt = serverExpires,
+                            cookieRotateKeys = "login",
                         )
                     )
                     Toast.makeText(this@LoginWebViewActivity, getString(R.string.login_added_fmt, name), Toast.LENGTH_SHORT).show()

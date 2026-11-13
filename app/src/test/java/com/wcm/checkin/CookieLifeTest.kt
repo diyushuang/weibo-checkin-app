@@ -6,28 +6,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * CookieLife 纯函数测试：有效期估算与面板端 `describe_cookie_lifespan` 同口径。
+ * CookieLife 纯函数测试。
  *
- * 时间全部用「当前时刻减去若干天」构造，不写死绝对时间戳，避免测试随时间腐烂。
+ * 核心口径（与桌面端 `app/cookie_lifecycle.py` 一致）：
+ * 寿命只从「真实登录 / 微博真换发关键字段」起算；同步与探活都只是观察，
+ * 服务端声明到期与经验推算到期分开展示，最终判定取更早者。
  */
 class CookieLifeTest {
 
     private val day = 86_400_000L
     private val now = 1_800_000_000_000L     // 固定"当前时刻"，断言可以精确到天
 
-    // ---------- ALF 解析 ----------
+    // ---------- ALF / SSOLoginState 解析 ----------
 
     @Test
     fun parseAlf_secondsAndMillisAndGarbage() {
-        // 秒级 → 毫秒
         assertEquals(1_900_000_000_000L, CookieLife.parseAlf("SUB=x; ALF=1900000000"))
-        // 已经是毫秒 → 不重复乘 1000
         assertEquals(1_900_000_000_000L, CookieLife.parseAlf("ALF=1900000000000"))
-        // 缺失 / 非数字 / 2001 年前的脏值一律判 0（无法估算）
         assertEquals(0L, CookieLife.parseAlf("SUB=x"))
         assertEquals(0L, CookieLife.parseAlf("ALF=abc"))
         assertEquals(0L, CookieLife.parseAlf("ALF=123456"))
         assertEquals(0L, CookieLife.parseAlf(""))
+    }
+
+    @Test
+    fun loginTimeOf_readsSsoLoginState() {
+        assertEquals(1_700_000_000_000L, CookieLife.loginTimeOf("SSOLoginState=1700000000"))
+        assertEquals(0L, CookieLife.loginTimeOf("SUB=x"))
+        assertEquals(0L, CookieLife.loginTimeOf("SSOLoginState=oops"))
+        // 服务端声明到期与真实登录时间必须是两个独立来源
+        assertEquals(1_900_000_000_000L, CookieLife.serverExpiryOf("ALF=1900000000"))
     }
 
     // ---------- 没有任何锚点 ----------
@@ -39,12 +47,14 @@ class CookieLifeTest {
         assertFalse(v.known)
         assertFalse(v.alert)
         assertEquals(0L, v.deadlineAt)
+        assertEquals(0L, v.loginAt)
+        assertEquals(0L, v.serverExpiresAt)
     }
 
-    // ---------- 面板基准（同步时刻 + 7 天） ----------
+    // ---------- 旧数据兜底（只有同步时刻） ----------
 
     @Test
-    fun describe_justSynced_isOkWithSevenDays() {
+    fun describe_legacySyncOnlyStillEstimates() {
         val v = CookieLife.describe(cookie = "SUB=x", syncedAt = now, now = now)
         assertEquals(CookieLife.State.OK, v.state)
         assertTrue(v.fromPanel)
@@ -54,57 +64,76 @@ class CookieLifeTest {
     }
 
     @Test
-    fun describe_sixDaysAfterSync_isExpiring() {
+    fun describe_legacySyncSixDaysAgo_isExpiring() {
         val v = CookieLife.describe(cookie = "SUB=x", syncedAt = now - 6 * day, now = now)
         assertEquals(CookieLife.State.EXPIRING, v.state)
         assertTrue(v.alert)
         assertEquals(1.0, v.daysLeft!!, 0.001)
     }
 
+    /**
+     * 有真实登录时间时，**同步不能续命**：30 天前登录、刚刚同步，仍然按登录时间判过期。
+     * 这是旧实现最误导的地方（同步时刻被当成寿命起点）。
+     */
     @Test
-    fun describe_pastDeadline_isExpired() {
-        val v = CookieLife.describe(cookie = "SUB=x", syncedAt = now - 8 * day, now = now)
+    fun describe_syncDoesNotExtendLife() {
+        val v = CookieLife.describe(
+            cookie = "SUB=x",
+            loginAt = now - 30 * day,
+            syncedAt = now,
+            now = now,
+        )
         assertEquals(CookieLife.State.EXPIRED, v.state)
-        assertTrue(v.alert)
-        assertTrue(v.daysLeft!! < 0)
+        assertEquals(now - 30 * day + 7 * day, v.deadlineAt)
+        assertFalse(v.fromPanel)
+        assertEquals(now, v.syncedAt)
     }
 
-    /** 同步优先于本机锚点：面板拿到的是一份新 cookie，本机旧记录不该把它拖成「已过期」。 */
+    /** 探活成功同样不续命：只是「还活着」，不是换了新凭据。 */
     @Test
-    fun describe_panelAnchorWinsOverLocalAnchors() {
+    fun describe_seenAtDoesNotExtendLife() {
+        val v = CookieLife.describe(
+            cookie = "SUB=x",
+            issuedAt = now - 30 * day,
+            seenAt = now,
+            now = now,
+        )
+        assertEquals(CookieLife.State.EXPIRED, v.state)
+        assertEquals(now - 30 * day + 7 * day, v.deadlineAt)
+    }
+
+    // ---------- 真实登录 / 换发锚点 ----------
+
+    @Test
+    fun describe_newLoginResetsLife() {
         val v = CookieLife.describe(
             cookie = "SUB=x",
             issuedAt = now - 30 * day,
             rotatedAt = now - 20 * day,
-            seenAt = now - 10 * day,
-            syncedAt = now - 1 * day,
+            loginAt = now - 1 * day,
             now = now,
         )
         assertEquals(CookieLife.State.OK, v.state)
         assertEquals(now - 1 * day + 7 * day, v.deadlineAt)
+        assertEquals(now - 1 * day, v.anchorAt)
     }
 
-    // ---------- 本机锚点（未同步） ----------
-
     @Test
-    fun describe_localUsesNewestAnchor() {
-        // 未配面板时取「最近一次拿到这个 cookie 的时刻」= max(issued, rotated, seen)。
-        // 取 min 会把基准钉在首次登录上：天天 markVerified 的账号第 7 天起恒定显示已过期。
+    fun describe_criticalRotationExtendsLife() {
+        // 微博在第 1 天换发了新 SUB：这是真续期，寿命从换发时刻重新起算
         val v = CookieLife.describe(
             cookie = "SUB=x",
-            issuedAt = now - 3 * day,
+            issuedAt = now - 8 * day,
             rotatedAt = now - 1 * day,
-            seenAt = now,
             now = now,
         )
         assertEquals(CookieLife.State.OK, v.state)
-        assertEquals(now + 7 * day, v.deadlineAt)
-        assertFalse(v.fromPanel)
+        assertEquals(now - 1 * day + 7 * day, v.deadlineAt)
+        assertEquals(6.0, v.daysLeft!!, 0.001)
     }
 
     @Test
     fun describe_oldIssuedAtAloneStillExpires() {
-        // 反向保证：只有 issuedAt 一个锚点（很久以前登的）时，仍然按它判过期，不会被放过。
         val v = CookieLife.describe(
             cookie = "SUB=x",
             issuedAt = now - 30 * day,
@@ -113,30 +142,66 @@ class CookieLifeTest {
         assertEquals(CookieLife.State.EXPIRED, v.state)
     }
 
-    // ---------- ALF 与经验寿命取最早 ----------
+    // ---------- 服务端到期 vs 推算到期 ----------
+
+    @Test
+    fun describe_serverExpiryEarlierThanEstimateWins() {
+        val v = CookieLife.describe(
+            cookie = "SUB=x",
+            loginAt = now - 1 * day,
+            serverExpiresAt = now + 1 * day,
+            now = now,
+        )
+        assertEquals(CookieLife.State.EXPIRING, v.state)
+        assertEquals(now + 1 * day, v.deadlineAt)
+        assertEquals(now + 6 * day, v.estimatedAt)
+        assertTrue(v.serverAuthoritative)
+    }
+
+    @Test
+    fun describe_estimatedEarlierThanServerExpiryWins() {
+        val v = CookieLife.describe(
+            cookie = "SUB=x",
+            loginAt = now - 6 * day,
+            serverExpiresAt = now + 30 * day,
+            now = now,
+        )
+        assertEquals(CookieLife.State.EXPIRING, v.state)
+        assertEquals(now + 1 * day, v.deadlineAt)
+        assertFalse(v.serverAuthoritative)
+    }
+
+    @Test
+    fun describe_serverExpiryAloneCanDecide() {
+        val v = CookieLife.describe(
+            cookie = "SUB=x",
+            serverExpiresAt = now + 2 * day,
+            now = now,
+        )
+        // 没有任何登录/同步锚点，但服务端声明了到期 → 仍可给出确定结论
+        assertEquals(CookieLife.State.EXPIRING, v.state)
+        assertEquals(now + 2 * day, v.deadlineAt)
+    }
+
+    // ---------- ALF ----------
 
     @Test
     fun describe_alfEarlierThanObservedWins() {
         val alfSeconds = (now + 2 * day) / 1000
-        val v = CookieLife.describe(
-            cookie = "ALF=$alfSeconds",
-            syncedAt = now,
-            now = now,
-        )
+        val v = CookieLife.describe(cookie = "ALF=$alfSeconds", syncedAt = now, now = now)
         assertEquals(CookieLife.State.EXPIRING, v.state)
         assertEquals(2.0, v.daysLeft!!, 0.01)
     }
 
     /**
-     * ALF 早于基准 = 上一轮登录的旧 ALF（合并 cookie 时很常见）。
-     * 如果照单全收，刚同步成功的账号会立刻显示「已过期」—— 这是要避免的误报。
+     * ALF 早于基准 = 上一轮登录残留的旧值，必须忽略；否则刚登录成功的账号会立刻显示已过期。
      */
     @Test
     fun describe_staleAlfBeforeAnchorIsIgnored() {
         val staleAlf = (now - 100 * day) / 1000
         val v = CookieLife.describe(
             cookie = "SUB=x; ALF=$staleAlf",
-            syncedAt = now,
+            loginAt = now,
             now = now,
         )
         assertEquals(0L, v.alfAt)
@@ -153,23 +218,25 @@ class CookieLifeTest {
             ttlDays = 3,
             warnDays = 5.0,
         )
-        // 只剩 3 天，阈值 5 天 → 判临期
         assertEquals(CookieLife.State.EXPIRING, v.state)
         assertEquals(now + 3 * day, v.deadlineAt)
     }
 
-    /** 便捷重载：账号行的四个时间戳直接喂进来，结果应与逐个传参一致。 */
+    /** 便捷重载：账号行字段直接喂进来，结果应与逐个传参一致。 */
     @Test
     fun describe_accountOverloadMatchesExplicit() {
         val acc = AccountStore.Account(
             uid = "42", name = "小号", cookie = "SUB=x",
             cookieIssuedAt = now - 2 * day,
             cookieSeenAt = now - 1 * day,
-            cookieSyncedAt = now - 3 * day,
+            cookieSyncedAt = now,          // 同步时刻不参与寿命
+            cookieLoginAt = now - 2 * day,
         )
         val v = CookieLife.describe(acc, now = now)
         assertEquals(CookieLife.State.OK, v.state)
-        assertEquals(now - 3 * day + 7 * day, v.deadlineAt)
-        assertTrue(v.fromPanel)
+        assertEquals(now - 2 * day + 7 * day, v.deadlineAt)
+        assertFalse(v.fromPanel)
+        assertEquals(now, v.syncedAt)
+        assertEquals(now - 2 * day, v.loginAt)
     }
 }

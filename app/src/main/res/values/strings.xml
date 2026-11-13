@@ -32,12 +32,13 @@
     <string name="btn_sync">Cookie 同步</string>
     <string name="btn_sync_running">正在同步…</string>
 
-    <!-- ===== Cookie 同步面板（v0.9.10） =====
-         面板端的登录态按「同步时刻 + 7 天」估算寿命（与面板 cookie_session_ttl_days
-         默认值一致），剩余 ≤2 天开始标红提醒重新同步。 -->
+    <!-- ===== Cookie 同步面板 =====
+         有效期口径（v2.1 修正）：寿命从「真实登录 / 微博真换发关键字段」起算，
+         同步与探活都只是观察、不再重新计时；服务端声明到期与经验推算到期分开展示。
+         剩余 ≤2 天开始标红提醒。 -->
     <string name="sync_card_title">Cookie 同步</string>
-    <string name="sync_card_hint">面板端登录态约 7 天被微博吊销，按同步时刻起算；剩余 2 天以内会标红，点上方「Cookie 同步」续期。</string>
-    <string name="sync_card_hint_off">面板未配置，Cookie 只在本机保活。配置面板后可在此查看有效期并一键续期。</string>
+    <string name="sync_card_hint">按真实登录/微博换发时刻估算寿命，服务端声明的到期时间单独展示；剩余 2 天以内标红。</string>
+    <string name="sync_card_hint_off">面板未配置，Cookie 只在本机保活。配置面板后可在此查看有效期并一键同步。</string>
     <string name="sync_card_config">去设置配置面板 ›</string>
     <string name="sync_pill_off">面板未配置</string>
     <string name="sync_pill_ok">全部有效</string>
@@ -47,7 +48,7 @@
     <string name="sync_pill_unsynced_fmt">%1$d 个未同步</string>
     <string name="sync_pill_dead_fmt">%1$d 个已失效</string>
     <string name="cookie_dead_pill">已失效</string>
-    <string name="cookie_dead_hint">探活判定登录态已失效，请在账号列表删除后重新添加</string>
+    <string name="cookie_dead_hint">探活判定登录态已失效，请重新登录；已保存账密的账号会自动尝试恢复</string>
     <string name="sync_empty">还没有账号，添加后这里会显示 Cookie 有效期</string>
     <string name="cookie_left_days_fmt">剩余 %1$d 天</string>
     <string name="cookie_left_today">不足 1 天</string>
@@ -56,14 +57,20 @@
     <string name="cookie_unsynced">未同步</string>
     <string name="cookie_synced_at_fmt">同步于 %1$s</string>
     <string name="cookie_issued_at_fmt">登录于 %1$s</string>
-    <string name="cookie_deadline_fmt">%1$s · 预计 %2$s 失效</string>
-    <string name="cookie_renew_hint">请点「Cookie 同步」重新推送，否则面板会掉登录</string>
-    <string name="cookie_unknown_hint">还没有同步记录，点上方「Cookie 同步」开始计时</string>
-    <string name="cookie_unknown_hint_off">面板还没配置，先在下方「去设置配置面板」填好地址与令牌</string>
+    <string name="cookie_login_unknown">登录时间未知</string>
+    <string name="cookie_never_synced">从未同步</string>
+    <string name="cookie_server_expiry_fmt">服务端到期 %1$s</string>
+    <string name="cookie_server_expiry_unknown">服务端到期未知</string>
+    <string name="cookie_estimated_expiry_fmt">推算到期 %1$s</string>
+    <string name="cookie_renew_hint">请重新登录；已开启「账号密码自动重登」时后台会尝试自动恢复</string>
+    <string name="cookie_unknown_hint">还没有真实登录时间记录，请重新登录后再估算有效期</string>
+    <string name="cookie_unknown_hint_off">本机暂无足够信息估算有效期，请重新登录记录真实登录时间</string>
+    <string name="cookie_last_error_fmt">上次失败：%1$s</string>
+    <string name="cookie_legacy_anchor_note">旧数据：没有真实登录时间，暂按同步时间估算</string>
     <string name="accounts_label">账号</string>
     <string name="log_label">运行日志</string>
     <string name="auto_on_open">打开 App 即自动签到</string>
-    <string name="login_hint">在下方页面登录微博（账密 / 验证码均在微博官方页面完成，本应用不经手）；登录成功后会自动返回。</string>
+    <string name="login_hint">在下方页面登录微博（扫码 / 验证码在微博官方页面完成）。开启「账号密码自动重登」后，可在账号菜单里保存加密凭证，由 App 在 Cookie 失效或临期时自动登录。</string>
     <string name="login_blocked_nav">已拦截跳转：%1$s（域名不在登录白名单内）</string>
 
     <!-- 图片页 -->
@@ -207,6 +214,9 @@
     <string name="home_uid_fmt">UID %1$s</string>
     <string name="home_name_unknown">（未获取到昵称）</string>
     <string name="home_status_idle">尚未签到</string>
+    <!-- 超话页单条签到后的账号状态行：与账号卡上的「已签 / 待签」chip 同一口径，
+         不能只写「签到成功」—— 用户要在同一行里直接对上 chip 上的数字 -->
+    <string name="home_status_signed_fmt">已签 %1$d/%2$d · %3$s</string>
     <string name="home_topics_idle">超话状态：点右上角「刷新超话」或点按本行查看</string>
     <string name="home_topics_loading">超话状态刷新中…</string>
     <string name="home_topics_failed">超话状态获取失败：%1$s</string>
@@ -265,6 +275,29 @@
     <string name="settings_auto_on_open_desc">打开应用时为全部账号自动签到（6 小时内不重复）</string>
     <string name="settings_live_gif_desc">关闭后 Live Photo 直接保存原始视频，不再转 GIF</string>
     <string name="settings_appearance_note">界面配色跟随系统深浅色模式；Android 12 及以上支持跟随壁纸取色。</string>
+
+    <!-- ===== 账号密码自动重登 ===== -->
+    <string name="settings_auto_relogin">账号密码自动重登</string>
+    <string name="settings_auto_relogin_desc">Cookie 失效或临期时，用本机加密保存的账号密码自动重新登录（默认开启）</string>
+    <string name="settings_auto_relogin_note">凭证用 Android Keystore 加密保存在本机，不上传面板。密码错误、验证码或二次验证、风控都会暂停重登并等待人工处理；自动重登不能保证永久保活。</string>
+    <string name="account_action_relogin">自动重登 / 账号密码</string>
+    <string name="relogin_dialog_title">账号密码自动重登</string>
+    <string name="relogin_dialog_desc">密码仅在本机加密保存，用于 Cookie 失效或临期时自动重登。微博要求验证码或二次验证时会暂停，并提示人工扫码处理。</string>
+    <string name="relogin_username_hint">微博账号（手机号 / 邮箱 / 用户名）</string>
+    <string name="relogin_password_hint">密码</string>
+    <string name="relogin_status_saved_fmt">已保存加密凭证（%1$s）</string>
+    <string name="relogin_status_none">未保存凭证</string>
+    <string name="relogin_status_blocked_fmt">已暂停：%1$s</string>
+    <string name="relogin_status_next_fmt">连续失败 %1$d 次，下次允许重登：%2$s</string>
+    <string name="relogin_status_ready">可自动重登</string>
+    <string name="relogin_action_save">保存并尝试重登</string>
+    <string name="relogin_action_delete">删除凭证</string>
+    <string name="relogin_need_both">账号与密码需同时填写</string>
+    <string name="relogin_saved">凭证已加密保存</string>
+    <string name="relogin_deleted">已删除凭证并暂停自动重登</string>
+    <string name="relogin_running">正在尝试账密重登…</string>
+    <string name="relogin_success">账密重登成功，已更新登录凭据与真实登录时间</string>
+    <string name="relogin_failure_fmt">重登失败：%1$s</string>
 
     <!-- ===== v2.0：应用栏问候与 Hero 指标 ===== -->
     <string name="greeting_morning">早上好</string>

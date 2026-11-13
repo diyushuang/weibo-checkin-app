@@ -72,8 +72,10 @@ android {
         // 0.9.14：修浏览博主抓图「缩略图全空白 / 长按大图加载失败」（sinaimg 热链保护
         // 需要 Referer；大图字节上限按尺寸分档），并把预览图改成「可见才加载、按顺序
         // 一格一格来」。完整清单见 CHANGELOG.md。
-        versionCode = 28
-        versionName = "0.9.14"
+        // 0.9.15：账号密码自动重登（Keystore 加密凭证 + SSO 登录 + 退避/硬停策略）；
+        // 有效期口径改为「只从真实登录/关键字段换发起算」，同步与探活不再续命。
+        versionCode = 29
+        versionName = "0.9.15"
     }
 
     signingConfigs {

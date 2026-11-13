@@ -6,6 +6,9 @@
         android:id="@+id/action_view_topics"
         android:title="@string/account_action_topics" />
     <item
+        android:id="@+id/action_relogin_credentials"
+        android:title="@string/account_action_relogin" />
+    <item
         android:id="@+id/action_delete_account"
         android:title="@string/account_action_delete" />
 </menu>

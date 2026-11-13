@@ -93,6 +93,25 @@ class AccountStorePureTest {
     }
 
     @Test
+    fun mergeAccounts_blankResultTakesSnapshotSummary() {
+        // 回归：签到途中 markVerified 把库里的锚点推到了快照之后（snapNewer=false），
+        // 此时库里 lastResult 还是空串。旧逻辑一律以库里为准，快照里刚算出的
+        // 「签到 7/7」被丢掉 —— 结果就是「已签 7 / 待签 0」的 chip 旁边写着「尚未签到」。
+        val current = listOf(
+            acc("1001", cookie = "SUB=keep").copy(cookieSeenAt = 9_000L)
+        )
+        val snapshot = listOf(
+            acc("1001", cookie = "SUB=keep", lastResult = "签到 7/7 · 22:02").copy(cookieSeenAt = 1_000L)
+        )
+
+        val merged = AccountStore.mergeAccounts(current, snapshot)
+
+        assertEquals("签到 7/7 · 22:02", merged[0].lastResult)
+        // cookie 仍以更晚的锚点为准：兜底只作用于「空 → 非空」，不动合并主线
+        assertEquals("SUB=keep", merged[0].cookie)
+    }
+
+    @Test
     fun mergeAccounts_noAnchorsFallsBackToCurrent() {
         // 两份都没有时间锚点（老版本数据）时保持库里的那份：宁可不动，也不要写回旧 cookie
         val current = listOf(acc("1001", cookie = "SUB=keep", lastResult = "库里的"))

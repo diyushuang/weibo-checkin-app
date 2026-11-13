@@ -1,5 +1,6 @@
 package com.wcm.checkin
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -9,6 +10,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
@@ -415,9 +417,9 @@ class HomeFragment : Fragment() {
     /**
      * 逐账号展示面板端 cookie 的有效期。
      *
-     * 数据的来源只有一个：`AccountStore` 里的四个时间锚点 + cookie 里的 ALF，
-     * 算法在 [CookieLife]（对齐面板 `describe_cookie_lifespan`）。这里只负责
-     * 把结论翻译成「还剩几天 + 何时到期」，并在临期 / 过期时把整行切成红色。
+     * 数据来源：`AccountStore` 的真实登录/换发/首次录入锚点、服务端声明到期（ALF）
+     * 与 cookie 本身，算法在 [CookieLife]。同步时刻、探活时刻只展示，不参与寿命计算；
+     * 这里只负责把结论翻译成「登录/同步/服务端到期/推算到期」，并在失效/临期/过期时标红。
      *
      * **为什么红色要铺到昵称和副行，而不只是那个小 pill**：用户扫的是「用户名那一行
      * 还剩几天」，只有 pill 变色时，眼睛会把它当成状态标签跳过；整行红字才会拉住视线。
@@ -501,7 +503,12 @@ class HomeFragment : Fragment() {
             expiryView.text = if (acc.cookieDead) {
                 getString(R.string.cookie_dead_hint)
             } else {
-                expiryLine(life, panelReady)
+                val base = expiryLine(life, panelReady)
+                if (acc.cookieLastError.isNotEmpty()) {
+                    base + "\n" + getString(R.string.cookie_last_error_fmt, acc.cookieLastError)
+                } else {
+                    base
+                }
             }
             expiryView.setTextColor(
                 ContextCompat.getColor(
@@ -536,9 +543,12 @@ class HomeFragment : Fragment() {
     }
 
     /**
-     * 副行文案：「同步于 10月30日 21:40 · 预计 11月6日 21:40 失效」。
+     * 副行文案：真实登录时间与同步时间分开，服务端到期与推算到期分开展示。
      *
-     * 临期时第二行直接写清楚要做什么 —— 光变红不告诉用户「点哪里」等于只知道出事。
+     * 「登录于 10月30日 21:40 · 同步于 11月2日 09:00
+     *   服务端到期 11月6日 21:40 · 推算到期 11月6日 21:40」
+     *
+     * 旧数据（没有真实登录/换发锚点）会注明「按同步时间兜底」，不再让同步时间冒充登录时间。
      */
     private fun expiryLine(life: CookieLife.View, panelReady: Boolean): String {
         if (!life.known) {
@@ -546,11 +556,28 @@ class HomeFragment : Fragment() {
                 if (panelReady) R.string.cookie_unknown_hint else R.string.cookie_unknown_hint_off
             )
         }
-        val anchor = getString(
-            if (life.fromPanel) R.string.cookie_synced_at_fmt else R.string.cookie_issued_at_fmt,
-            formatStamp(life.anchorAt),
-        )
-        val base = getString(R.string.cookie_deadline_fmt, anchor, formatStamp(life.deadlineAt))
+        val login = if (life.loginAt > 0L) {
+            getString(R.string.cookie_issued_at_fmt, formatStamp(life.loginAt))
+        } else {
+            getString(R.string.cookie_login_unknown)
+        }
+        val sync = if (life.syncedAt > 0L) {
+            getString(R.string.cookie_synced_at_fmt, formatStamp(life.syncedAt))
+        } else {
+            getString(R.string.cookie_never_synced)
+        }
+        val server = if (life.serverExpiresAt > 0L) {
+            getString(R.string.cookie_server_expiry_fmt, formatStamp(life.serverExpiresAt))
+        } else {
+            getString(R.string.cookie_server_expiry_unknown)
+        }
+        val estimated = getString(R.string.cookie_estimated_expiry_fmt, formatStamp(life.estimatedAt))
+        val legacy = if (life.fromPanel) {
+            "\n" + getString(R.string.cookie_legacy_anchor_note)
+        } else {
+            ""
+        }
+        val base = "$login · $sync\n$server · $estimated$legacy"
         return if (life.alert) base + "\n" + getString(R.string.cookie_renew_hint) else base
     }
 
@@ -591,7 +618,11 @@ class HomeFragment : Fragment() {
                     if (!verify.login) return@forEach
                     val name = WeiboApi.fetchProfile(verify.cookie, acc.uid).first
                     if (name.isEmpty()) return@forEach
-                    AccountStore.markVerified(ctx, acc.uid, verify.cookie, name = name)
+                    AccountStore.markVerified(
+                        ctx, acc.uid, verify.cookie, name = name,
+                        serverExpiresAt = verify.serverExpiresAt,
+                        loginAt = verify.loginAt,
+                    )
                     fixed++
                 } catch (e: Exception) {
                     // 单账号失败不影响其它账号；下次进页面（或刷新超话）还会再试
@@ -695,6 +726,10 @@ class HomeFragment : Fragment() {
                     showTopics(acc.uid)
                     true
                 }
+                R.id.action_relogin_credentials -> {
+                    showReloginDialog(acc)
+                    true
+                }
                 R.id.action_delete_account -> {
                     confirmDeleteAccount(acc)
                     true
@@ -724,6 +759,132 @@ class HomeFragment : Fragment() {
     /** 昵称优先；拿不到真实昵称时明确提示，而不是把 UID 当名字显示。 */
     private fun displayName(acc: AccountStore.Account): String =
         if (AccountStore.needsNameResolve(acc)) getString(R.string.home_name_unknown) else acc.name
+
+    /**
+     * 账号密码自动重登设置：录凭证 / 查看暂停与退避状态 / 手动立即重登 / 删除凭证。
+     *
+     * 密码输入后立即加密落盘，之后再打开弹窗也不回填密码；状态区会明确告诉用户
+     * 上次失败原因、是否已暂停、下次允许重登的时间。
+     */
+    private fun showReloginDialog(acc: AccountStore.Account) {
+        val ctx = requireContext()
+        val view = LayoutInflater.from(ctx).inflate(R.layout.dialog_relogin_credentials, null)
+        val etUser = view.findViewById<com.google.android.material.textfield.TextInputEditText>(
+            R.id.etReloginUser
+        )
+        val etPassword = view.findViewById<com.google.android.material.textfield.TextInputEditText>(
+            R.id.etReloginPassword
+        )
+        val tvStatus = view.findViewById<TextView>(R.id.tvReloginStatus)
+
+        val hasCredential = CredentialVault.has(ctx, acc.uid)
+        val state = AccountStore.reloginState(acc)
+        tvStatus.text = buildString {
+            if (hasCredential) {
+                append(
+                    getString(
+                        R.string.relogin_status_saved_fmt,
+                        if (acc.credentialAt > 0L) formatStamp(acc.credentialAt) else "时间未知",
+                    )
+                )
+            } else {
+                append(getString(R.string.relogin_status_none))
+            }
+            when {
+                state.blocked -> {
+                    append("\n")
+                    append(
+                        getString(
+                            R.string.relogin_status_blocked_fmt,
+                            state.lastReason.ifEmpty { ReloginPolicy.reasonText(state.lastCode) },
+                        )
+                    )
+                }
+                state.nextAt > 0L -> {
+                    append("\n")
+                    append(
+                        getString(
+                            R.string.relogin_status_next_fmt,
+                            state.failStreak,
+                            formatStamp(state.nextAt),
+                        )
+                    )
+                }
+                hasCredential -> {
+                    append("\n")
+                    append(getString(R.string.relogin_status_ready))
+                }
+            }
+        }
+
+        val dialog = MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.relogin_dialog_title)
+            .setView(view)
+            .setPositiveButton(R.string.relogin_action_save, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setNeutralButton(R.string.relogin_action_delete, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val username = etUser.text?.toString()?.trim().orEmpty()
+                val password = etPassword.text?.toString().orEmpty()
+                if (username.isEmpty() || password.isEmpty()) {
+                    Toast.makeText(ctx, R.string.relogin_need_both, Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                try {
+                    // 明文只在内存里停留这一次；落盘即密文
+                    CredentialVault.save(ctx, acc.uid, username, password)
+                    AccountStore.setCredentialAt(ctx, acc.uid, System.currentTimeMillis())
+                    AccountStore.setAccountAutoRelogin(ctx, acc.uid, true)
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        ctx,
+                        getString(R.string.relogin_failure_fmt, "凭证加密保存失败"),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    return@setOnClickListener
+                }
+                Toast.makeText(ctx, R.string.relogin_saved, Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+                runManualRelogin(acc)
+            }
+
+            val deleteButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+            deleteButton.isEnabled = hasCredential
+            deleteButton.setOnClickListener {
+                CredentialVault.clear(ctx, acc.uid)
+                AccountStore.saveReloginState(
+                    ctx, acc.uid,
+                    ReloginPolicy.State(credentialAt = 0L),
+                )
+                AccountStore.setAccountAutoRelogin(ctx, acc.uid, false)
+                Toast.makeText(ctx, R.string.relogin_deleted, Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+                render()
+            }
+        }
+        dialog.show()
+    }
+
+    /** 前台手动重登：force 越过退避/次数上限，但密码错误、验证码等硬停仍会被策略拒绝。 */
+    private fun runManualRelogin(acc: AccountStore.Account) {
+        val ctx = requireContext().applicationContext
+        Toast.makeText(ctx, R.string.relogin_running, Toast.LENGTH_SHORT).show()
+        AppScope.launch {
+            val outcome = AutoRelogin.tryAutoRelogin(ctx, acc, "manual", force = true)
+            withContext(Dispatchers.Main + NonCancellable) {
+                val text = if (outcome.ok) {
+                    ctx.getString(R.string.relogin_success)
+                } else {
+                    ctx.getString(R.string.relogin_failure_fmt, outcome.message)
+                }
+                Toast.makeText(ctx, text, Toast.LENGTH_LONG).show()
+                if (isAdded) render()
+            }
+        }
+    }
 
     /**
      * 账号行的状态可视化。
@@ -1065,12 +1226,12 @@ class HomeFragment : Fragment() {
         val verify = try {
             WeiboApi.verify(acc.cookie)
         } catch (e: Exception) {
-            acc.lastResult = "探活失败：${e.message}"
+            noteResult(ctx, acc, "探活失败：${e.message}")
             log("  ✗ 探活失败：${e.message}")
             return
         }
         if (!verify.login) {
-            acc.lastResult = ctx.getString(R.string.home_cookie_dead)
+            noteResult(ctx, acc, ctx.getString(R.string.home_cookie_dead))
             AccountStore.markDead(ctx, acc.uid)
             log("  ✗ ${ctx.getString(R.string.home_cookie_dead)}")
             return
@@ -1078,7 +1239,11 @@ class HomeFragment : Fragment() {
         acc.cookie = verify.cookie
         // 签到前的探活同样是一次「确认登录有效」：新鲜 cookie 顺手落盘，
         // Cookie 卡上的到期时间才不会停留在几天前的估算上
-        AccountStore.markVerified(ctx, acc.uid, verify.cookie)
+        AccountStore.markVerified(
+            ctx, acc.uid, verify.cookie,
+            serverExpiresAt = verify.serverExpiresAt,
+            loginAt = verify.loginAt,
+        )
         try {
             val topics = WeiboApi.listTopics(acc.cookie)
             val pending = topics.filter { !it.done }
@@ -1100,11 +1265,14 @@ class HomeFragment : Fragment() {
                     fail++; log("  ✗ ${topic.name}：${e.message}")
                 }
             }
-            acc.lastResult = "签到 $ok/${pending.size}" +
-                (if (fail > 0) "（失败 $fail）" else "") + " · ${now()}"
+            noteResult(
+                ctx, acc,
+                "签到 $ok/${pending.size}" +
+                    (if (fail > 0) "（失败 $fail）" else "") + " · ${now()}",
+            )
             log("  小结：${acc.lastResult}")
         } catch (e: Exception) {
-            acc.lastResult = "超话列表失败：${e.message}"
+            noteResult(ctx, acc, "超话列表失败：${e.message}")
             log("  ✗ ${e.message}")
         }
         // 签到**不再顺带同步面板**：两件事各有各的开关与失败语义，混在一起会让
@@ -1295,7 +1463,11 @@ class HomeFragment : Fragment() {
                     if (v.login) {
                         cookie = v.cookie
                         if (!v.st.isNullOrEmpty()) freshSt = v.st
-                        AccountStore.markVerified(ctx, uid, v.cookie, acc.name)
+                        AccountStore.markVerified(
+                            ctx, uid, v.cookie, acc.name,
+                            serverExpiresAt = v.serverExpiresAt,
+                            loginAt = v.loginAt,
+                        )
                     } else {
                         log("  ✗ 登录状态已失效，请到超话页重新登录后再补签")
                         return@launch
@@ -1345,6 +1517,19 @@ class HomeFragment : Fragment() {
         AccountStore.setLastResult(ctx, uid, result)
     }
 
+    /**
+     * 记一次签到小结：先更新本轮内存快照，再**当场落盘**。
+     *
+     * 不能只等收尾的 [AccountStore.mergeSave]：签到途中 [AccountStore.markVerified]
+     * 已经把库里的 cookie 锚点（`seenAt`）推到了本轮快照之后，而合并规则是
+     * 「锚点新的那一份胜出」—— 快照里这条刚算出来的小结会被库里那份旧值顶掉，
+     * 首页账号行于是停在「尚未签到」，与同一次签到刷绿的「已签 N」chip 自相矛盾。
+     */
+    private fun noteResult(ctx: Context, acc: AccountStore.Account, text: String) {
+        acc.lastResult = text
+        saveLastResult(ctx, acc.uid, text)
+    }
+
     private fun syncOnly() {
         if (busy) {
             if (taskJob?.isActive == true) {
@@ -1373,7 +1558,7 @@ class HomeFragment : Fragment() {
                     try {
                         val verify = WeiboApi.verify(acc.cookie)
                         if (!verify.login) {
-                            acc.lastResult = ctx.getString(R.string.home_cookie_dead)
+                            noteResult(ctx, acc, ctx.getString(R.string.home_cookie_dead))
                             AccountStore.markDead(ctx, acc.uid)
                             log("  ✗ ${ctx.getString(R.string.home_cookie_dead)}")
                             continue
@@ -1381,7 +1566,11 @@ class HomeFragment : Fragment() {
                         acc.cookie = verify.cookie
                         // 探活成功也走一次落盘：同步失败的账号至少把「最近有效」锚点更新掉，
                         // 否则它会一直停在过期的红字上，看起来像没点过同步
-                        AccountStore.markVerified(ctx, acc.uid, verify.cookie)
+                        AccountStore.markVerified(
+                            ctx, acc.uid, verify.cookie,
+                            serverExpiresAt = verify.serverExpiresAt,
+                            loginAt = verify.loginAt,
+                        )
                         if (syncToPanel(ctx, acc)) ok++
                     } catch (e: Exception) {
                         log("  ✗ ${e.message}")

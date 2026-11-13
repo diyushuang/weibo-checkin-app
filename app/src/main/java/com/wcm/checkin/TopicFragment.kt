@@ -640,6 +640,7 @@ class TopicFragment : Fragment() {
                             if (result.ok) {
                                 // 签到成功后把该条置为已签（不等整轮刷新，界面立刻一致）
                                 markDone(ctx, acc.uid, row.topic.key)
+                                noteCheckin(ctx, acc.uid)
                             }
                         }
                     }
@@ -669,6 +670,29 @@ class TopicFragment : Fragment() {
         // 时间戳用「现在」：沿用旧快照的时间会让刚签的这一条仍被判成「非今日」，
         // 指标区继续显示占位符 —— 用户明明刚签成功，界面却说没有今天的数据。
         TopicStore.save(ctx, uid, updated, at = System.currentTimeMillis())
+    }
+
+    /**
+     * 把这次签到同步到首页账号行的状态行。
+     *
+     * 首页账号卡上有**两处**签到状态，来源不同：
+     * - 「已签 / 待签」chip 读的是 [TopicStore] 快照（[markDone] 会更新它）；
+     * - 状态行读的是 `AccountStore` 的 `lastResult`。
+     *
+     * 只在超话页签到而不写 `lastResult`，就会出现「提示签到成功 + chip 已签 7」
+     * 与「账号信息区仍写尚未签到」并排显示的矛盾。这里按快照的最终口径补写一笔，
+     * 让同一行里的两个状态来自同一次签到结果。
+     */
+    private fun noteCheckin(ctx: Context, uid: String) {
+        val snap = TopicStore.snapshot(ctx, uid) ?: return
+        if (snap.topics.isEmpty()) return
+        // 单独 new 一个格式器：这里的调用点在 IO 线程，与 render() 的主线程共用
+        // Fragment 级 timeFmt 会有并发风险（SimpleDateFormat 非线程安全）
+        val at = SimpleDateFormat("HH:mm", Locale.CHINA).format(Date())
+        AccountStore.setLastResult(
+            ctx, uid,
+            ctx.getString(R.string.home_status_signed_fmt, snap.done, snap.total, at),
+        )
     }
 
     // ========================= 菜单 / 弹窗 =========================

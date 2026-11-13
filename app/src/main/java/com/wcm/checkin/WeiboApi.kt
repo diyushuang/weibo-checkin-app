@@ -108,6 +108,10 @@ object WeiboApi {
         val cookie: String,
         /** 配置接口顺带回的 UID（部分响应缺这个字段，由调用方兜底补拉）。 */
         val uid: String = "",
+        /** 服务端声明/名义到期（Set-Cookie 的 Expires/Max-Age 或 ALF；0 = 未知）。 */
+        val serverExpiresAt: Long = 0L,
+        /** 真实登录时刻（cookie 的 SSOLoginState；0 = 未知）。 */
+        val loginAt: Long = 0L,
     )
 
     private const val BASE = "https://m.weibo.cn"
@@ -203,6 +207,17 @@ private val NEGATIVE_WORDS = listOf(
             if (key.isNotEmpty() && value.isNotEmpty()) base[key] = value
         }
     }
+
+    /** 登录凭据相关的 cookie：只有它们的到期时间能代表「服务端到期」。 */
+    internal val LOGIN_EXPIRY_COOKIES = setOf("SUB", "SUBP", "SCF", "SSOLoginState", "ALF")
+
+    /**
+     * 从 Set-Cookie 的 Expires/Max-Age 里取服务端声明到期；没有再退回 cookie 的 ALF。
+     * 取登录关键字段里**最早**的一个 —— 任何一个关键凭据先到期，登录态就撑不到更晚。
+     */
+    internal fun serverExpiryFromHeaders(expiries: Map<String, Long>, mergedCookie: String): Long =
+        expiries.filterKeys { it in LOGIN_EXPIRY_COOKIES }.values.minOrNull()
+            ?: CookieLife.serverExpiryOf(mergedCookie)
 
     private fun request(url: String, cookie: String): Request =
         Request.Builder().url(url)
@@ -310,6 +325,12 @@ private val NEGATIVE_WORDS = listOf(
             if (!resp.isSuccessful) {
                 throw httpFailure("探活", resp.code)
             }
+            // 服务端声明的到期时间：优先取登录关键字段的 Set-Cookie 属性
+            val expiryByName = LinkedHashMap<String, Long>()
+            for (header in resp.headers("set-cookie")) {
+                val parsed = okhttp3.Cookie.parse(resp.request.url, header) ?: continue
+                if (parsed.expiresAt > 0L) expiryByName[parsed.name] = parsed.expiresAt
+            }
             mergeSetCookies(jar, resp)
             val body = resp.body?.string().orEmpty()
             val payload = try {
@@ -323,11 +344,14 @@ private val NEGATIVE_WORDS = listOf(
             }
             val data = payload.optJSONObject("data") ?: JSONObject()
             val stRaw = data.optString("st", "")
+            val merged = cookieToString(jar)
             Verify(
                 login = parseLoginFlag(data.opt("login")),
                 st = stRaw.ifEmpty { null },
-                cookie = cookieToString(jar),
+                cookie = merged,
                 uid = (data.optString("uid", "").ifEmpty { data.optString("user_id", "") }).trim(),
+                serverExpiresAt = serverExpiryFromHeaders(expiryByName, merged),
+                loginAt = CookieLife.loginTimeOf(merged),
             )
         }
         // 只缓存「已登录」的结果：把 false 缓存住会让登录页卡在「等待微博确认」。

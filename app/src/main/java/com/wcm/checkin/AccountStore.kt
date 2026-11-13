@@ -13,19 +13,13 @@ object AccountStore {
         val name: String,
         var cookie: String,
         var lastResult: String = "",
-        /**
-         * 本机首次存下这份 cookie 的时刻（epoch ms；0 = 没有记录）。
-         *
-         * 四个时间戳共同构成 cookie 有效期的估算依据（口径见 [CookieLife]）：
-         * 面板端每次同步都会把基准重置成同步时刻，所以已同步账号以 [cookieSyncedAt]
-         * 为准，未同步账号才退回本机这三把尺子。
-         */
+        /** 本机首次存下这份 cookie 的时刻（epoch ms；0 = 没有记录）。 */
         var cookieIssuedAt: Long = 0L,
-        /** 最近一次观察到微博换发 Set-Cookie（SUB 等被替换）的时刻。 */
+        /** 最近一次观察到微博**真的换发**登录关键字段（SUB/SUBP/SCF/SSOLoginState/ALF）的时刻。 */
         var cookieRotatedAt: Long = 0L,
-        /** 最近一次探活确认「登录有效」的时刻。 */
+        /** 最近一次探活确认「登录有效」的时刻。只证明还活着，**不作为寿命基准**。 */
         var cookieSeenAt: Long = 0L,
-        /** 最近一次成功推送到面板的时刻（面板侧生命周期基准）。 */
+        /** 最近一次成功推送到面板的时刻。同步只影响面板，**不作为本机寿命基准**。 */
         var cookieSyncedAt: Long = 0L,
         /**
          * 探活已明确判定登录态失效（`login=false`）。
@@ -36,6 +30,32 @@ object AccountStore {
          * 任何一次探活成功（[markVerified]）都会清掉它。
          */
         var cookieDead: Boolean = false,
+        /**
+         * 真实登录时刻（来自 cookie 的 `SSOLoginState`，缺失时用本次账密登录时刻）。
+         *
+         * 与 [cookieSyncedAt] 严格分开：同步不是登录，不能把同步时刻当寿命起点。
+         */
+        var cookieLoginAt: Long = 0L,
+        /** 服务端**声明/名义**到期时间（Set-Cookie 的 Expires/Max-Age 或 ALF；0 = 未知）。 */
+        var cookieServerExpiresAt: Long = 0L,
+        /** 最近一次让寿命起算的关键字段列表（逗号分隔）；仅用于界面说明「为什么续期」。 */
+        var cookieRotateKeys: String = "",
+        /** 最近一次探测失败原因（网络/风控/失效），给用户看，成功时清空。 */
+        var cookieLastError: String = "",
+        /** 最近一次探测（无论成败）的时刻。 */
+        var cookieLastCheckAt: Long = 0L,
+        // ---- 账号密码自动重登（凭证本身在 CredentialVault 加密保存，不落在这里）----
+        var autoReloginEnabled: Boolean = true,
+        /** 最近一次保存/更新凭证的时刻。 */
+        var credentialAt: Long = 0L,
+        var reloginLastAttemptAt: Long = 0L,
+        var reloginNextAt: Long = 0L,
+        var reloginFailStreak: Int = 0,
+        /** 24 小时窗口内的尝试时刻（epoch ms）。 */
+        var reloginAttempts: List<Long> = emptyList(),
+        var reloginBlocked: Boolean = false,
+        var reloginLastReason: String = "",
+        var reloginLastCode: String = "",
     )
 
     private const val PREFS = "wcm"
@@ -44,6 +64,11 @@ object AccountStore {
     private const val KEY_PANEL_TOKEN = "panel_token"
     private const val KEY_AUTO_ON_OPEN = "auto_on_open"
     private const val KEY_LAST_AUTO_AT = "last_auto_at"
+
+    // ---- 账号密码自动重登（全局策略）----
+    private const val KEY_AUTO_RELOGIN = "auto_relogin_enabled"
+    private const val KEY_AUTO_RELOGIN_MAX = "auto_relogin_max_per_day"
+    private const val KEY_AUTO_RELOGIN_BACKOFF = "auto_relogin_backoff_hours"
 
     // ---- 图片抓取（v0.2.0）----
     private const val KEY_CRAWL_TARGETS = "crawl_targets"   // [{"uid","name"}]
@@ -136,6 +161,20 @@ object AccountStore {
                     .put("seenAt", it.cookieSeenAt)
                     .put("syncedAt", it.cookieSyncedAt)
                     .put("dead", it.cookieDead)
+                    .put("loginAt", it.cookieLoginAt)
+                    .put("serverExpiresAt", it.cookieServerExpiresAt)
+                    .put("rotateKeys", it.cookieRotateKeys)
+                    .put("lastError", it.cookieLastError)
+                    .put("lastCheckAt", it.cookieLastCheckAt)
+                    .put("autoRelogin", it.autoReloginEnabled)
+                    .put("credentialAt", it.credentialAt)
+                    .put("rlLast", it.reloginLastAttemptAt)
+                    .put("rlNext", it.reloginNextAt)
+                    .put("rlStreak", it.reloginFailStreak)
+                    .put("rlAttempts", JSONArray(it.reloginAttempts))
+                    .put("rlBlocked", it.reloginBlocked)
+                    .put("rlReason", it.reloginLastReason)
+                    .put("rlCode", it.reloginLastCode)
             )
         }
         return arr.toString()
@@ -160,6 +199,20 @@ object AccountStore {
                         cookieSeenAt = o.optLong("seenAt", 0L),
                         cookieSyncedAt = o.optLong("syncedAt", 0L),
                         cookieDead = o.optBoolean("dead", false),
+                        cookieLoginAt = o.optLong("loginAt", 0L),
+                        cookieServerExpiresAt = o.optLong("serverExpiresAt", 0L),
+                        cookieRotateKeys = o.optString("rotateKeys", ""),
+                        cookieLastError = o.optString("lastError", ""),
+                        cookieLastCheckAt = o.optLong("lastCheckAt", 0L),
+                        autoReloginEnabled = o.optBoolean("autoRelogin", true),
+                        credentialAt = o.optLong("credentialAt", 0L),
+                        reloginLastAttemptAt = o.optLong("rlLast", 0L),
+                        reloginNextAt = o.optLong("rlNext", 0L),
+                        reloginFailStreak = o.optInt("rlStreak", 0),
+                        reloginAttempts = parseAttemptStamps(o.optJSONArray("rlAttempts")),
+                        reloginBlocked = o.optBoolean("rlBlocked", false),
+                        reloginLastReason = o.optString("rlReason", ""),
+                        reloginLastCode = o.optString("rlCode", ""),
                     )
                 )
             }
@@ -167,6 +220,17 @@ object AccountStore {
             // 存储损坏时静默降级（返回已解析的部分），宁可丢账号也不能让 App 起不来
         }
         return list
+    }
+
+    /** 解析自动重登的 24 小时尝试记录（脏值静默丢弃）。 */
+    private fun parseAttemptStamps(arr: JSONArray?): List<Long> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<Long>()
+        for (i in 0 until arr.length()) {
+            val v = arr.optLong(i, 0L)
+            if (v > 0L) out.add(v)
+        }
+        return out
     }
 
     /**
@@ -185,6 +249,11 @@ object AccountStore {
      * cookie / lastResult 按「谁新用谁」：旧实现无条件用快照胜出，而时间锚点却用 maxOf，
      * 方向自相矛盾 —— 后台保活 Worker 跑着时用户前台重新扫码登录，Worker 结束时
      * 会把**任务开始前的旧 cookie** 写回去，用户立刻掉登录，界面还显示「刚刚验证」。
+     *
+     * 但 `lastResult` 多一条兜底：库里还是**空白**（从未写过小结）时收下快照那份。
+     * 这是「签到成功却仍显示尚未签到」的成因之一 —— 任务途中 [markVerified] 会把库里的
+     * 锚点推进到快照之后，于是 `snapNewer=false`，快照里刚算出来的「签到 7/7」被
+     * 库里那个空串顶掉。兜底只做「空 → 非空」，不会用旧结果覆盖库里已有的新结果。
      */
     fun mergeAccounts(current: List<Account>, snapshot: List<Account>): List<Account> =
         current.map { cur ->
@@ -194,7 +263,11 @@ object AccountStore {
                     val snapNewer = newestAnchor(snap) > newestAnchor(cur)
                     cur.copy(
                         cookie = if (snapNewer) snap.cookie else cur.cookie,
-                        lastResult = if (snapNewer) snap.lastResult else cur.lastResult,
+                        lastResult = when {
+                            snapNewer -> snap.lastResult
+                            cur.lastResult.isBlank() -> snap.lastResult
+                            else -> cur.lastResult
+                        },
                         name = if (needsNameResolve(cur) && !needsNameResolve(snap)) {
                             snap.name
                         } else {
@@ -204,6 +277,19 @@ object AccountStore {
                         cookieRotatedAt = maxOf(cur.cookieRotatedAt, snap.cookieRotatedAt),
                         cookieSeenAt = maxOf(cur.cookieSeenAt, snap.cookieSeenAt),
                         cookieSyncedAt = maxOf(cur.cookieSyncedAt, snap.cookieSyncedAt),
+                        // 真实登录时间取更晚的一次；服务端到期跟着那次登录走，避免时间与到期错配
+                        cookieLoginAt = maxOf(cur.cookieLoginAt, snap.cookieLoginAt),
+                        cookieServerExpiresAt = if (snap.cookieLoginAt > cur.cookieLoginAt) {
+                            snap.cookieServerExpiresAt
+                        } else {
+                            cur.cookieServerExpiresAt
+                        },
+                        cookieRotateKeys = if (snapNewer) snap.cookieRotateKeys else cur.cookieRotateKeys,
+                        // 失败原因属于「库里最新一次探测」：旧快照的报错不能盖掉刚成功的状态
+                        cookieLastError = if (snapNewer) snap.cookieLastError else cur.cookieLastError,
+                        cookieLastCheckAt = maxOf(cur.cookieLastCheckAt, snap.cookieLastCheckAt),
+                        credentialAt = maxOf(cur.credentialAt, snap.credentialAt),
+                        // 自动重登开关与退避状态只由用户/策略直接写库，不从任务快照合并
                     )
                 }
                 ?: cur
@@ -211,7 +297,10 @@ object AccountStore {
 
     /** 一份账号「最新」的时间锚点：比较新旧时只看这个。 */
     internal fun newestAnchor(a: Account): Long =
-        maxOf(a.cookieRotatedAt, a.cookieSeenAt, a.cookieSyncedAt, a.cookieIssuedAt)
+        maxOf(
+            a.cookieRotatedAt, a.cookieSeenAt, a.cookieSyncedAt,
+            a.cookieIssuedAt, a.cookieLoginAt,
+        )
 
     /** 合并式写回：先读当前库再按 [mergeAccounts] 合并，用于长任务结束时的落盘。 */
     fun mergeSave(ctx: Context, snapshot: List<Account>) {
@@ -239,9 +328,14 @@ object AccountStore {
      * 上跑，两步之间随时可能被别的写入方插进来。
      *
      * 时间锚点的写入口径（[CookieLife] 依赖它们，写错就会误报临期）：
-     * - cookie **真的换了** → 首次录入写 `issuedAt`，之后写 `rotatedAt`（微博换发）；
-     * - [seenAt] / [syncedAt] 只前进不后退，传 0 表示这次不更新。
+     * - cookie **真的换了** → 首次录入写 `issuedAt`；
+     * - **只有登录关键字段（SUB/SUBP/SCF/SSOLoginState/ALF）变化才写 `rotatedAt`** ——
+     *   探活成功（seenAt）或推到面板（syncedAt）都只是观察，不是续期；
+     * - [seenAt] / [syncedAt] / [checkedAt] 只前进不后退，传 0 表示这次不更新。
      *
+     * @param loginAt 真实登录时刻（0 = 从 cookie 的 SSOLoginState 推断）
+     * @param serverExpiresAt 服务端声明到期（0 = 从 ALF 推断 / 保持原值）
+     * @param lastError 传 null 表示不动；传空串表示清除（探活成功）
      * @return 是否真的写了盘（没变化就不写，减少 IO 与冲突面）。
      */
     fun patchAccount(
@@ -251,6 +345,10 @@ object AccountStore {
         name: String = "",
         seenAt: Long = 0L,
         syncedAt: Long = 0L,
+        loginAt: Long = 0L,
+        serverExpiresAt: Long = 0L,
+        checkedAt: Long = 0L,
+        lastError: String? = null,
         dead: Boolean? = null,
     ): Boolean {
         synchronized(LOCK) {
@@ -262,11 +360,38 @@ object AccountStore {
             if (cookie.isNotEmpty() && cookie != acc.cookie) {
                 val now = System.currentTimeMillis()
                 val firstTime = acc.cookie.isEmpty() || acc.cookieIssuedAt <= 0L
+                // 关键点：普通 cookie 字段（_T_WM 之类）变化不算续期
+                val rotateKeys = criticalChangedKeys(acc.cookie, cookie)
+                val renewed = firstTime || rotateKeys.isNotEmpty()
                 acc = acc.copy(
                     cookie = cookie,
                     cookieIssuedAt = if (firstTime) now else acc.cookieIssuedAt,
-                    cookieRotatedAt = if (firstTime) acc.cookieRotatedAt else now,
+                    cookieRotatedAt = if (renewed) now else acc.cookieRotatedAt,
+                    cookieRotateKeys = when {
+                        firstTime -> "login"
+                        rotateKeys.isNotEmpty() -> rotateKeys.joinToString(",")
+                        else -> acc.cookieRotateKeys
+                    },
+                    cookieLoginAt = when {
+                        loginAt > 0L -> loginAt
+                        "SSOLoginState" in rotateKeys -> CookieLife.loginTimeOf(cookie)
+                        else -> acc.cookieLoginAt
+                    },
+                    cookieServerExpiresAt = when {
+                        serverExpiresAt > 0L -> serverExpiresAt
+                        "ALF" in rotateKeys -> CookieLife.serverExpiryOf(cookie)
+                        else -> acc.cookieServerExpiresAt
+                    },
                 )
+                changed = true
+            }
+            // cookie 没换但拿到了更准确的时间信息（例如探活响应带了 SSOLoginState）
+            if (loginAt > acc.cookieLoginAt) {
+                acc = acc.copy(cookieLoginAt = loginAt)
+                changed = true
+            }
+            if (serverExpiresAt > 0L && serverExpiresAt != acc.cookieServerExpiresAt) {
+                acc = acc.copy(cookieServerExpiresAt = serverExpiresAt)
                 changed = true
             }
             if (name.isNotEmpty() && name != acc.name) {
@@ -279,6 +404,14 @@ object AccountStore {
             }
             if (syncedAt > acc.cookieSyncedAt) {
                 acc = acc.copy(cookieSyncedAt = syncedAt)
+                changed = true
+            }
+            if (checkedAt > acc.cookieLastCheckAt) {
+                acc = acc.copy(cookieLastCheckAt = checkedAt)
+                changed = true
+            }
+            if (lastError != null && lastError != acc.cookieLastError) {
+                acc = acc.copy(cookieLastError = lastError)
                 changed = true
             }
             if (dead != null && dead != acc.cookieDead) {
@@ -298,6 +431,9 @@ object AccountStore {
      *
      * [name] 非空时顺带补昵称 —— 后台保活顺手把占位名换成真实昵称，用户下次打开
      * 就不再看到「（未获取到昵称）」。
+     *
+     * [serverExpiresAt] / [loginAt] 来自探活响应的 Set-Cookie / SSOLoginState；
+     * 没有就是 0，由 cookie 自身兜底。
      */
     fun markVerified(
         ctx: Context,
@@ -305,7 +441,19 @@ object AccountStore {
         cookie: String,
         name: String = "",
         at: Long = System.currentTimeMillis(),
-    ): Boolean = patchAccount(ctx, uid, cookie = cookie, name = name, seenAt = at, dead = false)
+        serverExpiresAt: Long = 0L,
+        loginAt: Long = 0L,
+    ): Boolean = patchAccount(
+        ctx, uid,
+        cookie = cookie,
+        name = name,
+        seenAt = at,
+        loginAt = loginAt,
+        serverExpiresAt = serverExpiresAt,
+        checkedAt = at,
+        lastError = "",
+        dead = false,
+    )
 
     /**
      * 记录一次「探活明确判定登录态失效」。
@@ -313,11 +461,166 @@ object AccountStore {
      * 只由 `login == false` 触发，**网络异常不写**：断网、风控、超时都不代表登录态没了，
      * 把它们记成失效会让整块 Cookie 卡变成一片红报警。
      */
-    fun markDead(ctx: Context, uid: String): Boolean = patchAccount(ctx, uid, dead = true)
+    fun markDead(
+        ctx: Context,
+        uid: String,
+        reason: String = "",
+        at: Long = System.currentTimeMillis(),
+    ): Boolean = patchAccount(
+        ctx, uid,
+        checkedAt = at,
+        lastError = reason.ifEmpty { "登录态已失效" },
+        dead = true,
+    )
 
-    /** 记录一次成功推送到面板：面板侧 cookie 生命周期从这里重新计时（约 7 天）。 */
+    /** 记录一次「探测失败但不是失效」（网络 / 风控 / 接口异常）：原因要能被用户看到。 */
+    fun markCheckError(
+        ctx: Context,
+        uid: String,
+        reason: String,
+        at: Long = System.currentTimeMillis(),
+    ): Boolean = patchAccount(ctx, uid, checkedAt = at, lastError = reason.ifEmpty { "探测失败" })
+
+    /** 记录一次成功推送到面板：只影响面板侧计时，**不是本机续期依据**。 */
     fun markSynced(ctx: Context, uid: String, at: Long = System.currentTimeMillis()): Boolean =
         patchAccount(ctx, uid, syncedAt = at)
+
+    // ---- 账号密码自动重登 ----
+
+    /** 登录关键字段：只有这些值真的变化，才说明微博换发了一套新凭据。 */
+    internal val LOGIN_CRITICAL_KEYS = listOf("SUB", "SUBP", "SCF", "SSOLoginState", "ALF")
+
+    /** 比较新旧 cookie，返回真正变化的登录关键字段。 */
+    internal fun criticalChangedKeys(oldCookie: String, newCookie: String): List<String> {
+        val old = WeiboApi.parseCookieString(oldCookie)
+        val fresh = WeiboApi.parseCookieString(newCookie)
+        return LOGIN_CRITICAL_KEYS.filter { old[it] != fresh[it] }
+    }
+
+    fun reloginState(acc: Account): ReloginPolicy.State = ReloginPolicy.State(
+        lastAttemptAt = acc.reloginLastAttemptAt,
+        nextAt = acc.reloginNextAt,
+        failStreak = acc.reloginFailStreak,
+        attempts = acc.reloginAttempts,
+        blocked = acc.reloginBlocked,
+        lastReason = acc.reloginLastReason,
+        lastCode = acc.reloginLastCode,
+        credentialAt = acc.credentialAt,
+    )
+
+    /** 只更新自动重登策略状态（不含 cookie / 凭证）。 */
+    fun saveReloginState(ctx: Context, uid: String, state: ReloginPolicy.State): Boolean {
+        synchronized(LOCK) {
+            val list = load(ctx)
+            val index = list.indexOfFirst { it.uid == uid }
+            if (index < 0) return false
+            val old = list[index]
+            list[index] = old.copy(
+                reloginLastAttemptAt = state.lastAttemptAt,
+                reloginNextAt = state.nextAt,
+                reloginFailStreak = state.failStreak,
+                reloginAttempts = state.attempts,
+                reloginBlocked = state.blocked,
+                reloginLastReason = state.lastReason,
+                reloginLastCode = state.lastCode,
+                credentialAt = maxOf(old.credentialAt, state.credentialAt),
+            )
+            save(ctx, list)
+            return true
+        }
+    }
+
+    /**
+     * 账密重登成功：整份替换 cookie（新的 SUB/SUBP/SCF 是一套，旧值不能留），
+     * 同时把真实登录时间、服务端到期、轮换来源一次写准。
+     */
+    fun markReloginSuccess(
+        ctx: Context,
+        uid: String,
+        cookie: String,
+        loginAt: Long,
+        serverExpiresAt: Long,
+        at: Long = System.currentTimeMillis(),
+    ): Boolean {
+        synchronized(LOCK) {
+            val list = load(ctx)
+            val index = list.indexOfFirst { it.uid == uid }
+            if (index < 0) return false
+            val old = list[index]
+            list[index] = old.copy(
+                cookie = cookie,
+                cookieIssuedAt = if (old.cookieIssuedAt > 0L) old.cookieIssuedAt else at,
+                cookieRotatedAt = at,
+                cookieRotateKeys = "auto_relogin",
+                cookieLoginAt = if (loginAt > 0L) loginAt else at,
+                cookieServerExpiresAt = serverExpiresAt,
+                cookieSeenAt = at,
+                cookieLastCheckAt = at,
+                cookieLastError = "",
+                cookieDead = false,
+                reloginLastAttemptAt = at,
+                reloginNextAt = 0L,
+                reloginFailStreak = 0,
+                reloginAttempts = emptyList(),
+                reloginBlocked = false,
+                reloginLastReason = "",
+                reloginLastCode = "",
+            )
+            save(ctx, list)
+            return true
+        }
+    }
+
+    /** 重登失败：原因落到 `cookieLastError`，策略状态一起保存；已判失效的继续标失效。 */
+    fun markReloginFailure(
+        ctx: Context,
+        uid: String,
+        state: ReloginPolicy.State,
+        message: String,
+        at: Long = System.currentTimeMillis(),
+        dead: Boolean,
+    ): Boolean = patchAccount(
+        ctx, uid,
+        checkedAt = at,
+        lastError = message,
+        dead = if (dead) true else null,
+    ).also { saveReloginState(ctx, uid, state) }
+
+    fun setCredentialAt(ctx: Context, uid: String, at: Long) {
+        synchronized(LOCK) {
+            val list = load(ctx)
+            val index = list.indexOfFirst { it.uid == uid }
+            if (index < 0) return
+            list[index] = list[index].copy(credentialAt = at)
+            save(ctx, list)
+        }
+    }
+
+    fun setAccountAutoRelogin(ctx: Context, uid: String, enabled: Boolean) {
+        synchronized(LOCK) {
+            val list = load(ctx)
+            val index = list.indexOfFirst { it.uid == uid }
+            if (index < 0) return
+            list[index] = list[index].copy(autoReloginEnabled = enabled)
+            save(ctx, list)
+        }
+    }
+
+    // ---- 自动重登全局策略（设置页）----
+
+    fun autoReloginEnabled(ctx: Context): Boolean =
+        SafePrefs.bool(prefs(ctx), KEY_AUTO_RELOGIN, true)
+
+    fun setAutoReloginEnabled(ctx: Context, value: Boolean) {
+        prefs(ctx).edit { putBoolean(KEY_AUTO_RELOGIN, value) }
+    }
+
+    fun autoReloginMaxPerDay(ctx: Context): Int =
+        SafePrefs.string(prefs(ctx), KEY_AUTO_RELOGIN_MAX, "3").toIntOrNull()?.coerceIn(1, 10) ?: 3
+
+    fun autoReloginBackoffHours(ctx: Context): Double =
+        SafePrefs.string(prefs(ctx), KEY_AUTO_RELOGIN_BACKOFF, "6")
+            .toDoubleOrNull()?.coerceIn(0.5, 24.0) ?: 6.0
 
     /** 只写一行 `lastResult`（签到小结），不影响其它字段。 */
     fun setLastResult(ctx: Context, uid: String, result: String) {
@@ -336,6 +639,8 @@ object AccountStore {
             list.removeAll { it.uid == uid }
             save(ctx, list)
         }
+        // 删账号同时销毁本机保存的账号密码密文，不给残留
+        CredentialVault.clear(ctx, uid)
     }
 
     fun panelUrl(ctx: Context): String = SafePrefs.string(prefs(ctx), KEY_PANEL_URL)

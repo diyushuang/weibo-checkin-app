@@ -252,7 +252,11 @@ object Crawler {
                     // 探活已经证明这个 cookie 可用、也顺手拿到了轮换后的新 cookie：
                     // 不回写的话下一个阶段（相册 → 时间线回退）会再 verify 一遍，
                     // 白耗一次请求，也继续用着旧 cookie。
-                    AccountStore.markVerified(ctx, acc.uid, v.cookie, acc.name)
+                    AccountStore.markVerified(
+                        ctx, acc.uid, v.cookie, acc.name,
+                        serverExpiresAt = v.serverExpiresAt,
+                        loginAt = v.loginAt,
+                    )
                     return v.cookie
                 }
                 log("账号「$label」登录态失效")

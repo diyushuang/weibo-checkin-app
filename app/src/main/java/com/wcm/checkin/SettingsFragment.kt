@@ -93,6 +93,13 @@ class SettingsFragment : Fragment() {
         }
         view.findViewById<View>(R.id.rowCrawlGif).setOnClickListener { switchGif.toggle() }
 
+        val switchRelogin = view.findViewById<MaterialSwitch>(R.id.switchAutoRelogin)
+        switchRelogin.isChecked = AccountStore.autoReloginEnabled(ctx)
+        switchRelogin.setOnCheckedChangeListener { _, checked ->
+            AccountStore.setAutoReloginEnabled(ctx, checked)
+        }
+        view.findViewById<View>(R.id.rowAutoRelogin).setOnClickListener { switchRelogin.toggle() }
+
         val version = try {
             ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
         } catch (e: Exception) {
