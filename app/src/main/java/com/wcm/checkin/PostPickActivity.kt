@@ -1,5 +1,7 @@
 package com.wcm.checkin
 
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.BitmapDrawable
@@ -39,14 +41,17 @@ import kotlinx.coroutines.withContext
  * - 徽标：`pics[].type == "livephoto"` 标「实况」（勾选后落 GIF/mov），
  *   `type == "gif"` 标 GIF。注意详情的 pics 数组在超 9 图帖里同样会截断，
  *   第 10 张起没有类型信息，按静图处理 —— 与增量抓取的 Live 配对口径一致；
- * - 提交：[AppScope] 启动（转屏/退出不中断）+ [CrawlRunner.runPicked]（单帖任务，
+ * - 提交：[AppScope] 启动（转屏/退出不中断）+ [CrawlService.runPicked]（单帖任务，
  *   与增量抓取共用闸门与索引），完成后 toast 汇总。
  *
  * 勾选反馈走整表 notifyDataSetChanged（lint: NotifyDataSetChanged）：单帖最多 18 格，
  * 精确通知的复杂度没有意义。
  */
 @Suppress("NotifyDataSetChanged")
+@AndroidEntryPoint
 class PostPickActivity : AppCompatActivity() {
+
+    @Inject lateinit var crawlService: CrawlService
 
     /** 网格里的一张图。 */
     private data class PicItem(
@@ -292,7 +297,7 @@ class PostPickActivity : AppCompatActivity() {
             var summary: CrawlEngine.PickedSummary? = null
             var err: String? = null
             try {
-                val r = CrawlRunner.runPicked(ctx, listOf(CrawlEngine.PickTask(bid, picIds))) { }
+                val r = crawlService.runPicked(ctx, listOf(CrawlEngine.PickTask(bid, picIds))) { }
                 if (r == null) busy = true else summary = r
             } catch (e: Exception) {
                 err = e.message ?: e.javaClass.simpleName

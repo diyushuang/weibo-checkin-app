@@ -1,5 +1,7 @@
 package com.wcm.checkin
 
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -48,7 +50,7 @@ import kotlinx.coroutines.withContext
  *   默认全开 —— 对齐「批量勾选博主原创微博中的多张图」的需求口径；
  * - **多选**：长按卡片进入，点按勾选整帖；提交时 picIds 传 null = 整帖全抓，
  *   想在某帖里精选就退出多选点进它的选图页；
- * - **提交**：[AppScope] 启动 + [CrawlRunner.runPicked]，与增量抓取共用闸门/索引/命名；
+ * - **提交**：[AppScope] 启动 + [CrawlService.runPicked]，与增量抓取共用闸门/索引/命名；
  * - 浏览本身（列表 / 缩略图）只读、不占抓取闸门，可与后台增量任务并行。
  *
  * 本页刻意全列表 notifyDataSetChanged（lint: NotifyDataSetChanged）：
@@ -56,7 +58,10 @@ import kotlinx.coroutines.withContext
  * 配不上一页十来条卡片的量级 —— 与图库页（万级文件）的取舍不同。
  */
 @Suppress("NotifyDataSetChanged")
+@AndroidEntryPoint
 class BrowsingActivity : AppCompatActivity() {
+
+    @Inject lateinit var crawlService: CrawlService
 
     private val posts = ArrayList<WeiboPostApi.RawPost>()
     private val visible = ArrayList<WeiboPostApi.RawPost>()
@@ -546,7 +551,7 @@ class BrowsingActivity : AppCompatActivity() {
             var summary: CrawlEngine.PickedSummary? = null
             var err: String? = null
             try {
-                val r = CrawlRunner.runPicked(ctx, tasks) { }
+                val r = crawlService.runPicked(ctx, tasks) { }
                 if (r == null) busy = true else summary = r
             } catch (e: Exception) {
                 err = e.message ?: e.javaClass.simpleName

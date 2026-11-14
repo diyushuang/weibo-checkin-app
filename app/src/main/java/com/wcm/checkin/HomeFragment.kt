@@ -1,5 +1,7 @@
 package com.wcm.checkin
 
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
@@ -51,7 +53,10 @@ import kotlin.random.Random
  *   （口径见 [CookieLife]，对齐面板 `describe_cookie_lifespan`），临期/过期整行标红；
  * - 昵称补拉：占位名账号在进入首页时后台补一次，不再长期停在「（未获取到昵称）」。
  */
+@AndroidEntryPoint
 class HomeFragment : Fragment() {
+
+    @Inject lateinit var crawlService: CrawlService
 
     /**
      * 签到 / 同步的运行态与日志缓冲。
@@ -1216,7 +1221,7 @@ class HomeFragment : Fragment() {
                 if (CrawlSettings.crawlAuto(ctx)) {
                     try {
                         // 与图库页手动抓取共用闸门：正跑着就静默跳过，自动流程不该弹提示
-                        if (CrawlRunner.runAll(ctx, ::log, auto = true) == CrawlRunner.RunResult.Busy) {
+                        if (crawlService.runAll(ctx, ::log, auto = true) == CrawlService.RunResult.Busy) {
                             log("自动抓图跳过：已有抓取任务在运行")
                         }
                     } catch (e: Exception) {

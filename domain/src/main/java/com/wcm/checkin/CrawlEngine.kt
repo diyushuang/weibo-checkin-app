@@ -116,7 +116,7 @@ object CrawlEngine {
      * 命名（`prefixOf` + `AssetName`）、三层去重、索引、目录全部同一套 ——
      * 用户先勾选抓一张、以后增量抓全量，文件在同一个名字上相遇，L1 直接命中。
      *
-     * 单帖失败记日志继续下一帖；[isStopped] 由 [CrawlRunner] 的停止信号驱动。
+     * 单帖失败记日志继续下一帖；[isStopped] 由 [CrawlService] 的停止信号驱动。
      */
     suspend fun crawlPicked(
         ctx: Context,

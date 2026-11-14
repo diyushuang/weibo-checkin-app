@@ -4,7 +4,7 @@ package com.wcm.checkin
  * 抓取进度的可计算模型（v0.9.0）。
  *
  * 把「抓取跑到哪了」从字符串日志里解耦出来：Crawler 只发事件，
- * 这里用纯函数 [reduce] 累加成一份可渲染的快照，UI 订阅 [CrawlRunner.state] 即可。
+ * 这里用纯函数 [reduce] 累加成一份可渲染的快照，UI 订阅 [CrawlService.state] 即可。
  *
  * 为什么要做成纯函数：进度算错的表现是「进度条倒退 / 数字乱跳」，
  * 这类问题靠人眼在真机上盯日志几乎发现不了，必须能被 JVM 单测钉住。

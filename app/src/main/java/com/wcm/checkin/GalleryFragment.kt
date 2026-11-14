@@ -1,5 +1,7 @@
 package com.wcm.checkin
 
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -39,7 +41,10 @@ import java.util.Locale
  * - 每个抓取目标的「起始日期 / 移除」收进行尾溢出菜单；
  * - 日志卡默认收起，运行开始时自动展开。
  */
+@AndroidEntryPoint
 class GalleryFragment : Fragment() {
+
+    @Inject lateinit var crawlService: CrawlService
 
     /**
      * 运行态与日志放进程级：Fragment 在旋转 / 深浅色切换时会换实例，
@@ -129,7 +134,7 @@ class GalleryFragment : Fragment() {
         view.findViewById<View>(R.id.btnCrawlFull).setOnClickListener { confirmFull(emptySet()) }
         view.findViewById<View>(R.id.btnCrawlStop).setOnClickListener {
             // 先置停止标志（首页自动触发的抓取没有本页协程可取消），再取消本页任务
-            CrawlRunner.requestStop()
+            crawlService.requestStop()
             crawlJob?.cancel()
             log("⏹ 正在停止…（进度已保存）")
         }
@@ -190,11 +195,11 @@ class GalleryFragment : Fragment() {
 
         // 订阅抓取状态：首页自动抓图时本页也能看到进度，且能正确显示「停止」
         viewLifecycleOwner.lifecycleScope.launch {
-            CrawlRunner.state.collect { state ->
+            crawlService.state.collect { state ->
                 if (isAdded) renderRunState(state)
             }
         }
-        renderRunState(CrawlRunner.state.value)
+        renderRunState(crawlService.state.value)
     }
 
     override fun onDestroyView() {
@@ -209,7 +214,7 @@ class GalleryFragment : Fragment() {
             renderTargets()
             refreshGalleryCount()
             refreshRetryCount()
-            renderRunState(CrawlRunner.state.value)
+            renderRunState(crawlService.state.value)
         }
     }
 
@@ -279,14 +284,14 @@ class GalleryFragment : Fragment() {
     }
 
     /**
-     * 把 [CrawlRunner.state] 画到运行卡上。
+     * 把 [crawlService.state] 画到运行卡上。
      *
      * 空闲时不清空进度块 —— 用最后一份快照显示「这轮抓了多少」，
      * 否则点完“停止”数字会整块消失，用户反而不知道刚才发生了什么。
      */
-    private fun renderRunState(state: CrawlRunner.RunState) {
+    private fun renderRunState(state: CrawlService.RunState) {
         val host = view ?: return
-        val progress = (state as? CrawlRunner.RunState.Running)?.progress
+        val progress = (state as? CrawlService.RunState.Running)?.progress
         setRunningUi(progress != null)
 
         val box = host.findViewById<View>(R.id.crawlProgressBox)
@@ -415,7 +420,7 @@ class GalleryFragment : Fragment() {
         log("==== ${getString(R.string.crawl_retry_running)} ====")
         crawlJob = AppScope.launch {
             try {
-                if (CrawlRunner.runRetryOnly(ctx, ::log) == CrawlRunner.RunResult.Busy) {
+                if (crawlService.runRetryOnly(ctx, ::log) == CrawlService.RunResult.Busy) {
                     log(ctx.getString(R.string.crawl_busy))
                 }
             } catch (e: CancellationException) {
@@ -763,7 +768,7 @@ class GalleryFragment : Fragment() {
                 }
                 if (full) log(getString(R.string.crawl_full_running))
                 // 与首页自动抓图共用一个闸门：拿不到锁立即返回，不排队、不并发写同一目录
-                if (CrawlRunner.runAll(ctx, ::log, onlyUids = uids, full = full) == CrawlRunner.RunResult.Busy) {
+                if (crawlService.runAll(ctx, ::log, onlyUids = uids, full = full) == CrawlService.RunResult.Busy) {
                     log(ctx.getString(R.string.crawl_busy))
                 } else {
                     log("==== 抓取结束 ====")
@@ -886,7 +891,7 @@ class GalleryFragment : Fragment() {
         }
         if (!gate) return
         try {
-            if (CrawlRunner.runSingle(ctx, bid, ::log) == CrawlRunner.RunResult.Busy) {
+            if (crawlService.runSingle(ctx, bid, ::log) == CrawlService.RunResult.Busy) {
                 log(ctx.getString(R.string.crawl_busy))
             }
         } catch (e: CancellationException) {

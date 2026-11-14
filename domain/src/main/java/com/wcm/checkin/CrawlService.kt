@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * - 新增 [requestStop]：停止信号由闸门本身持有，**首页自动触发的抓取也能停**
  *   （旧版只取消当前页面的协程，自动抓取根本停不下来）。
  */
-object CrawlRunner {
+class CrawlService {
 
     sealed interface RunState {
         data object Idle : RunState
