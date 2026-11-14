@@ -1,5 +1,10 @@
 package com.wcm.checkin
 
+import com.wcm.checkin.databinding.FragmentHomeBinding
+import com.wcm.checkin.databinding.ItemAccountBinding
+import com.wcm.checkin.databinding.ItemCookieBinding
+import com.wcm.checkin.databinding.DialogReloginCredentialsBinding
+import com.wcm.checkin.databinding.DialogTopicListBinding
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.app.AlertDialog
@@ -57,6 +62,9 @@ import kotlin.random.Random
 class HomeFragment : Fragment() {
 
     @Inject lateinit var crawlService: CrawlService
+
+    private var _binding: FragmentHomeBinding? = null
+    private val binding get() = _binding!!
 
     /**
      * 签到 / 同步的运行态与日志缓冲。
@@ -194,24 +202,27 @@ class HomeFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = inflater.inflate(R.layout.fragment_home, container, false)
+    ): View {
+        _binding = FragmentHomeBinding.inflate(inflater, container, false)
+        return binding.root
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        view.findViewById<View>(R.id.btnCheckin).setOnClickListener { runAll(false) }
-        view.findViewById<View>(R.id.btnSync).setOnClickListener { syncOnly() }
-        view.findViewById<View>(R.id.btnAdd).setOnClickListener {
+        binding.btnCheckin.setOnClickListener { runAll(false) }
+        binding.btnSync.setOnClickListener { syncOnly() }
+        binding.btnAdd.setOnClickListener {
             startActivity(Intent(requireContext(), LoginWebViewActivity::class.java))
         }
-        view.findViewById<View>(R.id.btnRefreshTopics).setOnClickListener {
+        binding.btnRefreshTopics.setOnClickListener {
             refreshTopics(manual = true)
         }
         // Cookie 卡上的「去设置配置面板」：面板没配时唯一的去处，别再让用户自己找
-        view.findViewById<View>(R.id.tvSyncConfig)?.setOnClickListener {
+        binding.tvSyncConfig.setOnClickListener {
             (activity as? MainActivity)?.selectSettingsTab()
         }
         // Hero 卡整块可点：直接进「超话」页，默认选中待签最多的账号
-        view.findViewById<View>(R.id.heroCard)?.setOnClickListener {
+        binding.heroCard.setOnClickListener {
             val uid = topicStates.entries
                 .filter { it.value.error.isEmpty() && !it.value.loading && it.value.total > it.value.done }
                 .maxByOrNull { it.value.total - it.value.done }?.key
@@ -231,7 +242,7 @@ class HomeFragment : Fragment() {
             cdCollapsedRes = R.string.cd_log_collapsed,
             maxLines = LOG_MAX_LINES,
         )
-        view.findViewById<View>(R.id.logHeader).setOnClickListener {
+        binding.logHeader.setOnClickListener {
             setLogExpanded(!logExpanded)
         }
         // 视图重建时恢复上一次的展开态（默认收起），并把历史日志重新贴上去
@@ -291,6 +302,7 @@ class HomeFragment : Fragment() {
      */
     override fun onDestroyView() {
         panel = null
+        _binding = null
         super.onDestroyView()
     }
 
@@ -353,8 +365,8 @@ class HomeFragment : Fragment() {
 
         // 应用栏（v2.0）：问候语 + 「日期 · 账号数」。
         // 每次 render 都重算，跨天回前台、增删账号都会自动更新。
-        view?.findViewById<TextView>(R.id.tvGreeting)?.text = greeting()
-        view?.findViewById<TextView>(R.id.tvToday)?.text = if (accounts.isEmpty()) {
+        _binding?.tvGreeting?.text = greeting()
+        _binding?.tvToday?.text = if (accounts.isEmpty()) {
             getString(R.string.home_today_no_account_fmt, dateLabel())
         } else {
             getString(R.string.home_today_fmt, dateLabel(), accounts.size)
@@ -362,12 +374,12 @@ class HomeFragment : Fragment() {
 
         // Hero 的两个 pill：账号数、面板状态。用 pill 而不是句子，
         // 是为了让它们在视觉上"可以被扫过"，不占阅读路径。
-        view?.findViewById<TextView>(R.id.tvPillAccounts)?.text =
+        _binding?.tvPillAccounts?.text =
             getString(R.string.home_pill_accounts_fmt, accounts.size)
-        view?.findViewById<TextView>(R.id.tvPillPanel)?.text =
+        _binding?.tvPillPanel?.text =
             getString(if (panelReady) R.string.home_pill_panel_on else R.string.home_pill_panel_off)
 
-        view?.findViewById<TextView>(R.id.tvSummary)?.text = when {
+        _binding?.tvSummary?.text = when {
             accounts.isEmpty() -> getString(R.string.home_summary_empty)
             else -> getString(
                 R.string.home_summary_fmt,
@@ -377,14 +389,14 @@ class HomeFragment : Fragment() {
         }
 
         // 标题带账号数量（原来只有「账号」两个字，还得自己数）
-        view?.findViewById<TextView>(R.id.tvAccountsTitle)?.text =
+        _binding?.tvAccountsTitle?.text =
             if (accounts.isEmpty()) {
                 getString(R.string.accounts_label)
             } else {
                 getString(R.string.accounts_count_fmt, accounts.size)
             }
 
-        val container = view?.findViewById<ViewGroup>(R.id.accountList) ?: return
+        val container = _binding?.accountList ?: return
         container.removeAllViews()
         // Cookie 有效期面板：账号为空时它也要渲染（显示空态并引导去添加账号）
         renderCookieValidity(accounts, panelReady)
@@ -396,23 +408,23 @@ class HomeFragment : Fragment() {
         }
         val inflater = LayoutInflater.from(ctx)
         accounts.forEach { acc ->
-            val row = inflater.inflate(R.layout.item_account, container, false)
-            val avatar = row.findViewById<TextView>(R.id.tvAvatar)
+            val rowBinding = ItemAccountBinding.inflate(inflater, container, false)
+            val avatar = rowBinding.tvAvatar
             avatar.text = avatarInitial(acc)
             paintAvatar(avatar, topicStates[acc.uid])
-            row.findViewById<TextView>(R.id.tvName).text = displayName(acc)
-            row.findViewById<TextView>(R.id.tvUid).text = getString(R.string.home_uid_fmt, acc.uid)
-            bindAccountStatus(row, acc)
+            rowBinding.tvName.text = displayName(acc)
+            rowBinding.tvUid.text = getString(R.string.home_uid_fmt, acc.uid)
+            bindAccountStatus(rowBinding, acc)
             // 整行点按仍然进入超话清单（行为不变）
-            row.setOnClickListener { showTopics(acc.uid) }
-            val more = row.findViewById<View>(R.id.btnAccountMore)
+            rowBinding.root.setOnClickListener { showTopics(acc.uid) }
+            val more = rowBinding.btnAccountMore
             more.setOnClickListener { showAccountMenu(it, acc) }
             // 长按同一入口，习惯长按的用户也不必先去找右上角的点
-            row.setOnLongClickListener {
+            rowBinding.root.setOnLongClickListener {
                 showAccountMenu(more, acc)
                 true
             }
-            container.addView(row)
+            container.addView(rowBinding.root)
         }
         renderTopicProgress()
     }
@@ -430,11 +442,11 @@ class HomeFragment : Fragment() {
      * 还剩几天」，只有 pill 变色时，眼睛会把它当成状态标签跳过；整行红字才会拉住视线。
      */
     private fun renderCookieValidity(accounts: List<AccountStore.Account>, panelReady: Boolean) {
-        val host = view ?: return
-        val pill = host.findViewById<TextView>(R.id.tvSyncPill) ?: return
-        val hint = host.findViewById<TextView>(R.id.tvSyncHint)
-        val list = host.findViewById<LinearLayout>(R.id.cookieList) ?: return
-        val config = host.findViewById<TextView>(R.id.tvSyncConfig)
+        val host = _binding ?: return
+        val pill = host.tvSyncPill
+        val hint = host.tvSyncHint
+        val list = host.cookieList
+        val config = host.tvSyncConfig
 
         hint?.text = getString(
             if (panelReady) R.string.sync_card_hint else R.string.sync_card_hint_off
@@ -491,10 +503,10 @@ class HomeFragment : Fragment() {
 
         val inflater = LayoutInflater.from(requireContext())
         rows.forEach { (acc, life) ->
-            val row = inflater.inflate(R.layout.item_cookie, list, false)
-            val nameView = row.findViewById<TextView>(R.id.tvCookieName)
-            val expiryView = row.findViewById<TextView>(R.id.tvCookieExpiry)
-            val pillView = row.findViewById<TextView>(R.id.tvCookiePill)
+            val rowBinding = ItemCookieBinding.inflate(inflater, list, false)
+            val nameView = rowBinding.tvCookieName
+            val expiryView = rowBinding.tvCookieExpiry
+            val pillView = rowBinding.tvCookiePill
             // 失效 / 临期 / 过期一律红：这三件事的动作都是「马上处理」
             val danger = acc.cookieDead || life.alert
 
@@ -531,7 +543,7 @@ class HomeFragment : Fragment() {
                 else -> getString(R.string.cookie_unsynced) to PillStyle.NEUTRAL
             }
             applyPill(pillView, label, style)
-            list.addView(row)
+            list.addView(rowBinding.root)
         }
     }
 
@@ -667,10 +679,10 @@ class HomeFragment : Fragment() {
         val total = known.sumOf { it.total }
         val done = known.sumOf { it.done }
 
-        val host = view ?: return
-        val ring = host.findViewById<CircularProgressIndicator>(R.id.ringProgress) ?: return
-        val value = host.findViewById<TextView>(R.id.tvRingValue)
-        val pending = host.findViewById<TextView>(R.id.tvPendingMetric)
+        val host = _binding ?: return
+        val ring = host.ringProgress
+        val value = host.tvRingValue
+        val pending = host.tvPendingMetric
 
         if (total <= 0) {
             ring.setProgressCompat(0, true)
@@ -771,14 +783,10 @@ class HomeFragment : Fragment() {
      */
     private fun showReloginDialog(acc: AccountStore.Account) {
         val ctx = requireContext()
-        val view = LayoutInflater.from(ctx).inflate(R.layout.dialog_relogin_credentials, null)
-        val etUser = view.findViewById<com.google.android.material.textfield.TextInputEditText>(
-            R.id.etReloginUser
-        )
-        val etPassword = view.findViewById<com.google.android.material.textfield.TextInputEditText>(
-            R.id.etReloginPassword
-        )
-        val tvStatus = view.findViewById<TextView>(R.id.tvReloginStatus)
+        val dialogBinding = DialogReloginCredentialsBinding.inflate(LayoutInflater.from(ctx))
+        val etUser = dialogBinding.etReloginUser
+        val etPassword = dialogBinding.etReloginPassword
+        val tvStatus = dialogBinding.tvReloginStatus
 
         val hasCredential = CredentialVault.has(ctx, acc.uid)
         val state = AccountStore.reloginState(acc)
@@ -822,7 +830,7 @@ class HomeFragment : Fragment() {
 
         val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.relogin_dialog_title)
-            .setView(view)
+            .setView(dialogBinding.root)
             .setPositiveButton(R.string.relogin_action_save, null)
             .setNegativeButton(android.R.string.cancel, null)
             .setNeutralButton(R.string.relogin_action_delete, null)
@@ -902,22 +910,22 @@ class HomeFragment : Fragment() {
      * 打开 App 自动刷新出来的「已签 7 / 待签 0」不会写它，于是同一行里
      * chip 说签完、文字说「尚未签到」。
      */
-    private fun bindAccountStatus(row: View, acc: AccountStore.Account) {
+    private fun bindAccountStatus(row: ItemAccountBinding, acc: AccountStore.Account) {
         val st = topicStates[acc.uid]
-        val chipRow = row.findViewById<View>(R.id.chipRow)
+        val chipRow = row.chipRow
         // 「已签 / 待签」是**今天**的结论：跨天的快照不参与（否则会把昨天的已签
         // 显示成今天已签，待签数还会变成 0）
         val loaded = st != null && !st.loading && st.error.isEmpty() && st.total > 0 && st.freshToday
         chipRow.visibility = if (loaded) View.VISIBLE else View.GONE
         if (st != null && loaded) {
-            row.findViewById<TextView>(R.id.chipDone).text =
+            row.chipDone.text =
                 getString(R.string.account_chip_done_fmt, st.done)
-            row.findViewById<TextView>(R.id.chipPending).text =
+            row.chipPending.text =
                 getString(R.string.account_chip_pending_fmt, st.total - st.done)
         }
         // 最高超话等级：一眼看出这个号在超话里的分量（没有等级字段的账号直接隐藏）
         val maxLevel = if (loaded) st?.topics?.maxOfOrNull { it.level } ?: 0 else 0
-        val levelChip = row.findViewById<TextView>(R.id.chipLevel)
+        val levelChip = row.chipLevel
         if (maxLevel > 0) {
             levelChip.visibility = View.VISIBLE
             levelChip.text = getString(R.string.account_chip_level_fmt, maxLevel)
@@ -961,7 +969,7 @@ class HomeFragment : Fragment() {
             }
             AccountStatusHead.Head.Idle -> getString(R.string.home_status_idle)
         }
-        row.findViewById<TextView>(R.id.tvStatus).text = buildString {
+        row.tvStatus.text = buildString {
             append(headText)
             append('\n')
             append(note)
@@ -1022,17 +1030,17 @@ class HomeFragment : Fragment() {
      * 所以 render 里也要调一次，按真实状态回填。
      */
     private fun renderRunButtons() {
-        val host = view ?: return
+        val host = _binding ?: return
         val running = busy
         // 两枚按钮各自说自己正在干什么：同步时把「立即签到」改成「正在签到…」会误导
         val syncing = running && busySyncing
-        host.findViewById<MaterialButton>(R.id.btnCheckin)?.apply {
+        host.btnCheckin.apply {
             text = getString(
                 if (running && !syncing) R.string.btn_checkin_running else R.string.btn_checkin
             )
             isEnabled = true
         }
-        host.findViewById<MaterialButton>(R.id.btnSync)?.apply {
+        host.btnSync.apply {
             text = getString(if (syncing) R.string.btn_sync_running else R.string.btn_sync)
             isEnabled = true
         }
@@ -1354,9 +1362,9 @@ class HomeFragment : Fragment() {
         val name = AccountStore.load(ctx).firstOrNull { it.uid == uid }?.let { displayName(it) } ?: uid
         val done = topics.count { it.done }
 
-        val dialogView = LayoutInflater.from(ctx).inflate(R.layout.dialog_topic_list, null)
-        val container = dialogView.findViewById<LinearLayout>(R.id.topicContainer)
-        dialogView.findViewById<TextView>(R.id.tvTopicSummary).text = getString(
+        val dialogBinding = DialogTopicListBinding.inflate(LayoutInflater.from(ctx))
+        val container = dialogBinding.topicContainer
+        dialogBinding.tvTopicSummary.text = getString(
             R.string.home_topic_list_summary, topics.size, done, topics.size - done,
         )
 
@@ -1377,7 +1385,7 @@ class HomeFragment : Fragment() {
 
         val builder = MaterialAlertDialogBuilder(ctx)
             .setTitle(getString(R.string.home_topic_title, name))
-            .setView(dialogView)
+            .setView(dialogBinding.root)
             .setNegativeButton(android.R.string.cancel, null)
             // 弹窗只做「快速补签」；想看等级/详情/全部字段，跳到超话页
             .setNeutralButton(R.string.topic_view_all) { _, _ -> jumpToTopics(uid) }
