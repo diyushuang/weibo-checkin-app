@@ -85,7 +85,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 当前基线（2026-11-14）：
 
 - 315 个 JVM 单测，0 failures
-- `assembleDebug` / `assembleRelease` 通过
+- `assembleDebug` / `assembleRelease` 通过；2026-11-14 `clean` 后四模块全量重建 + 单测 + lint + debug/release 一次通过
 - release APK ≈ 3.63MB（R8 开启前 6.55MB；lint 清理后 3.627MB）
 - `:app:lintDebug` 已在 2026-11-14 跑通（约 40s，**0 warnings / 0 errors**）；
   CI 的 `build-apk.yml` 仍只跑单测 + assembleDebug，paths 已覆盖 `core/`、`data/`、`domain/`。
