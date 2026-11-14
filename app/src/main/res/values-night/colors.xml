@@ -53,5 +53,4 @@
     <color name="level_gold_fg">#F0C674</color>
 
     <!-- 多选遮罩 -->
-    <color name="select_scrim">#99000000</color>
 </resources>

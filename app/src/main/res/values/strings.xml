@@ -94,7 +94,6 @@
     <string name="crawl_need_dir">请先选择相册目录</string>
     <string name="crawl_busy">已有抓取任务在运行，等它结束或先停止</string>
     <string name="crawl_since_btn">起始日期</string>
-    <string name="crawl_since_title">抓取起始日期 · %1$s</string>
     <string name="crawl_since_saved">起始日期 → %1$s</string>
     <string name="crawl_progress_fmt">已覆盖 %1$s ~ %2$s</string>
     <string name="crawl_progress_none">尚未抓取</string>
@@ -148,13 +147,10 @@
     <string name="browse_meta_no_pic">无图</string>
     <!-- 已抓取标记（v0.9.18）：元信息里说「这一帖的可见图里有几张已经在相册里」 -->
     <string name="browse_meta_done_fmt">已抓 %1$d 张</string>
-    <string name="browse_done_badge">已抓取</string>
-    <string name="browse_more_pics_fmt">+%1$d</string>
     <string name="browse_pic_desc_fmt">第 %1$d 张缩略图</string>
     <string name="browse_select_hint">点小图看大图 · 点卡片选图抓取 · 长按勾选整帖</string>
     <string name="browse_select_mode_hint">多选：点按勾选整帖，取消请再点一次</string>
     <string name="browse_selected_fmt">已选 %1$d 帖</string>
-    <string name="browse_download_selected">下载选中</string>
     <string name="browse_download_fmt">下载选中 %1$d 帖</string>
     <string name="browse_exit_select">退出多选</string>
     <string name="browse_done_fmt">抓取完成：新增 %1$d 个文件%2$s</string>
@@ -180,7 +176,6 @@
     <string name="pick_only_this">只下这张</string>
     <string name="pick_close">关闭</string>
     <string name="pick_preview_desc">全屏预览</string>
-    <string name="pick_full_fail">大图加载失败</string>
 
     <!-- 设置页 -->
     <string name="settings_panel_title">面板同步</string>
@@ -205,7 +200,6 @@
     <string name="gallery_browse_title">图库</string>
     <string name="gallery_empty">目录里还没有图片\n先在下方配置目标并开始抓取</string>
     <string name="gallery_refresh">刷新</string>
-    <string name="gallery_item_desc">图片</string>
     <string name="preview_share">分享</string>
     <string name="preview_share_fail">没有可用的分享目标</string>
     <string name="preview_open">系统打开</string>
@@ -275,7 +269,6 @@
     <string name="crawl_add_hint">UID 数字 / 主页链接 / 个性域名</string>
     <string name="crawl_add_example">示例：1234567890 或 https://m.weibo.cn/u/1234567890 或博主个性域名</string>
     <string name="crawl_run_title">抓取运行</string>
-    <string name="crawl_target_more">目标操作</string>
     <string name="gallery_empty_action">去配置抓取目标</string>
     <string name="login_waiting">等待微博登录…</string>
     <!-- 登录轮询的三段状态与结果提示（v0.9.1：从代码里的中文字面量提取，便于统一维护 / 翻译） -->
@@ -287,7 +280,6 @@
     <string name="login_uid_pending">登录态已确认，正在读取账号 UID…</string>
     <string name="login_added_fmt">已添加账号：%1$s</string>
     <string name="login_uid_missing">登录验证成功但未取到 uid，请重试</string>
-    <string name="gallery_gif_badge">GIF</string>
 
     <!-- ===== v0.6 UI 刷新：设置页 ===== -->
     <string name="settings_auto_on_open_desc">打开应用时为全部账号自动签到（6 小时内不重复）</string>
@@ -401,14 +393,10 @@
     <string name="topic_field_entry">字段说明</string>
     <string name="topic_field_body">一、关注超话列表（containerid=100803_-_followsuper）\n· title_sub 超话名称\n· desc1 等级（Lv.N）\n· desc2 次要描述\n· scheme 内含超话 ID（100808 后的 hash）\n· buttons[0].name 签到状态\n· buttons[0].scheme 签到链接\n· cardlistInfo.since_id 翻页游标\n\n二、超话主页（containerid=100808&lt;hash&gt;，点开时才拉）\n· pageInfo.title_top 超话标题\n· pageInfo.desc 简介\n· pageInfo.desc_more 关注数 / 帖子数 / 阅读数\n· pageInfo.portrait_sub_text 头部副文案\n· pageInfo.oid 原始 ID\n\n三、签到响应\n· data.alert_title 签到第 N 名\n· data.alert_subtitle 经验 +X\n· msg 失败原因</string>
 
-    <string name="cd_topic_expand">展开详情</string>
-    <string name="cd_topic_collapse">收起详情</string>
-    <string name="cd_level_badge">超话等级 %1$d</string>
     <string name="cd_topic_more">更多操作</string>
 
     <!-- ===== v0.9.0 图库增强 ===== -->
     <string name="gallery_search_hint">搜索文件名 / 博主</string>
-    <string name="gallery_search_clear">清除搜索</string>
     <string name="gallery_filter_all">全部</string>
     <string name="gallery_filter_still">静图</string>
     <string name="gallery_filter_gif">动图</string>
@@ -421,7 +409,6 @@
     <string name="gallery_group_by_date">按日期</string>
     <string name="gallery_group_by_author">按博主</string>
     <string name="gallery_group_none">不分组</string>
-    <string name="gallery_group_label">分组方式</string>
     <string name="gallery_group_other">更早</string>
     <string name="gallery_group_title_fmt">%1$s · %2$d 张</string>
     <string name="gallery_author_chip_fmt">%1$s · %2$d</string>
@@ -437,7 +424,6 @@
     <string name="gallery_batch_deleted_fmt">已删除 %1$d 张</string>
     <string name="gallery_batch_delete_fail_fmt">%1$d 张删除失败</string>
     <string name="gallery_share_empty">没有选中图片</string>
-    <string name="gallery_cd_check">选择</string>
 
     <!-- ===== v0.9.0 抓取增强 ===== -->
     <string name="crawl_phase_prepare">准备</string>

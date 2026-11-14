@@ -18,16 +18,10 @@
     <dimen name="sp_1">4dp</dimen>
     <dimen name="sp_2">8dp</dimen>
     <dimen name="sp_3">12dp</dimen>
-    <dimen name="sp_4">16dp</dimen>
-    <dimen name="sp_7">32dp</dimen>
 
     <!-- 兼容旧名（v0.x 布局与弹窗仍在用，值对齐新网格） -->
-    <dimen name="space_xxs">2dp</dimen>
-    <dimen name="space_xs">4dp</dimen>
     <dimen name="space_s">8dp</dimen>
     <dimen name="space_m">12dp</dimen>
-    <dimen name="space_l">16dp</dimen>
-    <dimen name="space_xl">20dp</dimen>
 
     <!-- ===== 页面骨架 =====
          手机 16dp 左右留白（参考稿的值）：360dp 屏上有效宽度 328dp，
@@ -41,8 +35,6 @@
     <dimen name="appbar_icon_button">34dp</dimen>
 
     <!-- 底部导航 56dp -->
-    <dimen name="tabbar_icon">18dp</dimen>
-    <dimen name="nav_divider_height">1dp</dimen>
 
     <!-- ===== 卡片 ===== -->
     <dimen name="card_padding">14dp</dimen>
@@ -80,49 +72,34 @@
     <dimen name="pill_height">23dp</dimen>
     <dimen name="pill_height_sm">20dp</dimen>
     <dimen name="pill_padding_horizontal">9dp</dimen>
-    <dimen name="pill_gap">5dp</dimen>
     <!-- 旧 chip 名兼容 -->
 
     <!-- ===== 数据可视化 ===== -->
-    <dimen name="ring_size">88dp</dimen>
-    <dimen name="ring_thickness">8dp</dimen>
 
     <!-- ===== 日志控制台 ===== -->
     <dimen name="log_window_height">200dp</dimen>
     <dimen name="crawl_log_window_height">190dp</dimen>
-    <dimen name="topic_list_height">320dp</dimen>
 
     <!-- ===== 图库网格 ===== -->
     <dimen name="gallery_cell_min_height">96dp</dimen>
-    <dimen name="gallery_gutter">4dp</dimen>
     <dimen name="gallery_cell_radius">12dp</dimen>
-    <dimen name="gallery_gif_badge_padding_horizontal">4dp</dimen>
-    <dimen name="gallery_gif_badge_padding_vertical">1dp</dimen>
 
     <!-- ===== 超话页（v0.9.0） ===== -->
     <!-- 等级徽章：18dp 高 / 最小 30dp 宽，能放下 "Lv.12" 又不喧哗 -->
     <dimen name="topic_badge_height">18dp</dimen>
     <dimen name="topic_badge_min_width">30dp</dimen>
-    <dimen name="topic_selector_height">38dp</dimen>
-    <dimen name="topic_filter_bar_height">44dp</dimen>
     <dimen name="progress_thickness">6dp</dimen>
 
     <!-- ===== 图库浏览增强（v0.9.0） ===== -->
-    <dimen name="gallery_filter_bar_height">40dp</dimen>
-    <dimen name="gallery_search_height">44dp</dimen>
     <dimen name="gallery_group_header_height">30dp</dimen>
     <dimen name="gallery_select_bar_height">56dp</dimen>
-    <dimen name="gallery_check_size">20dp</dimen>
 
     <!-- ===== 浏览博主的小图（v0.9.17） =====
          卡片里的九宫格从「撑满整行的大方格」改成「一排小图」：一格 56dp，
          整张画面按比例缩进去（FIT_CENTER），一眼能看出拍的是什么；点开才是大图。
          56dp 是「小得够安静、又认得出画面」的折中：360dp 屏一行正好 5 格
          （5×56 + 4×4 = 296 ≤ 300 可用宽），320dp 屏自动降成 4 格。 -->
-    <dimen name="browse_thumb_size">56dp</dimen>
-    <dimen name="browse_thumb_radius">6dp</dimen>
     <!-- 小图右下角「已抓取」小勾（v0.9.18）：14dp，够看见又不吃掉画面 -->
-    <dimen name="browse_thumb_badge">14dp</dimen>
 
     <!-- 列表分隔线缩进 -->
 </resources>

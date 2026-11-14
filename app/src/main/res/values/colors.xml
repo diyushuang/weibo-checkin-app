@@ -61,7 +61,6 @@
 
     <!-- 图片占位 / 徽标底衬 -->
     <color name="image_placeholder">#EFF1F4</color>
-    <color name="scrim_image">#99000000</color>
 
     <!-- ===== 8. 超话等级徽章（v0.9.0） =====
          四档分级配色：1-3 中性 / 4-6 蓝 / 7-9 紫 / 10+ 金。
@@ -76,7 +75,6 @@
     <color name="level_gold_fg">#8A5A00</color>
 
     <!-- 多选遮罩（图库批处理） -->
-    <color name="select_scrim">#66000000</color>
 
     <color name="ic_launcher_background">#E0245E</color>
 </resources>
