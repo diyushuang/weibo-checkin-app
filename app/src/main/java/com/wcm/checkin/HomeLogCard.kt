@@ -41,7 +41,13 @@ data class LogCardUi(
 
 /** 首页运行日志卡：收起时一行摘要，展开是固定高度终端窗口。 */
 @Composable
-fun LogCard(state: LogCardUi, onToggle: () -> Unit) {
+fun LogCard(
+    state: LogCardUi,
+    onToggle: () -> Unit,
+    labelRes: Int = R.string.log_label,
+    cdExpandedRes: Int = R.string.cd_log_expanded,
+    cdCollapsedRes: Int = R.string.cd_log_collapsed,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -50,9 +56,7 @@ fun LogCard(state: LogCardUi, onToggle: () -> Unit) {
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            val cd = stringResource(
-                if (state.expanded) R.string.cd_log_expanded else R.string.cd_log_collapsed,
-            )
+            val cd = stringResource(if (state.expanded) cdExpandedRes else cdCollapsedRes)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -61,7 +65,7 @@ fun LogCard(state: LogCardUi, onToggle: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = stringResource(R.string.log_label),
+                    text = stringResource(labelRes),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = colorResource(R.color.ink),

@@ -1,7 +1,5 @@
 package com.wcm.checkin
 
-import com.wcm.checkin.databinding.FragmentGalleryBinding
-import com.wcm.checkin.databinding.ItemCrawlTargetBinding
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.content.Context
@@ -11,9 +9,11 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.PopupMenu
-import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -21,13 +21,12 @@ import com.google.android.material.datepicker.CalendarConstraints
 import com.google.android.material.datepicker.DateValidatorPointBackward
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.materialswitch.MaterialSwitch
-import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -48,8 +47,20 @@ class GalleryFragment : Fragment() {
 
     @Inject lateinit var crawlService: CrawlService
 
-    private var _binding: FragmentGalleryBinding? = null
-    private val binding get() = _binding!!
+    /** Compose 整屏状态；[render] 是唯一写入点。 */
+    private val uiState = MutableStateFlow(GalleryUiState())
+
+    private var dirPath = ""
+    private var dirStatus = ""
+    private var galleryCount = ""
+    private var targetsUi: List<GalleryTargetUi> = emptyList()
+    private var targetsTitle = ""
+    private var retryCount = 0
+    private var retryText = ""
+    private var progressUi: GalleryProgressUi? = null
+    private var running = false
+    private var modeAlbum = true
+    private var autoAfterCheckin = false
 
     /**
      * 运行态与日志放进程级：Fragment 在旋转 / 深浅色切换时会换实例，
@@ -82,9 +93,6 @@ class GalleryFragment : Fragment() {
     }
 
     private var logExpanded = false
-
-    /** 日志面板（与首页共用实现，见 [LogPanel]）。 */
-    private var panel: LogPanel? = null
 
     /** 日志时间戳格式化：`SimpleDateFormat` 非线程安全，按线程各持一份。 */
     private val timeFmt: ThreadLocal<SimpleDateFormat> =
@@ -127,74 +135,55 @@ class GalleryFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View {
-        _binding = FragmentGalleryBinding.inflate(inflater, container, false)
-        return binding.root
+        val view = ComposeView(requireContext())
+        view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        view.setContent {
+            val state by uiState.collectAsState()
+            WcmTheme {
+                GalleryScreen(
+                    state = state,
+                    onAddTarget = { addTarget() },
+                    onPickDir = { pickDir.launch(null) },
+                    onOpenGallery = { openGallery() },
+                    onModeToggle = { album ->
+                        modeAlbum = album
+                        CrawlSettings.setCrawlMode(
+                            requireContext(),
+                            if (album) CrawlSettings.MODE_ALBUM else CrawlSettings.MODE_TIMELINE,
+                        )
+                        render()
+                    },
+                    onAutoToggle = { checked ->
+                        autoAfterCheckin = checked
+                        CrawlSettings.setCrawlAuto(requireContext(), checked)
+                        render()
+                    },
+                    onStart = { start() },
+                    onFull = { confirmFull(emptySet()) },
+                    onStop = {
+                        // 先置停止标志（首页自动触发的抓取没有本页协程可取消），再取消本页任务
+                        crawlService.requestStop()
+                        crawlJob?.cancel()
+                        log("⏹ 正在停止…（进度已保存）")
+                    },
+                    onRetryFailed = { showRetryDialog() },
+                    onBrowse = { openBrowsing() },
+                    onSinglePost = { pickSinglePost() },
+                    onLogToggle = { setLogExpanded(!logExpanded) },
+                    onTargetIncremental = { uid -> startCrawl(setOf(uid), full = false) },
+                    onTargetFull = { uid -> confirmFull(setOf(uid)) },
+                    onTargetSince = { uid -> targetOf(uid)?.let { pickSince(it) } },
+                    onTargetDelete = { uid -> confirmRemoveTarget(uid) },
+                )
+            }
+        }
+        return view
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        binding.btnPickDir.setOnClickListener { pickDir.launch(null) }
-        binding.btnAddTarget.setOnClickListener { addTarget() }
-        binding.btnSinglePost.setOnClickListener { pickSinglePost() }
-        binding.btnBrowseAuthor.setOnClickListener { openBrowsing() }
-        binding.btnCrawlStart.setOnClickListener { start() }
-        // 全量（全部目标）：破坏性不大但请求量明显更大，先确认再跑
-        binding.btnCrawlFull.setOnClickListener { confirmFull(emptySet()) }
-        binding.btnCrawlStop.setOnClickListener {
-            // 先置停止标志（首页自动触发的抓取没有本页协程可取消），再取消本页任务
-            crawlService.requestStop()
-            crawlJob?.cancel()
-            log("⏹ 正在停止…（进度已保存）")
-        }
-        binding.btnRetryFailed.setOnClickListener { showRetryDialog() }
-        binding.tvDirStatus.setOnClickListener { pickDir.launch(null) }
-        binding.btnOpenGallery.setOnClickListener { openGallery() }
-
-        val switchMode = binding.switchCrawlMode
-        val modeLabel = binding.tvCrawlMode
-        // 先渲染初值再挂监听：否则 `isChecked = ...` 会立刻回调一次，把默认值写回存储
-        switchMode.isChecked = CrawlSettings.crawlMode(requireContext()) == CrawlSettings.MODE_ALBUM
-        modeLabel.text = getString(
-            if (switchMode.isChecked) R.string.crawl_mode_album else R.string.crawl_mode_timeline
-        )
-        switchMode.setOnCheckedChangeListener { _, checked ->
-            CrawlSettings.setCrawlMode(
-                requireContext(),
-                if (checked) CrawlSettings.MODE_ALBUM else CrawlSettings.MODE_TIMELINE,
-            )
-            modeLabel.text = getString(
-                if (checked) R.string.crawl_mode_album else R.string.crawl_mode_timeline
-            )
-        }
-        binding.rowCrawlMode.setOnClickListener { switchMode.toggle() }
-
-        val switchAuto = binding.switchCrawlAuto
-        switchAuto.isChecked = CrawlSettings.crawlAuto(requireContext())
-        switchAuto.setOnCheckedChangeListener { _, checked ->
-            CrawlSettings.setCrawlAuto(requireContext(), checked)
-        }
-        // 整行可点切换开关（点标题也算点开关，不必精确点到那个小滑块）
-        binding.rowCrawlAuto.setOnClickListener { switchAuto.toggle() }
-
-        // 日志卡：卡头整行可点，收起时只显示一行摘要
-        panel = LogPanel(
-            host = view,
-            lines = logLines,
-            scrollId = R.id.crawlLogScroll,
-            textId = R.id.crawlLog,
-            summaryId = R.id.tvCrawlLogSummary,
-            toggleId = R.id.btnCrawlLogToggle,
-            headerId = R.id.crawlLogHeader,
-            emptyTextRes = R.string.log_empty,
-            cdExpandedRes = R.string.cd_crawl_log_expanded,
-            cdCollapsedRes = R.string.cd_crawl_log_collapsed,
-            maxLines = LOG_MAX_LINES,
-        )
-        binding.crawlLogHeader.setOnClickListener {
-            setLogExpanded(!logExpanded)
-        }
-        setLogExpanded(logExpanded)
-        panel?.render()
+        modeAlbum = CrawlSettings.crawlMode(requireContext()) == CrawlSettings.MODE_ALBUM
+        autoAfterCheckin = CrawlSettings.crawlAuto(requireContext())
 
         renderDir()
         renderTargets()
@@ -211,8 +200,6 @@ class GalleryFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        panel = null
-        _binding = null
         super.onDestroyView()
     }
 
@@ -229,10 +216,55 @@ class GalleryFragment : Fragment() {
 
     private fun toast(text: String) = toastShort(text)
 
+    private fun render() {
+        if (!isAdded) return
+        val lines: List<String>
+        val summary: String
+        synchronized(logLines) {
+            lines = logLines.toList()
+            summary = logLines.lastOrNull { it.isNotBlank() } ?: getString(R.string.log_empty)
+        }
+        uiState.value = GalleryUiState(
+            galleryCount = galleryCount.ifEmpty { getString(R.string.gallery_count_none) },
+            dirPath = dirPath.ifEmpty { getString(R.string.crawl_dir_empty) },
+            dirStatus = dirStatus,
+            targetsTitle = targetsTitle.ifEmpty { getString(R.string.crawl_targets_title) },
+            targets = targetsUi,
+            targetsEmptyHint = getString(R.string.crawl_target_empty),
+            busy = busy,
+            running = running,
+            modeAlbum = modeAlbum,
+            modeLabel = getString(
+                if (modeAlbum) R.string.crawl_mode_album else R.string.crawl_mode_timeline,
+            ),
+            autoAfterCheckin = autoAfterCheckin,
+            progress = progressUi,
+            retryCount = retryCount,
+            retryText = retryText,
+            log = LogCardUi(expanded = logExpanded, lines = lines, summary = summary),
+        )
+    }
+
+    private fun targetOf(uid: String): CrawlTarget? =
+        CrawlSettings.crawlTargets(requireContext()).firstOrNull { it.uid == uid }
+
+    private fun confirmRemoveTarget(uid: String) {
+        val ctx = requireContext()
+        val target = targetOf(uid) ?: return
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(getString(R.string.crawl_remove_title, target.name))
+            .setMessage(getString(R.string.crawl_remove_msg))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                CrawlSettings.removeCrawlTarget(ctx, uid)
+                renderTargets()
+            }
+            .show()
+    }
+
     private fun renderDir() {
-        // 先取 view：本方法会从 onHiddenChanged / 授权回调里调用，页面可能已在销毁中。
-        val host = _binding ?: return
-        val ctx = host.root.context
+        if (!isAdded || view == null) return
+        val ctx = requireContext()
         val raw = CrawlSettings.crawlTreeUri(ctx)
         val display = if (raw.isEmpty()) getString(R.string.crawl_dir_empty) else try {
             val segments = raw.toUri().pathSegments
@@ -241,41 +273,29 @@ class GalleryFragment : Fragment() {
         } catch (e: Exception) {
             raw
         }
-        host.tvDirPath.text = display
+        dirPath = display
+        dirStatus = ""
+        render()
 
         // 授权自检：被系统回收的授权要让用户当场看见，而不是等抓取全失败才发现。
         //
         // **必须放到后台线程**：check() 会走 ContentProvider 跨进程查询（目录可能是
         // 云盘 / U 盘），而本方法在冷启动时就会执行 —— 在主线程做，慢 provider 会把
         // 首屏直接卡住，严重的会被系统判 ANR。查完再回主线程点亮 pill。
-        val pill = host.tvDirStatus
-        pill.visibility = View.GONE
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             val status = SafAccess.check(ctx, raw)
             val readOnly = status == SafAccess.Status.Ok && raw.isNotEmpty() &&
                 runCatching { SafAccess.readOnly(ctx, raw.toUri()) }.getOrDefault(false)
             withContext(Dispatchers.Main) {
                 if (!isAdded) return@withContext
-                when (status) {
-                    SafAccess.Status.Ok -> {
-                        // 授权在，但有些第三方 provider 只给读权限：能列目录却写不进去
-                        if (readOnly) {
-                            pill.visibility = View.VISIBLE
-                            pill.text = getString(R.string.crawl_saf_readonly)
-                        } else {
-                            pill.visibility = View.GONE
-                        }
-                    }
-                    SafAccess.Status.Missing -> pill.visibility = View.GONE
-                    SafAccess.Status.NoPermission -> {
-                        pill.visibility = View.VISIBLE
-                        pill.text = getString(R.string.crawl_saf_lost_action)
-                    }
-                    is SafAccess.Status.Unreadable -> {
-                        pill.visibility = View.VISIBLE
-                        pill.text = status.message
-                    }
+                dirStatus = when (status) {
+                    SafAccess.Status.Ok ->
+                        if (readOnly) getString(R.string.crawl_saf_readonly) else ""
+                    SafAccess.Status.Missing -> ""
+                    SafAccess.Status.NoPermission -> getString(R.string.crawl_saf_lost_action)
+                    is SafAccess.Status.Unreadable -> status.message
                 }
+                render()
             }
         }
     }
@@ -299,25 +319,18 @@ class GalleryFragment : Fragment() {
      * 否则点完“停止”数字会整块消失，用户反而不知道刚才发生了什么。
      */
     private fun renderRunState(state: CrawlService.RunState) {
-        val host = _binding ?: return
         val progress = (state as? CrawlService.RunState.Running)?.progress
-        setRunningUi(progress != null)
-
-        val box = host.crawlProgressBox
-        val bar = host.prCrawl
-        val step = host.tvCrawlStep
-        val target = host.tvCrawlTarget
+        running = progress != null
 
         val shown = progress ?: lastProgress
         if (shown == null) {
-            box.visibility = View.GONE
+            progressUi = null
+            render()
             return
         }
         if (progress != null) lastProgress = progress
 
-        box.visibility = View.VISIBLE
-        bar.setProgressCompat(if (progress == null) 100 else percent(shown), progress != null)
-        step.text = if (shown.discovered > 0) {
+        val step = if (shown.discovered > 0) {
             getString(R.string.crawl_stage_fmt, phaseLabel(shown.phase), shown.processed, shown.discovered)
         } else {
             phaseLabel(shown.phase)
@@ -325,7 +338,7 @@ class GalleryFragment : Fragment() {
         val counts = getString(
             R.string.crawl_counts_fmt, shown.downloaded, shown.skipped, shown.failedSlots,
         )
-        target.text = if (shown.targetTotal > 0 && shown.targetLabel.isNotEmpty()) {
+        val detail = if (shown.targetTotal > 0 && shown.targetLabel.isNotEmpty()) {
             getString(
                 R.string.crawl_target_step_fmt,
                 shown.targetIndex, shown.targetTotal, shown.targetLabel,
@@ -333,6 +346,12 @@ class GalleryFragment : Fragment() {
         } else {
             counts
         }
+        progressUi = GalleryProgressUi(
+            ratio = if (progress == null) 1f else percent(shown) / 100f,
+            step = step,
+            detail = detail,
+        )
+        render()
     }
 
     // ---------- 失败清单 / 重试（v0.9.0） ----------
@@ -345,14 +364,13 @@ class GalleryFragment : Fragment() {
      * 老版本还没有提示文件时才会解析一次，解析完 `close()` 会把它写出来。
      */
     private fun refreshRetryCount() {
-        // 先取 view 再取 context：本方法会被「抓取结束 / 停止」的收尾块调用，
-        // 那时用户可能已经退出页面，requireContext() 会抛 IllegalStateException。
-        val host = _binding ?: return
-        val ctx = host.root.context
+        if (!isAdded || view == null) return
+        val ctx = requireContext()
         val raw = CrawlSettings.crawlTreeUri(ctx)
-        val row = host.crawlRetryRow
         if (raw.isEmpty()) {
-            row.visibility = View.GONE
+            retryCount = 0
+            retryText = ""
+            render()
             return
         }
         val tag = CrawlIndex.treeTagOf(raw)
@@ -373,10 +391,9 @@ class GalleryFragment : Fragment() {
             }
             withContext(Dispatchers.Main) {
                 if (!isAdded) return@withContext
-                val host2 = _binding ?: return@withContext
-                row.visibility = if (count > 0) View.VISIBLE else View.GONE
-                host2.tvRetryCount.text =
-                    getString(R.string.crawl_retry_title, count)
+                retryCount = count
+                retryText = if (count > 0) getString(R.string.crawl_retry_title, count) else ""
+                render()
             }
         }
     }
@@ -439,8 +456,11 @@ class GalleryFragment : Fragment() {
             } finally {
                 withContext(Dispatchers.Main + NonCancellable) {
                     busy = false
-                    refreshGalleryCount(force = true)
-                    refreshRetryCount()
+                    if (isAdded && view != null) {
+                        render()
+                        refreshGalleryCount(force = true)
+                        refreshRetryCount()
+                    }
                 }
             }
         }
@@ -464,19 +484,19 @@ class GalleryFragment : Fragment() {
 
     /** 图库卡计数：目录不可读/为空显示空态文案。`force` 跳过期缓存（抓取收尾用）。 */
     private fun refreshGalleryCount(force: Boolean = false) {
-        // 与 refreshRetryCount 同理：这是收尾块里会调用的函数，页面可能已经销毁。
-        val host = _binding ?: return
-        val ctx = host.root.context
+        if (!isAdded || view == null) return
+        val ctx = requireContext()
         val raw = CrawlSettings.crawlTreeUri(ctx)
-        val tv = host.tvGalleryCount
         if (raw.isEmpty()) {
-            tv.text = getString(R.string.gallery_count_none)
+            galleryCount = getString(R.string.gallery_count_none)
+            render()
             return
         }
         if (!force && raw == countUri && countValue >= 0 &&
             System.currentTimeMillis() - countAt < COUNT_TTL_MS
         ) {
-            tv.text = countText(countValue)
+            galleryCount = countText(countValue).toString()
+            render()
             return
         }
         val resolver = ctx.contentResolver
@@ -493,86 +513,32 @@ class GalleryFragment : Fragment() {
             }
             withContext(Dispatchers.Main) {
                 if (!isAdded) return@withContext
-                tv.text = countText(count)
+                galleryCount = countText(count).toString()
+                render()
             }
         }
     }
 
     private fun renderTargets() {
+        if (!isAdded || view == null) return
         val ctx = requireContext()
-        val container = _binding?.crawlTargetList ?: return
-        container.removeAllViews()
         val targets = CrawlSettings.crawlTargets(ctx)
         // 标题带数量：不用点进去就知道配了几个目标
-        _binding?.tvTargetsTitle?.text =
-            if (targets.isEmpty()) {
-                getString(R.string.crawl_targets_title)
-            } else {
-                getString(R.string.crawl_targets_count_fmt, targets.size)
-            }
-        if (targets.isEmpty()) {
-            container.addView(buildEmptyHint(getString(R.string.crawl_target_empty)))
-            return
+        targetsTitle = if (targets.isEmpty()) {
+            getString(R.string.crawl_targets_title)
+        } else {
+            getString(R.string.crawl_targets_count_fmt, targets.size)
         }
-        val inflater = LayoutInflater.from(ctx)
         val treeTag = CrawlIndex.treeTagOf(CrawlSettings.crawlTreeUri(ctx))
         val cursors = CrawlSettings.allCursors(ctx, treeTag)
-        targets.forEach { t ->
-            val rowBinding = ItemCrawlTargetBinding.inflate(inflater, container, false)
-            rowBinding.tvTargetName.text = t.name.ifEmpty { "UID ${t.uid}" }
-            rowBinding.tvTargetUid.text = t.uid
-            rowBinding.tvTargetProgress.text =
-                describeProgress(ctx, t, cursors[t.uid], treeTag)
-            val more = rowBinding.btnTargetMore
-            more.setOnClickListener { showTargetMenu(it, t) }
-            // 整行也可点：样式里有 ripple，若不接监听就会变成"有反馈但没反应"的假可点，
-            // 读屏还会把它念成可点击。点整行 = 打开同一个「起始日期 / 移除」菜单。
-            rowBinding.root.setOnClickListener { showTargetMenu(more, t) }
-            container.addView(rowBinding.root)
+        targetsUi = targets.map { t ->
+            GalleryTargetUi(
+                uid = t.uid,
+                name = t.name.ifEmpty { "UID ${t.uid}" },
+                progress = describeProgress(ctx, t, cursors[t.uid], treeTag),
+            )
         }
-    }
-
-    /** 空态提示：套统一文本样式，避免代码里写死字号/颜色。 */
-    private fun buildEmptyHint(text: String): TextView = requireContext().emptyHintView(text)
-
-    /**
-     * 目标行溢出菜单：单博主增量 / 单博主全量 / 起始日期 / 移除。
-     * 原来这些入口以文字按钮常驻在行尾，一行 3 个点击目标极易误触。
-     */
-    private fun showTargetMenu(anchor: View, target: CrawlTarget) {
-        val ctx = requireContext()
-        val popup = PopupMenu(ctx, anchor)
-        popup.menuInflater.inflate(R.menu.item_crawl_target_actions, popup.menu)
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_target_incremental -> {
-                    startCrawl(setOf(target.uid), full = false)
-                    true
-                }
-                R.id.action_target_full -> {
-                    confirmFull(setOf(target.uid))
-                    true
-                }
-                R.id.action_target_since -> {
-                    pickSince(target)
-                    true
-                }
-                R.id.action_target_delete -> {
-                    MaterialAlertDialogBuilder(ctx)
-                        .setTitle(getString(R.string.crawl_remove_title, target.name))
-                        .setMessage(getString(R.string.crawl_remove_msg))
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .setPositiveButton(android.R.string.ok) { _, _ ->
-                            CrawlSettings.removeCrawlTarget(ctx, target.uid)
-                            renderTargets()
-                        }
-                        .show()
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
+        render()
     }
 
     /** 进度行：已覆盖区间 + 起始日期 + 是否到底，让用户看得出「抓到哪天」。 */
@@ -676,33 +642,30 @@ class GalleryFragment : Fragment() {
 
     // ========================= 日志 =========================
 
-    /** 追加一行日志（带时间戳）；实现见 [LogPanel]。 */
+    /** 追加一行日志（带时间戳）；线程可能来自 IO。 */
     private fun log(line: String) {
-        panel?.append(stamp(line))
+        val stamped = stamp(line)
+        val v = view
+        if (v == null) {
+            synchronized(logLines) {
+                logLines.addLast(stamped)
+                while (logLines.size > LOG_MAX_LINES) logLines.removeFirst()
+            }
+            return
+        }
+        v.post {
+            synchronized(logLines) {
+                logLines.addLast(stamped)
+                while (logLines.size > LOG_MAX_LINES) logLines.removeFirst()
+            }
+            render()
+        }
     }
 
     /** 展开 / 收起抓取日志（默认收起，运行时自动展开）。 */
     private fun setLogExpanded(expanded: Boolean) {
         logExpanded = expanded
-        panel?.setExpanded(expanded)
-    }
-
-    /**
-     * 运行态切换：空闲时只显示「开始抓取」，运行中只显示「停止抓取」。
-     *
-     * 两个按钮不再并排常驻 —— 任何时候用户面前只有一个明确的下一步动作，
-     * 也不会出现「开始」灰着但「停止」亮着却不知道该点哪个的犹豫。
-     */
-    private fun setRunningUi(running: Boolean) {
-        val host = _binding ?: return
-        val startButton = host.btnCrawlStart
-        val stopButton = host.btnCrawlStop
-        val fullButton = host.btnCrawlFull
-        startButton?.visibility = if (running) View.GONE else View.VISIBLE
-        stopButton?.visibility = if (running) View.VISIBLE else View.GONE
-        fullButton?.visibility = if (running) View.GONE else View.VISIBLE
-        startButton?.isEnabled = !running
-        host.btnAddTarget.isEnabled = !running
+        render()
     }
 
     private fun start() = startCrawl(emptySet(), full = false)
@@ -759,7 +722,7 @@ class GalleryFragment : Fragment() {
             return
         }
         busy = true
-        setRunningUi(true)
+        render()
         setLogExpanded(true)            // 运行时自动展开日志
         crawlJob = AppScope.launch {
             try {
@@ -791,7 +754,7 @@ class GalleryFragment : Fragment() {
                 withContext(Dispatchers.Main + NonCancellable) {
                     busy = false
                     if (isAdded) {
-                        setRunningUi(false)
+                        render()
                         renderTargets()          // 单博主抓完，目标行的「已覆盖 / 全量页码」要刷新
                         refreshGalleryCount(force = true)
                     }
@@ -893,8 +856,6 @@ class GalleryFragment : Fragment() {
             if (busy) return@withContext false
             busy = true
             setLogExpanded(true)
-            _binding?.btnCrawlStart?.isEnabled = false
-            _binding?.btnSinglePost?.isEnabled = false
             true
         }
         if (!gate) return
@@ -909,9 +870,10 @@ class GalleryFragment : Fragment() {
         } finally {
             withContext(Dispatchers.Main + NonCancellable) {
                 busy = false
-                _binding?.btnCrawlStart?.isEnabled = true
-                _binding?.btnSinglePost?.isEnabled = true
-                refreshGalleryCount(force = true)
+                if (isAdded && view != null) {
+                    render()
+                    refreshGalleryCount(force = true)
+                }
             }
         }
     }
