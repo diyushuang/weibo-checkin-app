@@ -1,5 +1,7 @@
 package com.wcm.checkin
 
+import com.wcm.checkin.databinding.FragmentGalleryBinding
+import com.wcm.checkin.databinding.ItemCrawlTargetBinding
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.content.Context
@@ -45,6 +47,9 @@ import java.util.Locale
 class GalleryFragment : Fragment() {
 
     @Inject lateinit var crawlService: CrawlService
+
+    private var _binding: FragmentGalleryBinding? = null
+    private val binding get() = _binding!!
 
     /**
      * 运行态与日志放进程级：Fragment 在旋转 / 深浅色切换时会换实例，
@@ -121,29 +126,32 @@ class GalleryFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = inflater.inflate(R.layout.fragment_gallery, container, false)
+    ): View {
+        _binding = FragmentGalleryBinding.inflate(inflater, container, false)
+        return binding.root
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        view.findViewById<View>(R.id.btnPickDir).setOnClickListener { pickDir.launch(null) }
-        view.findViewById<View>(R.id.btnAddTarget).setOnClickListener { addTarget() }
-        view.findViewById<View>(R.id.btnSinglePost).setOnClickListener { pickSinglePost() }
-        view.findViewById<View>(R.id.btnBrowseAuthor).setOnClickListener { openBrowsing() }
-        view.findViewById<View>(R.id.btnCrawlStart).setOnClickListener { start() }
+        binding.btnPickDir.setOnClickListener { pickDir.launch(null) }
+        binding.btnAddTarget.setOnClickListener { addTarget() }
+        binding.btnSinglePost.setOnClickListener { pickSinglePost() }
+        binding.btnBrowseAuthor.setOnClickListener { openBrowsing() }
+        binding.btnCrawlStart.setOnClickListener { start() }
         // 全量（全部目标）：破坏性不大但请求量明显更大，先确认再跑
-        view.findViewById<View>(R.id.btnCrawlFull).setOnClickListener { confirmFull(emptySet()) }
-        view.findViewById<View>(R.id.btnCrawlStop).setOnClickListener {
+        binding.btnCrawlFull.setOnClickListener { confirmFull(emptySet()) }
+        binding.btnCrawlStop.setOnClickListener {
             // 先置停止标志（首页自动触发的抓取没有本页协程可取消），再取消本页任务
             crawlService.requestStop()
             crawlJob?.cancel()
             log("⏹ 正在停止…（进度已保存）")
         }
-        view.findViewById<View>(R.id.btnRetryFailed).setOnClickListener { showRetryDialog() }
-        view.findViewById<View>(R.id.tvDirStatus).setOnClickListener { pickDir.launch(null) }
-        view.findViewById<View>(R.id.btnOpenGallery).setOnClickListener { openGallery() }
+        binding.btnRetryFailed.setOnClickListener { showRetryDialog() }
+        binding.tvDirStatus.setOnClickListener { pickDir.launch(null) }
+        binding.btnOpenGallery.setOnClickListener { openGallery() }
 
-        val switchMode = view.findViewById<MaterialSwitch>(R.id.switchCrawlMode)
-        val modeLabel = view.findViewById<TextView>(R.id.tvCrawlMode)
+        val switchMode = binding.switchCrawlMode
+        val modeLabel = binding.tvCrawlMode
         // 先渲染初值再挂监听：否则 `isChecked = ...` 会立刻回调一次，把默认值写回存储
         switchMode.isChecked = CrawlSettings.crawlMode(requireContext()) == CrawlSettings.MODE_ALBUM
         modeLabel.text = getString(
@@ -158,15 +166,15 @@ class GalleryFragment : Fragment() {
                 if (checked) R.string.crawl_mode_album else R.string.crawl_mode_timeline
             )
         }
-        view.findViewById<View>(R.id.rowCrawlMode).setOnClickListener { switchMode.toggle() }
+        binding.rowCrawlMode.setOnClickListener { switchMode.toggle() }
 
-        val switchAuto = view.findViewById<MaterialSwitch>(R.id.switchCrawlAuto)
+        val switchAuto = binding.switchCrawlAuto
         switchAuto.isChecked = CrawlSettings.crawlAuto(requireContext())
         switchAuto.setOnCheckedChangeListener { _, checked ->
             CrawlSettings.setCrawlAuto(requireContext(), checked)
         }
         // 整行可点切换开关（点标题也算点开关，不必精确点到那个小滑块）
-        view.findViewById<View>(R.id.rowCrawlAuto).setOnClickListener { switchAuto.toggle() }
+        binding.rowCrawlAuto.setOnClickListener { switchAuto.toggle() }
 
         // 日志卡：卡头整行可点，收起时只显示一行摘要
         panel = LogPanel(
@@ -182,7 +190,7 @@ class GalleryFragment : Fragment() {
             cdCollapsedRes = R.string.cd_crawl_log_collapsed,
             maxLines = LOG_MAX_LINES,
         )
-        view.findViewById<View>(R.id.crawlLogHeader).setOnClickListener {
+        binding.crawlLogHeader.setOnClickListener {
             setLogExpanded(!logExpanded)
         }
         setLogExpanded(logExpanded)
@@ -204,6 +212,7 @@ class GalleryFragment : Fragment() {
 
     override fun onDestroyView() {
         panel = null
+        _binding = null
         super.onDestroyView()
     }
 
@@ -222,8 +231,8 @@ class GalleryFragment : Fragment() {
 
     private fun renderDir() {
         // 先取 view：本方法会从 onHiddenChanged / 授权回调里调用，页面可能已在销毁中。
-        val host = view ?: return
-        val ctx = host.context
+        val host = _binding ?: return
+        val ctx = host.root.context
         val raw = CrawlSettings.crawlTreeUri(ctx)
         val display = if (raw.isEmpty()) getString(R.string.crawl_dir_empty) else try {
             val segments = raw.toUri().pathSegments
@@ -232,14 +241,14 @@ class GalleryFragment : Fragment() {
         } catch (e: Exception) {
             raw
         }
-        host.findViewById<TextView>(R.id.tvDirPath)?.text = display
+        host.tvDirPath.text = display
 
         // 授权自检：被系统回收的授权要让用户当场看见，而不是等抓取全失败才发现。
         //
         // **必须放到后台线程**：check() 会走 ContentProvider 跨进程查询（目录可能是
         // 云盘 / U 盘），而本方法在冷启动时就会执行 —— 在主线程做，慢 provider 会把
         // 首屏直接卡住，严重的会被系统判 ANR。查完再回主线程点亮 pill。
-        val pill = host.findViewById<TextView>(R.id.tvDirStatus) ?: return
+        val pill = host.tvDirStatus
         pill.visibility = View.GONE
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             val status = SafAccess.check(ctx, raw)
@@ -290,14 +299,14 @@ class GalleryFragment : Fragment() {
      * 否则点完“停止”数字会整块消失，用户反而不知道刚才发生了什么。
      */
     private fun renderRunState(state: CrawlService.RunState) {
-        val host = view ?: return
+        val host = _binding ?: return
         val progress = (state as? CrawlService.RunState.Running)?.progress
         setRunningUi(progress != null)
 
-        val box = host.findViewById<View>(R.id.crawlProgressBox)
-        val bar = host.findViewById<LinearProgressIndicator>(R.id.prCrawl)
-        val step = host.findViewById<TextView>(R.id.tvCrawlStep)
-        val target = host.findViewById<TextView>(R.id.tvCrawlTarget)
+        val box = host.crawlProgressBox
+        val bar = host.prCrawl
+        val step = host.tvCrawlStep
+        val target = host.tvCrawlTarget
 
         val shown = progress ?: lastProgress
         if (shown == null) {
@@ -338,10 +347,10 @@ class GalleryFragment : Fragment() {
     private fun refreshRetryCount() {
         // 先取 view 再取 context：本方法会被「抓取结束 / 停止」的收尾块调用，
         // 那时用户可能已经退出页面，requireContext() 会抛 IllegalStateException。
-        val host = view ?: return
-        val ctx = host.context
+        val host = _binding ?: return
+        val ctx = host.root.context
         val raw = CrawlSettings.crawlTreeUri(ctx)
-        val row = host.findViewById<View>(R.id.crawlRetryRow) ?: return
+        val row = host.crawlRetryRow
         if (raw.isEmpty()) {
             row.visibility = View.GONE
             return
@@ -364,9 +373,9 @@ class GalleryFragment : Fragment() {
             }
             withContext(Dispatchers.Main) {
                 if (!isAdded) return@withContext
-                val host2 = view ?: return@withContext
+                val host2 = _binding ?: return@withContext
                 row.visibility = if (count > 0) View.VISIBLE else View.GONE
-                host2.findViewById<TextView>(R.id.tvRetryCount)?.text =
+                host2.tvRetryCount.text =
                     getString(R.string.crawl_retry_title, count)
             }
         }
@@ -456,10 +465,10 @@ class GalleryFragment : Fragment() {
     /** 图库卡计数：目录不可读/为空显示空态文案。`force` 跳过期缓存（抓取收尾用）。 */
     private fun refreshGalleryCount(force: Boolean = false) {
         // 与 refreshRetryCount 同理：这是收尾块里会调用的函数，页面可能已经销毁。
-        val host = view ?: return
-        val ctx = host.context
+        val host = _binding ?: return
+        val ctx = host.root.context
         val raw = CrawlSettings.crawlTreeUri(ctx)
-        val tv = host.findViewById<TextView>(R.id.tvGalleryCount) ?: return
+        val tv = host.tvGalleryCount
         if (raw.isEmpty()) {
             tv.text = getString(R.string.gallery_count_none)
             return
@@ -491,11 +500,11 @@ class GalleryFragment : Fragment() {
 
     private fun renderTargets() {
         val ctx = requireContext()
-        val container = view?.findViewById<ViewGroup>(R.id.crawlTargetList) ?: return
+        val container = _binding?.crawlTargetList ?: return
         container.removeAllViews()
         val targets = CrawlSettings.crawlTargets(ctx)
         // 标题带数量：不用点进去就知道配了几个目标
-        view?.findViewById<TextView>(R.id.tvTargetsTitle)?.text =
+        _binding?.tvTargetsTitle?.text =
             if (targets.isEmpty()) {
                 getString(R.string.crawl_targets_title)
             } else {
@@ -509,18 +518,17 @@ class GalleryFragment : Fragment() {
         val treeTag = CrawlIndex.treeTagOf(CrawlSettings.crawlTreeUri(ctx))
         val cursors = CrawlSettings.allCursors(ctx, treeTag)
         targets.forEach { t ->
-            val row = inflater.inflate(R.layout.item_crawl_target, container, false)
-            row.findViewById<TextView>(R.id.tvTargetName).text =
-                t.name.ifEmpty { "UID ${t.uid}" }
-            row.findViewById<TextView>(R.id.tvTargetUid).text = t.uid
-            row.findViewById<TextView>(R.id.tvTargetProgress).text =
+            val rowBinding = ItemCrawlTargetBinding.inflate(inflater, container, false)
+            rowBinding.tvTargetName.text = t.name.ifEmpty { "UID ${t.uid}" }
+            rowBinding.tvTargetUid.text = t.uid
+            rowBinding.tvTargetProgress.text =
                 describeProgress(ctx, t, cursors[t.uid], treeTag)
-            val more = row.findViewById<View>(R.id.btnTargetMore)
+            val more = rowBinding.btnTargetMore
             more.setOnClickListener { showTargetMenu(it, t) }
             // 整行也可点：样式里有 ripple，若不接监听就会变成"有反馈但没反应"的假可点，
             // 读屏还会把它念成可点击。点整行 = 打开同一个「起始日期 / 移除」菜单。
-            row.setOnClickListener { showTargetMenu(more, t) }
-            container.addView(row)
+            rowBinding.root.setOnClickListener { showTargetMenu(more, t) }
+            container.addView(rowBinding.root)
         }
     }
 
@@ -686,15 +694,15 @@ class GalleryFragment : Fragment() {
      * 也不会出现「开始」灰着但「停止」亮着却不知道该点哪个的犹豫。
      */
     private fun setRunningUi(running: Boolean) {
-        val host = view ?: return
-        val startButton = host.findViewById<View>(R.id.btnCrawlStart)
-        val stopButton = host.findViewById<View>(R.id.btnCrawlStop)
-        val fullButton = host.findViewById<View>(R.id.btnCrawlFull)
+        val host = _binding ?: return
+        val startButton = host.btnCrawlStart
+        val stopButton = host.btnCrawlStop
+        val fullButton = host.btnCrawlFull
         startButton?.visibility = if (running) View.GONE else View.VISIBLE
         stopButton?.visibility = if (running) View.VISIBLE else View.GONE
         fullButton?.visibility = if (running) View.GONE else View.VISIBLE
         startButton?.isEnabled = !running
-        host.findViewById<View>(R.id.btnAddTarget)?.isEnabled = !running
+        host.btnAddTarget.isEnabled = !running
     }
 
     private fun start() = startCrawl(emptySet(), full = false)
@@ -885,8 +893,8 @@ class GalleryFragment : Fragment() {
             if (busy) return@withContext false
             busy = true
             setLogExpanded(true)
-            view?.findViewById<View>(R.id.btnCrawlStart)?.isEnabled = false
-            view?.findViewById<View>(R.id.btnSinglePost)?.isEnabled = false
+            _binding?.btnCrawlStart?.isEnabled = false
+            _binding?.btnSinglePost?.isEnabled = false
             true
         }
         if (!gate) return
@@ -901,8 +909,8 @@ class GalleryFragment : Fragment() {
         } finally {
             withContext(Dispatchers.Main + NonCancellable) {
                 busy = false
-                view?.findViewById<View>(R.id.btnCrawlStart)?.isEnabled = true
-                view?.findViewById<View>(R.id.btnSinglePost)?.isEnabled = true
+                _binding?.btnCrawlStart?.isEnabled = true
+                _binding?.btnSinglePost?.isEnabled = true
                 refreshGalleryCount(force = true)
             }
         }

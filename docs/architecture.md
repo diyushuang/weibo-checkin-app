@@ -94,7 +94,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 - **抓取单闸门类化**：`CrawlRunner` object → `CrawlService`，由 Hilt `@Singleton` 提供
 - **Compose 试点**：设置页改为 ComposeView + `SettingsViewModel`，新增 `WcmTheme`
   （Material3；Android 12+ 跟随壁纸取色，低版本对齐 `colors.xml`）
-- ViewBinding：设置页/主壳/预览/登录/选图/浏览/图库浏览/超话页已替换；首页/图库页待迁移
+- ViewBinding：设置页/主壳/预览/登录/选图/浏览/图库浏览/超话/图库页已替换；首页待迁移
 
 待办（按建议顺序）：
 
