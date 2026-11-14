@@ -7,7 +7,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.fragment.app.viewModels
-import com.wcm.checkin.databinding.ItemAccountBinding
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.app.AlertDialog
