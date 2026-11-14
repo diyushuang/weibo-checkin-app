@@ -102,9 +102,22 @@ android {
             signingConfigs.findByName("wcm")?.let { signingConfig = it }
         }
         release {
-            isMinifyEnabled = false
+            // Phase 0：先单独验证 R8 / 资源收缩，再引入 Compose。
+            // 当前依赖（OkHttp / WorkManager / AndroidX）均自带 consumer rules，
+            // 项目无反射、无 getIdentifier、无动态资源查找。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             signingConfigs.findByName("wcm")?.let { signingConfig = it }
         }
+    }
+    buildFeatures {
+        // 编译期生成 ViewBinding，后续逐屏替换手写 findViewById。
+        viewBinding = true
+        buildConfig = true
     }
     compileOptions {
         // java.time（LocalDate/Instant/ZoneOffset）在 API < 26 上由 desugar 提供
