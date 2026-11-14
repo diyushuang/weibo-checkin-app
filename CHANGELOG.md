@@ -7,6 +7,27 @@
 
 ---
 
+## [Unreleased] — 架构现代化（行为不变）
+
+### 工程
+
+- **4 个 Gradle 模块**：`:app`（UI/Worker）、`:domain`（签到/抓取/保活/重登服务）、
+  `:data`（微博/面板网络、SharedPreferences、NDJSON 索引、SAF、Keystore）、
+  `:core`（模型与纯算法、应用级协程）。依赖方向 `app -> domain -> data -> core`。
+- **拆分大文件**：`WeiboApi`（1114 行）→ Http/Auth/Topic/Post/ImageUrl；
+  `Crawler`（1681 行）→ CrawlEngine/CrawlSaver/PostAssets/Crawler（768 行）；
+  `AccountStore`（933 行）→ 账号表 + PanelSettings + CrawlSettings。
+- **前后台共用服务**：签到编排从 HomeFragment 抽到 `CheckinService`；
+  探活/补昵称/面板同步从 HomeFragment 与 Worker 收敛到 `AccountMaintenanceService`。
+- **Hilt + HiltWorkerFactory**：`@HiltAndroidApp`、`@HiltWorker`，关闭 WorkManager 默认初始化。
+- **release 开启 R8/资源收缩**：APK 6.55MB → 2.87MB。
+- **数据零迁移**：SharedPreferences 仍是 `wcm`，索引/游标/keystore/签名格式不变。
+- 验证：312 个 JVM 单测 / 0 failures；`assembleDebug` / `assembleRelease` 通过。
+
+详见 [`docs/architecture.md`](docs/architecture.md)。
+
+---
+
 ## [0.9.18] - 2026-11-14 — 预览时标出「这张已经抓过」
 
 ### 新增：浏览页小图 / 大图 / 选图页统一显示「已抓取」

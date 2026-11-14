@@ -245,6 +245,12 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
 
 ## 结构
 
+> 架构现代化（2026-11）后为 4 个 Gradle 模块：`:app`（UI/Worker）、`:domain`（签到/抓取服务）、
+> `:data`（网络/存储）、`:core`（模型/纯算法/应用级协程）。依赖方向
+> `app -> domain -> data -> core`；包名暂时都保持 `com.wcm.checkin`，模块边界由 Gradle 依赖强制。
+> 分层职责、状态流、Hilt 配置与迁移待办见 [`docs/architecture.md`](docs/architecture.md)。
+> 下面保留 app 模块内的文件清单，便于按文件名查找。
+
 ```
 微博签到app/
 ├── settings.gradle.kts      # rootProject.name = "wcm-checkin"，include(":app")
