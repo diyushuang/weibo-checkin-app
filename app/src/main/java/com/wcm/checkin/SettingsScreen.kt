@@ -113,6 +113,7 @@ fun SettingsScreen(
                 text = stringResource(R.string.page_settings_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
                 text = stringResource(R.string.page_settings_subtitle),
