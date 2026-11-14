@@ -1,6 +1,10 @@
 package com.wcm.checkin
 
 import com.wcm.checkin.databinding.FragmentHomeBinding
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.fragment.app.viewModels
 import com.wcm.checkin.databinding.ItemAccountBinding
 import com.wcm.checkin.databinding.ItemCookieBinding
@@ -65,6 +69,9 @@ class HomeFragment : Fragment() {
     @Inject lateinit var crawlService: CrawlService
 
     private val viewModel: HomeViewModel by viewModels()
+
+    /** Hero 卡（Compose）的渲染状态；每次 render 重建。 */
+    private val heroState = MutableStateFlow(HomeHeroUiState())
 
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
@@ -157,12 +164,26 @@ class HomeFragment : Fragment() {
         binding.tvSyncConfig.setOnClickListener {
             (activity as? MainActivity)?.selectSettingsTab()
         }
-        // Hero 卡整块可点：直接进「超话」页，默认选中待签最多的账号
-        binding.heroCard.setOnClickListener {
-            val uid = topicStates.entries
-                .filter { it.value.error.isEmpty() && !it.value.loading && it.value.total > it.value.done }
-                .maxByOrNull { it.value.total - it.value.done }?.key
-            jumpToTopics(uid)
+        // Hero 卡（Compose）：整块可点，直接进「超话」页并选中待签最多的账号
+        binding.heroCompose.setViewCompositionStrategy(
+            ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
+        )
+        binding.heroCompose.setContent {
+            val hero by heroState.collectAsState()
+            WcmTheme {
+                HomeHeroCard(
+                    state = hero,
+                    onClick = {
+                        val uid = topicStates.entries
+                            .filter {
+                                it.value.error.isEmpty() && !it.value.loading &&
+                                    it.value.total > it.value.done
+                            }
+                            .maxByOrNull { it.value.total - it.value.done }?.key
+                        jumpToTopics(uid)
+                    },
+                )
+            }
         }
         // 日志卡：卡头整行可点，收起时只显示一行摘要
         panel = LogPanel(
@@ -308,22 +329,6 @@ class HomeFragment : Fragment() {
             getString(R.string.home_today_fmt, dateLabel(), accounts.size)
         }
 
-        // Hero 的两个 pill：账号数、面板状态。用 pill 而不是句子，
-        // 是为了让它们在视觉上"可以被扫过"，不占阅读路径。
-        _binding?.tvPillAccounts?.text =
-            getString(R.string.home_pill_accounts_fmt, accounts.size)
-        _binding?.tvPillPanel?.text =
-            getString(if (panelReady) R.string.home_pill_panel_on else R.string.home_pill_panel_off)
-
-        _binding?.tvSummary?.text = when {
-            accounts.isEmpty() -> getString(R.string.home_summary_empty)
-            else -> getString(
-                R.string.home_summary_fmt,
-                accounts.size,
-                if (panelReady) getString(R.string.home_panel_ok) else getString(R.string.home_panel_off),
-            )
-        }
-
         // 标题带账号数量（原来只有「账号」两个字，还得自己数）
         _binding?.tvAccountsTitle?.text =
             if (accounts.isEmpty()) {
@@ -339,7 +344,7 @@ class HomeFragment : Fragment() {
         if (accounts.isEmpty()) {
             container.addView(requireContext().emptyHintView(getString(R.string.home_account_empty)))
             // 空账号时进度环也要回到占位态，否则会留着上一次的百分比
-            renderTopicProgress()
+            renderTopicProgress(accounts, panelReady)
             return
         }
         val inflater = LayoutInflater.from(ctx)
@@ -362,7 +367,7 @@ class HomeFragment : Fragment() {
             }
             container.addView(rowBinding.root)
         }
-        renderTopicProgress()
+        renderTopicProgress(accounts, panelReady)
     }
 
     // ========================= Cookie 有效期面板 =========================
@@ -606,7 +611,7 @@ class HomeFragment : Fragment() {
      * 只统计**状态已知**的账号（加载中或取失败的不计入），否则分母会在刷新过程中忽大忽小。
      * 一个都没拿到时显示占位值 —— 宁可显示「—」，也不显示一个假 0%。
      */
-    private fun renderTopicProgress() {
+    private fun renderTopicProgress(accounts: List<AccountStore.Account>, panelReady: Boolean) {
         // 只统计**今天**取得的状态：跨天快照里的「已签」是昨天的结论，算进来会
         // 让进度环与待签角标都失真（最坏情况是待签 0，看起来"今天已经全签完了"）
         val known = topicStates.values.filter {
@@ -614,24 +619,31 @@ class HomeFragment : Fragment() {
         }
         val total = known.sumOf { it.total }
         val done = known.sumOf { it.done }
-
-        val host = _binding ?: return
-        val ring = host.ringProgress
-        val value = host.tvRingValue
-        val pending = host.tvPendingMetric
-
-        if (total <= 0) {
-            ring.setProgressCompat(0, true)
-            value.text = getString(R.string.home_ring_value_empty)
-            pending.text = getString(R.string.home_metric_empty)
-            (activity as? MainActivity)?.setTopicBadge(null)
-            return
+        val zero = total <= 0
+        val summary = if (accounts.isEmpty()) {
+            getString(R.string.home_summary_empty)
+        } else {
+            getString(
+                R.string.home_summary_fmt,
+                accounts.size,
+                if (panelReady) getString(R.string.home_panel_ok)
+                else getString(R.string.home_panel_off),
+            )
         }
-        ring.setProgressCompat(done * 100 / total, true)
-        value.text = getString(R.string.home_ring_value_fmt, done, total)
-        pending.text = (total - done).toString()
+        heroState.value = HomeHeroUiState(
+            ringValue = if (zero) getString(R.string.home_ring_value_empty)
+            else getString(R.string.home_ring_value_fmt, done, total),
+            pendingValue = if (zero) getString(R.string.home_metric_empty)
+            else (total - done).toString(),
+            pillAccounts = getString(R.string.home_pill_accounts_fmt, accounts.size),
+            pillPanel = getString(
+                if (panelReady) R.string.home_pill_panel_on else R.string.home_pill_panel_off,
+            ),
+            summary = summary,
+            progress = if (zero) 0f else done.toFloat() / total,
+        )
         // 底栏「超话」上的待签角标：不进那一页也能看到还有多少没签
-        (activity as? MainActivity)?.setTopicBadge(total - done)
+        (activity as? MainActivity)?.setTopicBadge(if (zero) null else total - done)
     }
 
     /**
