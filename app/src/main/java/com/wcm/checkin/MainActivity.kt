@@ -61,6 +61,7 @@ private const val ROUTE_GALLERY = "gallery"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_BROWSING = "browsing"
 private const val ROUTE_POST_PICK = "post_pick"
+private const val ROUTE_REMOTE_PREVIEW = "remote_preview"
 
 /**
  * 单 Activity + Navigation Compose 壳：四个 Tab 都是纯 Compose 目的地。
@@ -240,7 +241,11 @@ private fun AppShell(
                                 is BrowsingEvent.OpenPostPick ->
                                     nav.navigate("$ROUTE_POST_PICK?bid=${Uri.encode(event.bid)}")
                                 is BrowsingEvent.OpenRemotePreview ->
-                                    RemotePreviewActivity.start(context, event.urls, event.index)
+                                    nav.navigate(
+                                        "$ROUTE_REMOTE_PREVIEW?urls=" +
+                                            "${Uri.encode(event.urls.joinToString("\n"))}" +
+                                            "&index=${event.index}",
+                                    )
                             }
                         }
                     }
@@ -306,6 +311,41 @@ private fun AppShell(
                             onDismiss = { fullPreview = null },
                         )
                     }
+                }
+                composable(
+                    route = "$ROUTE_REMOTE_PREVIEW?urls={urls}&index={index}",
+                    arguments = listOf(
+                        navArgument("urls") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                        navArgument("index") {
+                            type = NavType.StringType
+                            defaultValue = "0"
+                        },
+                    ),
+                ) { entry ->
+                    val vm: RemotePreviewViewModel = hiltViewModel()
+                    val state by vm.state.collectAsState()
+                    val urls = Uri.decode(entry.arguments?.getString("urls").orEmpty())
+                        .split("\n")
+                        .filter { it.isNotEmpty() }
+                    val index = entry.arguments?.getString("index")?.toIntOrNull() ?: 0
+                    LaunchedEffect(Unit) { vm.start(urls, index) }
+                    LaunchedEffect(vm) {
+                        vm.events.collect { event ->
+                            when (event) {
+                                is RemotePreviewEvent.Toast ->
+                                    Toast.makeText(context, event.text, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    RemotePreviewScreen(
+                        state = state,
+                        isDoneAt = vm::isDone,
+                        loadPage = vm::loadPage,
+                        onPageChanged = vm::onPageChanged,
+                    )
                 }
                 composable(ROUTE_SETTINGS) {
                     SettingsTab(viewModel = settingsViewModel)
