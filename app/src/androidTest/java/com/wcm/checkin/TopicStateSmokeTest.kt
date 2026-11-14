@@ -31,6 +31,8 @@ class TopicStateSmokeTest {
         val oldAuto = PanelSettings.autoOnOpen(ctx)
         val now = System.currentTimeMillis()
         try {
+            // 关掉打开即签到：否则后台签到收尾的 mergeSave 会在测试恢复账号表后
+            // 把假账号写回去，污染后续测试与真机数据。
             PanelSettings.setAutoOnOpen(ctx, false)
             AccountStore.save(
                 ctx,
