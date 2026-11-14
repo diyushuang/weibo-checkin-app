@@ -17,23 +17,23 @@ class HomeViewModelTest {
 
     @Test
     fun setTopicStateReplacesSnapshotInsteadOfMutatingOldOne() {
-        val vm = HomeViewModel()
-        assertTrue(vm.topicStates.value.isEmpty())
+        val vm = HomeTopicStates()
+        assertTrue(vm.states.value.isEmpty())
 
-        vm.setTopicState(
+        vm.set(
             "u1",
             TopicState(
                 topics = listOf(topic("a", true), topic("b", false)),
                 atMs = 1L,
             ),
         )
-        val first = vm.topicStates.value
+        val first = vm.states.value
         assertEquals(1, first.size)
         assertEquals(2, first.getValue("u1").total)
         assertEquals(1, first.getValue("u1").done)
 
-        vm.setTopicState("u2", TopicState())
-        val second = vm.topicStates.value
+        vm.set("u2", TopicState())
+        val second = vm.states.value
 
         // 旧快照必须保持不变：UI 线程可能正在遍历它
         assertNotSame(first, second)
@@ -44,13 +44,13 @@ class HomeViewModelTest {
 
     @Test
     fun removeTopicStateOnlyRemovesTargetUid() {
-        val vm = HomeViewModel()
-        vm.setTopicState("u1", TopicState(topics = listOf(topic("a", false))))
-        vm.setTopicState("u2", TopicState(topics = listOf(topic("b", true))))
+        val vm = HomeTopicStates()
+        vm.set("u1", TopicState(topics = listOf(topic("a", false))))
+        vm.set("u2", TopicState(topics = listOf(topic("b", true))))
 
-        vm.removeTopicState("u1")
+        vm.remove("u1")
 
-        val state = vm.topicStates.value
+        val state = vm.states.value
         assertFalse(state.containsKey("u1"))
         assertTrue(state.containsKey("u2"))
         assertEquals(1, state.getValue("u2").total)
@@ -58,7 +58,7 @@ class HomeViewModelTest {
 
     @Test
     fun missingUidReadsAsNull() {
-        val vm = HomeViewModel()
-        assertNull(vm.topicStates.value["nope"])
+        val vm = HomeTopicStates()
+        assertNull(vm.states.value["nope"])
     }
 }
