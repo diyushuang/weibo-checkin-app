@@ -98,9 +98,10 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 `app/src/androidTest/.../AppSmokeTest.kt`（UiAutomator）覆盖：
 - 冷启动 + 首页渲染；
 - 通过 `MainActivity.selectSettingsTab()` 打开设置页，断言面板同步/行为/关于；
+- Compose 壳导航：首页→超话→图片→浏览博主 route→返回图片，断言各页关键文案；
 - 切换「打开 App 即自动签到」，断言 `shared_prefs/wcm.xml` 持久化并恢复原值。
 
-运行：`./gradlew :app:connectedDebugAndroidTest`（需要设备/模拟器；CI 未接入 emulator）。
+运行：`./gradlew :app:connectedDebugAndroidTest`（3 tests，需要设备/模拟器；CI 未接入 emulator）。
 
 ### 运行时验证（2026-11-14，Android 14 模拟器 `see-audit`）
 
