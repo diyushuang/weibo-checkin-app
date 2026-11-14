@@ -6,15 +6,17 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import com.google.android.material.materialswitch.MaterialSwitch
+import com.wcm.checkin.databinding.FragmentSettingsBinding
 
 /** 设置页：面板同步配置、行为开关、关于。 */
 class SettingsFragment : Fragment() {
+
+    private var _binding: FragmentSettingsBinding? = null
+    private val binding get() = _binding!!
 
     /**
      * Android 17（API 37）起，访问局域网默认被系统阻断，需要这个运行时权限
@@ -34,14 +36,17 @@ class SettingsFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = inflater.inflate(R.layout.fragment_settings, container, false)
+    ): View {
+        _binding = FragmentSettingsBinding.inflate(inflater, container, false)
+        return binding.root
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val ctx = requireContext()
 
-        val etUrl = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etPanelUrl)
-        val etToken = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etPanelToken)
+        val etUrl = binding.etPanelUrl
+        val etToken = binding.etPanelToken
         etUrl.setText(PanelSettings.panelUrl(ctx))
         etToken.setText(PanelSettings.panelToken(ctx))
 
@@ -52,7 +57,7 @@ class SettingsFragment : Fragment() {
             ?.let { runCatching { PanelUrl.parse(it) }.getOrNull() }
             ?.let { ensureLocalNetworkPermission(it) }
 
-        view.findViewById<View>(R.id.btnSavePanel).setOnClickListener {
+        binding.btnSavePanel.setOnClickListener {
             val raw = etUrl.text?.toString()?.trim() ?: ""
             // token 也要 trim：从剪贴板粘贴常带尾部换行，原样存进去每次同步都 401
             val token = etToken.text?.toString()?.trim() ?: ""
@@ -78,35 +83,39 @@ class SettingsFragment : Fragment() {
             ensureLocalNetworkPermission(parsed)
         }
 
-        val switchAuto = view.findViewById<MaterialSwitch>(R.id.switchAutoOnOpen)
+        val switchAuto = binding.switchAutoOnOpen
         switchAuto.isChecked = PanelSettings.autoOnOpen(ctx)
         switchAuto.setOnCheckedChangeListener { _, checked ->
             PanelSettings.setAutoOnOpen(ctx, checked)
         }
         // 整行可点：点标题/说明也能切换，不必精确点到那个小滑块
-        view.findViewById<View>(R.id.rowAutoOnOpen).setOnClickListener { switchAuto.toggle() }
+        binding.rowAutoOnOpen.setOnClickListener { switchAuto.toggle() }
 
-        val switchGif = view.findViewById<MaterialSwitch>(R.id.switchCrawlGif)
+        val switchGif = binding.switchCrawlGif
         switchGif.isChecked = CrawlSettings.crawlGif(ctx)
         switchGif.setOnCheckedChangeListener { _, checked ->
             CrawlSettings.setCrawlGif(ctx, checked)
         }
-        view.findViewById<View>(R.id.rowCrawlGif).setOnClickListener { switchGif.toggle() }
+        binding.rowCrawlGif.setOnClickListener { switchGif.toggle() }
 
-        val switchRelogin = view.findViewById<MaterialSwitch>(R.id.switchAutoRelogin)
+        val switchRelogin = binding.switchAutoRelogin
         switchRelogin.isChecked = AccountStore.autoReloginEnabled(ctx)
         switchRelogin.setOnCheckedChangeListener { _, checked ->
             AccountStore.setAutoReloginEnabled(ctx, checked)
         }
-        view.findViewById<View>(R.id.rowAutoRelogin).setOnClickListener { switchRelogin.toggle() }
+        binding.rowAutoRelogin.setOnClickListener { switchRelogin.toggle() }
 
         val version = try {
             ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
         } catch (e: Exception) {
             "?"
         }
-        view.findViewById<TextView>(R.id.tvAbout).text =
-            getString(R.string.settings_about_body, version)
+        binding.tvAbout.text = getString(R.string.settings_about_body, version)
+    }
+
+    override fun onDestroyView() {
+        _binding = null
+        super.onDestroyView()
     }
 
     /**

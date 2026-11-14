@@ -12,6 +12,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.wcm.checkin.databinding.ActivityMainBinding
 
 /**
  * 单 Activity 壳：底部导航（首页 / 图片 / 设置），Material 3。
@@ -34,6 +35,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gallery: GalleryFragment
     private lateinit var settings: SettingsFragment
 
+    private lateinit var binding: ActivityMainBinding
+
     /** 键盘是否正把底栏顶掉（避免每一帧 insets 回调都重放动画）。 */
     private var bottomBarHidden = false
 
@@ -45,7 +48,8 @@ class MainActivity : AppCompatActivity() {
         // 之后所有让位都由下面的 insets 监听精确控制。
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
         // 后台保活是增值能力：WorkManager 初始化会打开本地数据库，万一失败
         // （数据库损坏 / 系统限制），不该连带首页一起起不来。
@@ -53,7 +57,7 @@ class MainActivity : AppCompatActivity() {
 
         restoreFragments()
 
-        val nav = findViewById<BottomNavigationView>(R.id.bottomNav)
+        val nav = binding.bottomNav
         nav.setOnItemSelectedListener { item ->
             val target = when (item.itemId) {
                 R.id.nav_topics -> topics
@@ -124,12 +128,12 @@ class MainActivity : AppCompatActivity() {
      */
     fun selectTopicTab(uid: String) {
         topics.selectAccount(uid)
-        val nav = findViewById<BottomNavigationView>(R.id.bottomNav)
+        val nav = binding.bottomNav
         if (nav.selectedItemId == R.id.nav_topics) show(topics) else nav.selectedItemId = R.id.nav_topics
     }
 
     fun selectHomeTab() {
-        findViewById<BottomNavigationView>(R.id.bottomNav).selectedItemId = R.id.nav_home
+        binding.bottomNav.selectedItemId = R.id.nav_home
     }
 
     /**
@@ -139,13 +143,13 @@ class MainActivity : AppCompatActivity() {
      * 直接改 `selectedItemId` 时，若已经在设置页则不会触发 listener，页面看起来没反应。
      */
     fun selectSettingsTab() {
-        val nav = findViewById<BottomNavigationView>(R.id.bottomNav)
+        val nav = binding.bottomNav
         if (nav.selectedItemId == R.id.nav_settings) show(settings) else nav.selectedItemId = R.id.nav_settings
     }
 
     /** 底栏「超话」上的待签角标；[count] 为 null 或 ≤0 时移除。 */
     fun setTopicBadge(count: Int?) {
-        val nav = findViewById<BottomNavigationView>(R.id.bottomNav)
+        val nav = binding.bottomNav
         if (count == null || count <= 0) {
             nav.removeBadge(R.id.nav_topics)
             return
@@ -203,9 +207,9 @@ class MainActivity : AppCompatActivity() {
      * - 键盘弹出（ime inset > 0）：底栏淡出、内容区底部垫到键盘顶。
      */
     private fun applySystemBarInsets() {
-        val root = findViewById<View>(R.id.rootLayout)
-        val bottomBar = findViewById<View>(R.id.bottomBar)
-        val content = findViewById<View>(R.id.fragmentContainer)
+        val root = binding.rootLayout
+        val bottomBar = binding.bottomBar
+        val content = binding.fragmentContainer
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(
@@ -227,7 +231,7 @@ class MainActivity : AppCompatActivity() {
     private fun setBottomBarHidden(hidden: Boolean) {
         if (bottomBarHidden == hidden) return
         bottomBarHidden = hidden
-        val bar = findViewById<View>(R.id.bottomBar)
+        val bar = binding.bottomBar
         bar.animate().cancel()
         if (!animationsEnabled()) {
             bar.visibility = if (hidden) View.GONE else View.VISIBLE
