@@ -34,6 +34,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -58,6 +60,7 @@ private const val ROUTE_TOPICS = "topics"
 private const val ROUTE_GALLERY = "gallery"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_BROWSING = "browsing"
+private const val ROUTE_POST_PICK = "post_pick"
 
 /**
  * 单 Activity + Navigation Compose 壳：四个 Tab 都是纯 Compose 目的地。
@@ -235,7 +238,7 @@ private fun AppShell(
                                 is BrowsingEvent.Toast ->
                                     Toast.makeText(context, event.text, Toast.LENGTH_SHORT).show()
                                 is BrowsingEvent.OpenPostPick ->
-                                    PostPickActivity.start(context, event.bid)
+                                    nav.navigate("$ROUTE_POST_PICK?bid=${Uri.encode(event.bid)}")
                                 is BrowsingEvent.OpenRemotePreview ->
                                     RemotePreviewActivity.start(context, event.urls, event.index)
                             }
@@ -259,6 +262,50 @@ private fun AppShell(
                         onLoadMore = vm::loadMore,
                         onVisibleIndex = {},
                     )
+                }
+                composable(
+                    route = "$ROUTE_POST_PICK?bid={bid}",
+                    arguments = listOf(
+                        navArgument("bid") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+                ) { entry ->
+                    val vm: PostPickViewModel = hiltViewModel()
+                    val state by vm.state.collectAsState()
+                    val bid = entry.arguments?.getString("bid").orEmpty()
+                    var fullPreview by remember { mutableStateOf<Pair<String, String>?>(null) }
+                    LaunchedEffect(bid) { vm.start(bid) }
+                    LaunchedEffect(vm) {
+                        vm.events.collect { event ->
+                            when (event) {
+                                is PostPickEvent.Toast ->
+                                    Toast.makeText(context, event.text, Toast.LENGTH_SHORT).show()
+                                is PostPickEvent.ShowFullPreview ->
+                                    fullPreview = event.fullUrl to event.picId
+                            }
+                        }
+                    }
+                    PostPickScreen(
+                        state = state,
+                        onBack = { nav.popBackStack() },
+                        onToggleAll = vm::toggleAll,
+                        onItemClick = vm::toggle,
+                        onItemLongClick = vm::requestFullPreview,
+                        onDownload = vm::submitSelected,
+                        onVisibleIndex = {},
+                    )
+                    fullPreview?.let { (url, picId) ->
+                        FullPickPreviewDialog(
+                            fullUrl = url,
+                            onOnlyThis = {
+                                fullPreview = null
+                                vm.submit(setOf(picId))
+                            },
+                            onDismiss = { fullPreview = null },
+                        )
+                    }
                 }
                 composable(ROUTE_SETTINGS) {
                     SettingsTab(viewModel = settingsViewModel)

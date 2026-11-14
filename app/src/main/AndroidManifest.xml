@@ -65,11 +65,7 @@
             android:theme="@style/Theme.Wcm.Preview" />
 
         <!-- 浏览博主抓图（v0.9.11）：博主微博预览 + 选图/勾选抓取，均为内部页面 -->
-<activity
-            android:name=".PostPickActivity"
-            android:exported="false" />
-
-        <!-- 远程大图预览（v0.9.17）：浏览页点小图进来，只读 CDN 上的大图 -->
+<!-- 远程大图预览（v0.9.17）：浏览页点小图进来，只读 CDN 上的大图 -->
         <activity
             android:name=".RemotePreviewActivity"
             android:exported="false"

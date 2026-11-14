@@ -35,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -43,12 +44,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -237,5 +240,63 @@ private fun PickThumb(url: String) {
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
+    }
+}
+@Composable
+fun FullPickPreviewDialog(
+    fullUrl: String,
+    onOnlyThis: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            val zoom = remember { ZoomableImageView(context) }
+            val loading by produceState(initialValue = true, fullUrl) {
+                val bmp = withContext(Dispatchers.IO) {
+                    runCatching { RemoteThumb.loadFull(fullUrl) }.getOrNull()
+                }
+                zoom.setImageDrawable(bmp?.let { android.graphics.drawable.BitmapDrawable(null, it) })
+                value = false
+            }
+            AndroidView(
+                factory = {
+                    zoom.apply {
+                        setOnClickListener { onDismiss() }
+                        contentDescription = context.getString(R.string.pick_preview_desc)
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+            if (loading) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                TextButton(onClick = onOnlyThis) {
+                    Text(
+                        text = stringResource(R.string.pick_only_this),
+                        color = Color.White,
+                    )
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(
+                        text = stringResource(R.string.pick_close),
+                        color = Color(0xB3FFFFFF),
+                    )
+                }
+            }
+        }
     }
 }
