@@ -334,7 +334,7 @@ private fun AppShell(
                 ) { entry ->
                     val vm: RemotePreviewViewModel = hiltViewModel()
                     val state by vm.state.collectAsState()
-                    val urls = Uri.decode(entry.arguments?.getString("urls").orEmpty())
+                    val urls = entry.arguments?.getString("urls").orEmpty()
                         .split("\n")
                         .filter { it.isNotEmpty() }
                     val index = entry.arguments?.getString("index")?.toIntOrNull() ?: 0
@@ -365,7 +365,7 @@ private fun AppShell(
                 ) { entry ->
                     val vm: GalleryBrowseViewModel = hiltViewModel()
                     val state by vm.state.collectAsState()
-                    val tree = Uri.decode(entry.arguments?.getString("tree").orEmpty())
+                    val tree = entry.arguments?.getString("tree").orEmpty()
                     var confirmDelete by remember { mutableStateOf(false) }
                     LaunchedEffect(Unit) { vm.start(tree) }
                     OnResume { vm.onResume() }
@@ -471,9 +471,9 @@ private fun AppShell(
                 ) { entry ->
                     val vm: ImagePreviewViewModel = hiltViewModel()
                     val state by vm.state.collectAsState()
-                    val tree = Uri.decode(entry.arguments?.getString("tree").orEmpty())
+                    val tree = entry.arguments?.getString("tree").orEmpty()
                     val index = entry.arguments?.getString("index")?.toIntOrNull() ?: 0
-                    val name = Uri.decode(entry.arguments?.getString("name").orEmpty())
+                    val name = entry.arguments?.getString("name").orEmpty()
                     var deleteIndex by remember { mutableStateOf<Int?>(null) }
                     LaunchedEffect(Unit) { vm.start(tree, index, name.ifEmpty { null }) }
                     LaunchedEffect(vm) {
