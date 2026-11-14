@@ -42,6 +42,7 @@
   23 个 dimen；release APK 3.63MB。
 - **UI 与 data 解耦**：图库浏览/超话清单/设置页改用 UI 模型与布尔事件，
   Compose 页不再直接依赖 `GalleryFiles`/`WeiboTopicApi`/`PanelUrl`（登录页除外）。
+- **预览修复**：翻页后旋转保持当前页；图库格子补文件名 contentDescription。
 - **模拟器冒烟（2026-11-14）**：首页/超话/图库/图库浏览/设置/登录/浏览页正常；
   超话筛选排序详情、图库多选、预览翻页均已走查；设置页深浅色、开关持久化、
   面板地址校验均通过；强制触发 WorkManager 后 `CheckInWorker` 由 Hilt 实例化并返回 SUCCESS。
