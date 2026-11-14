@@ -85,6 +85,22 @@ class AppSmokeTest {
         assertNotNull(device.findObject(By.textContains("公网面板必须用 https")))
     }
 
+
+    @Test
+    fun homeShortcutsNavigate() {
+        device.wait(Until.hasObject(By.text("首页")), 15_000)
+        device.findObject(By.text("去设置配置面板 ›")).click()
+        device.wait(Until.hasObject(By.text("面板同步")), 10_000)
+        assertNotNull(device.findObject(By.text("面板同步")))
+
+        device.pressBack()
+        device.wait(Until.hasObject(By.text("今日已签")), 10_000)
+        device.findObject(By.text("今日已签")).click()
+        device.wait(Until.hasObject(By.text("关注超话的等级、签到状态与详情")), 10_000)
+        assertNotNull(device.findObject(By.text("全部")))
+        device.pressBack()
+    }
+
     @Test
     fun settingsTogglePersistsToPrefs() {
         device.wait(Until.hasObject(By.text("首页")), 15_000)
