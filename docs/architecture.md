@@ -145,8 +145,8 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
   release 冷启动 864ms。
 - UI→data：Compose 页已无 `CrawlSettings`/`PanelUrl`/`GalleryFiles` 等 data 直接引用，
   浏览/超话清单均改为 UI 模型映射；仅登录 Activity 直接调认证与账号存储（刻意保留）。
-- 未覆盖：签到/自动重登/浏览博主需要真实登录账号（当前无可用的授权凭据），
-  只验证了假账号与游客态链路。
+- 未覆盖：签到/自动重登/浏览博主/单条抓取需要真实登录账号（当前无可用的授权凭据）；
+  单条抓取在无账号时正确提示「没有登录账号，先在首页添加账号」。
 
 已完成：
 
