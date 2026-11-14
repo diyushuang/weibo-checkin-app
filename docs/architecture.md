@@ -100,9 +100,10 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 - 通过 `MainActivity.selectSettingsTab()` 打开设置页，断言面板同步/行为/关于；
 - Compose 壳导航：首页→超话→图片→浏览博主 route→返回图片，断言各页关键文案；
 - 超话页用假账号+本地快照验证「已签」筛选在切 Tab 后仍保持；
+- 首页无账号时点「立即签到」：展开日志并提示「没有账号，请先添加账号」；
 - 切换「打开 App 即自动签到」，断言 `shared_prefs/wcm.xml` 持久化并恢复原值。
 
-运行：`./gradlew :app:connectedDebugAndroidTest`（4 tests，需要设备/模拟器；CI 未接入 emulator）。
+运行：`./gradlew :app:connectedDebugAndroidTest`（5 tests，需要设备/模拟器；CI 未接入 emulator）。
 
 ### 运行时验证（2026-11-14，Android 14 模拟器 `see-audit`）
 
