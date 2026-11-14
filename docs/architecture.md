@@ -123,6 +123,8 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
   日志卡展开终端、空目标态正常。
 - 图库浏览 Compose：`LazyVerticalGrid` 3 列正方形格子 + 分组头「更早 · 6 张」；
   长按进入多选（已选 1/分享/删除/取消）、排序菜单 5 项、筛选 chip 正常。
+  真实图库（104 张）验证：单图删除 106→105、返回浏览页自动刷新；批量删除
+  105→104 且退出多选；批量分享拉起系统 chooser 并显示图片预览。
 - 浏览博主页 Compose：输入行/目标 chip/筛选/空态正常（假账号无网络时走空态）。
 - 全屏预览 Compose：本地图库点图打开 `HorizontalPager`，底部计数/文件名/分享/
   打开/删除工具条正常，图片复用 `ZoomableImageView`；远程预览共用同一翻页器。
