@@ -162,7 +162,7 @@ class PostPickActivity : AppCompatActivity() {
         val ctx = applicationContext
         lifecycleScope.launch(Dispatchers.IO) {
             val result = runCatching {
-                val cookie = Crawler.pickCrawlCookie(this@PostPickActivity, AccountStore.load(ctx), {})
+                val cookie = CrawlEngine.pickCrawlCookie(this@PostPickActivity, AccountStore.load(ctx), {})
                     ?: throw IllegalStateException(ctx.getString(R.string.browse_need_cookie))
                 WeiboPostApi.fetchPostDetail(cookie, bid)
             }
@@ -289,10 +289,10 @@ class PostPickActivity : AppCompatActivity() {
         render()
         AppScope.launch {
             var busy = false
-            var summary: Crawler.PickedSummary? = null
+            var summary: CrawlEngine.PickedSummary? = null
             var err: String? = null
             try {
-                val r = CrawlRunner.runPicked(ctx, listOf(Crawler.PickTask(bid, picIds))) { }
+                val r = CrawlRunner.runPicked(ctx, listOf(CrawlEngine.PickTask(bid, picIds))) { }
                 if (r == null) busy = true else summary = r
             } catch (e: Exception) {
                 err = e.message ?: e.javaClass.simpleName

@@ -349,7 +349,7 @@ class BrowsingActivity : AppCompatActivity() {
                     failList(getString(R.string.browse_need_cookie))
                     return@launch
                 }
-                val cookie = Crawler.pickCrawlCookie(this@BrowsingActivity, accounts) { }
+                val cookie = CrawlEngine.pickCrawlCookie(this@BrowsingActivity, accounts) { }
                     ?: run {
                         failList(getString(R.string.browse_need_cookie))
                         return@launch
@@ -427,7 +427,7 @@ class BrowsingActivity : AppCompatActivity() {
         AppScope.launch {
             try {
                 val accounts = AccountStore.load(ctx)
-                val cookie = Crawler.pickCrawlCookie(this@BrowsingActivity, accounts) { }
+                val cookie = CrawlEngine.pickCrawlCookie(this@BrowsingActivity, accounts) { }
                 if (cookie == null) {
                     failList(getString(R.string.browse_need_cookie))
                     return@launch
@@ -537,13 +537,13 @@ class BrowsingActivity : AppCompatActivity() {
         }
         // 任务必须从 selectedBids 生成：visible 是「当前筛选结果」，
         // 勾选后被筛掉的帖若被无声丢弃，用户会看到「下载选中(5)」却只抓了 2 条。
-        val tasks = posts.filter { it.bid in selectedBids }.map { Crawler.PickTask(it.bid, null) }
+        val tasks = posts.filter { it.bid in selectedBids }.map { CrawlEngine.PickTask(it.bid, null) }
         val missing = selectedBids.size - tasks.size
         val ctx = applicationContext
         setSubmitting(true)
         AppScope.launch {
             var busy = false
-            var summary: Crawler.PickedSummary? = null
+            var summary: CrawlEngine.PickedSummary? = null
             var err: String? = null
             try {
                 val r = CrawlRunner.runPicked(ctx, tasks) { }

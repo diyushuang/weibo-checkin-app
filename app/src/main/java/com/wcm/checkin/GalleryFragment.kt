@@ -651,7 +651,7 @@ class GalleryFragment : Fragment() {
                     }
                     // 昵称走游客身份也能拿到：没有登录账号时依然能把博主名显示出来
                     val accounts = AccountStore.load(ctx)
-                    val cookie = if (accounts.isEmpty()) null else Crawler.pickCrawlCookie(requireContext(), accounts, ::log)
+                    val cookie = if (accounts.isEmpty()) null else CrawlEngine.pickCrawlCookie(requireContext(), accounts, ::log)
                     val name = WeiboAuthApi.fetchUserName(cookie, uid)
                     AccountStore.addCrawlTarget(ctx, AccountStore.CrawlTarget(uid, name))
                     withContext(Dispatchers.Main) { renderTargets() }
@@ -822,7 +822,7 @@ class GalleryFragment : Fragment() {
                         log("✗ 无法识别输入：$input")
                         return@launch
                     }
-                    val cookie = Crawler.pickCrawlCookie(ctx, AccountStore.load(ctx), ::log)
+                    val cookie = CrawlEngine.pickCrawlCookie(ctx, AccountStore.load(ctx), ::log)
                         ?: return@launch
                     log("正在拉取博主 $uid 的最近微博…")
                     val posts = ArrayList<WeiboPostApi.RawPost>()

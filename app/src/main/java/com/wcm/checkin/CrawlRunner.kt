@@ -125,7 +125,7 @@ object CrawlRunner {
         bid: String,
         log: (String) -> Unit,
     ): RunResult = guarded("单条抓取") { _, _ ->
-        Crawler.crawlSinglePost(ctx, bid, log)
+        CrawlEngine.crawlSinglePost(ctx, bid, log)
     }
 
     /**
@@ -140,9 +140,9 @@ object CrawlRunner {
      */
     suspend fun runPicked(
         ctx: Context,
-        tasks: List<Crawler.PickTask>,
+        tasks: List<CrawlEngine.PickTask>,
         log: (String) -> Unit,
-    ): Crawler.PickedSummary? {
+    ): CrawlEngine.PickedSummary? {
         if (!gate.tryLock()) return null
         stopFlag.set(false)
         _state.value = RunState.Running(
@@ -153,7 +153,7 @@ object CrawlRunner {
             )
         )
         try {
-            return Crawler.crawlPicked(
+            return CrawlEngine.crawlPicked(
                 ctx, tasks, log,
                 onEvent = ::emit,
                 isStopped = { stopFlag.get() },
