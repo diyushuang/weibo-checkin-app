@@ -1,13 +1,13 @@
 # 架构说明（架构现代化进行中）
 
-> 状态：2026-11 架构现代化 **Phase 0–4 已完成**，Phase 5（超话/图库/图库浏览）
-> 已 Compose 化；浏览/选图/预览与导航壳为后续增量。
+> 状态：2026-11 架构现代化 **Phase 0–6 已完成**：四个 Tab 全部是 Compose 目的地，
+> `MainActivity` 已换成 Navigation Compose；浏览/选图/预览仍是独立 Activity。
 > 本文描述当前真实结构，不描述最终目标态的想象结构。
 
 ## 1. Gradle 模块与依赖方向
 
 ```
-:app            UI（Fragment/Activity/Compose 起点）、WorkManager、Hilt 入口
+:app            Compose UI + Navigation 壳、WorkManager、Hilt 入口
  ├── :domain    签到 / 保活 / 抓取 / 重登的服务编排
  ├── :data      微博与面板网络、SharedPreferences、NDJSON 索引、SAF、Keystore
  └── :core      领域模型、纯算法、应用级协程作用域
@@ -31,14 +31,16 @@
 | `:core` | `AssetName`、`Hashing`、`CrawlCursor`/`Budget`/`Phase`/`StopReason`、`ReloginPolicy`、`AccountStatusHead`、`AppScope` | Android UI、SharedPreferences、OkHttp 业务 |
 | `:data` | `WeiboHttp/Auth/Topic/Post/ImageUrl`、`PanelApi`、`GuestSession`、`WeiboPasswordLogin`、`AccountStore`、`PanelSettings`、`CrawlSettings`、`CrawlIndex`、`SafTreeStore`、`GalleryFiles`、`TopicStore`、`CredentialVault`、`GifEncoder`、`LivePhotoConverter` | View/Fragment、签到/抓取编排 |
 | `:domain` | `CheckinService`、`AccountMaintenanceService`、`CrawlEngine`、`AlbumCrawler`、`TimelineCrawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`CrawlService`、`PostAssets`、`AutoRelogin` | Android UI、资源 `R.*` |
-| `:app` | `MainActivity`、四个 Fragment、浏览/选图/预览 Activity、`RemoteThumb`、`ThumbLoader`、`ZoomableImageView`、`LogPanel`、`CheckInWorker`、`WcmApp`、Compose 设置页 | 业务规则、网络/存储实现 |
+| `:app` | `MainActivity`（Navigation Compose，4 Tab）、`Home/Topic/Gallery/Settings*Tab`、`Browsing/PostPick/ImagePreview/RemotePreview Activity`、`RemoteThumb`、`ThumbLoader`、`ZoomableImageView`、`CheckInWorker`、`WcmApp` | 业务规则、网络/存储实现 |
 
 ## 3. 状态与并发
 
 - **应用级长任务**挂在 `:core` 的 `AppScope`（`SupervisorJob + Dispatchers.IO`），
   不随页面销毁；ViewModel/页面只观察状态，不拥有任务。
-- **首页 UI 状态**：忙碌闸门、日志缓冲、自动签到闩在 Hilt `HomeViewModel`；
-  长任务仍挂 `AppScope`，ViewModel 只持有界面态。
+- **首页 UI 状态与编排**：签到/同步/重登/超话清单/日志全部在 Hilt `HomeViewModel`；
+  长任务仍挂 `AppScope`。`TopicViewModel` / `GalleryViewModel` 同理，切 Tab 不丢状态。
+- **导航**：`MainActivity` 用 Navigation Compose + `NavigationBar`，四个目的地都是
+  Compose；ViewModel 挂在 Activity 上，路由 `saveState/restoreState` 保留滚动与筛选。
 - **超话快照**：`HomeViewModel.topicStates` 是 `StateFlow<Map<String, TopicState>>`，
   不可变 Map 整体替换；IO 线程写、主线程读，不会在遍历时被并发扩容打断。
 - **抓取单闸门**仍在 `CrawlService`：全应用同一时刻只允许一个抓取任务，
@@ -50,7 +52,7 @@
 - **超话快照**在 `:data` 的 `TopicStore`，`StateFlow<Map<String, Snapshot>>`；
   跨天失效由快照时间判断。
 - 纯函数/纯模型（`CrawlPlanner`、`CursorLogic`、`CrawlProgress.reduce`、`AssetName`、
-  `ReloginPolicy` 等）保持 JVM 可测，是当前 312 个单测的主体。
+  `ReloginPolicy` 等）保持 JVM 可测，是当前 315 个单测的主体。
 
 ## 4. 依赖注入（Hilt）
 
@@ -59,10 +61,9 @@
 - `CheckInWorker` 标注 `@HiltWorker` + `@AssistedInject`；
   manifest 关闭 WorkManager 默认初始化，避免自定义 WorkerFactory 被覆盖。
 - 现阶段 Hilt 已覆盖 **Application / Worker / ViewModel / 抓取单闸门**：
-  `CheckInWorker` 是 `@HiltWorker`，设置页 `SettingsViewModel` 是 `@HiltViewModel`，
-  `CrawlService` 由 `DomainModule` 以 `@Singleton` 提供并被四个抓取入口注入
-  （`MainActivity` / `HomeFragment` / `GalleryFragment` / `BrowsingActivity` /
-  `PostPickActivity` 均标 `@AndroidEntryPoint`）。
+  `CheckInWorker` 是 `@HiltWorker`，`Home/Topic/Gallery/SettingsViewModel` 都是
+  `@HiltViewModel`（Activity 作用域），`CrawlService` 由 `DomainModule` 以 `@Singleton`
+  提供并注入 `HomeViewModel` / `GalleryViewModel` / 浏览 / 选图入口。
   `CheckinService` / `AccountMaintenanceService` / `AutoRelogin` 仍是 `object`，
   后续再逐步改为构造注入的类（见“待办”）。
 - 版本：Hilt `2.51.1`、KSP `1.9.24-1.0.20`（与 Kotlin `1.9.24` 对齐）。
@@ -85,7 +86,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 
 - 315 个 JVM 单测，0 failures
 - `assembleDebug` / `assembleRelease` 通过
-- release APK ≈ 3.63MB（R8 开启前 6.55MB；Compose 迁移中）
+- release APK ≈ 3.64MB（R8 开启前 6.55MB）
 - `lint` 在本机 Windows 环境会长时间卡在 `lintAnalyzeDebug`；CI 的 `build-apk.yml`
   只跑单测 + assembleDebug，不依赖 lint
 
@@ -129,7 +130,11 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
   只读弹窗改 Compose AlertDialog，字段说明渲染正常。
 - 图库编排迁入 Hilt `GalleryViewModel`：添加目标/全量确认/删除/重试/单条抓取
   均为 Compose 对话框；实测添加目标弹窗与运行开关正常。
-- 未覆盖：真实签到/抓取（需要微博账号）、选图页实际载入（需要有效 cookie 的帖子详情）。
+- Navigation Compose 壳：四 Tab 切换、底部 Badge、主题色与旧底栏一致；
+  超话筛选切 Tab 往返后仍保持（Activity 作用域 ViewModel）；设置页输入时
+  底栏隐藏且内容被 IME 顶起。
+- 未覆盖：真实签到/抓取（需要微博账号）、选图页实际载入（需要有效 cookie 的帖子详情）、
+  浏览/选图/预览仍是独立 Activity（未改成 NavHost route）。
 
 已完成：
 
@@ -140,40 +145,21 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 - 签到编排/保活/重登从 UI 与 Worker 收敛到 `:domain` 服务
 - 4 模块 + Hilt + R8；所有改动行为保持，数据格式零迁移
 - **抓取单闸门类化**：`CrawlRunner` object → `CrawlService`，由 Hilt `@Singleton` 提供
-- **首页状态收口**：HomeFragment companion 的进程级 UI 状态迁入 Hilt `HomeViewModel`
-- **超话快照 StateFlow**：`TopicState` 提升为顶层，`topicStates` 由 ViewModel 持有
-- **Compose 试点**：设置页改为 ComposeView + `SettingsViewModel`，新增 `WcmTheme`
-  （Material3，使用 `colors.xml` 品牌令牌，与 XML 页面一致；不使用动态取色）
-- **首页 Hero Compose**：`HomeHeroCard` + `HomeHeroUiState`；`fragment_home` 的 Hero
-  卡已换成 ComposeView，其余账号/Cookie/日志区块仍为 XML
-- **首页账号列表 Compose**：`AccountList` 负责行/头像 tone/状态 chip/⋮ 菜单；
-  空态与账号菜单也由 Compose 渲染
-- **首页 Cookie 卡 Compose**：`CookieCard` 负责卡头 pill/提示/逐账号有效期/配置入口
-- **首页日志卡 Compose**：`LogCard` 负责收起摘要/展开终端窗口/贴底跟随
-- **首页全量 Compose**：Hero/账号列表/Cookie 卡/日志卡/账号菜单/删除确认/超话清单/
-  重登凭证对话框均已 Compose；`HomeFragment` 只保留编排与状态构建
-- **超话页 Compose**：`TopicScreen` + `TopicUiState`（LazyColumn，账号 pills/筛选/排序/
-  懒加载详情/行菜单）；`TopicFragment` 只保留刷新/签到/详情编排
-- **图库抓取页 Compose**：`GalleryScreen` + `GalleryUiState`（目标行菜单/进度/重试/
-  日志）；目录授权与抓取编排仍在 Fragment
-- **图库浏览 Compose**：`GalleryBrowseScreen` + `GalleryBrowseUiState`
-  （LazyVerticalGrid、分组头跨行、多选遮罩、搜索防抖、排序/分组菜单）；
-  缩略图复用 `ThumbLoader` 的采样与 LruCache
-- **浏览/选图 Compose**：`BrowsingScreen`（LazyColumn 卡片 + FlowRow 小图 + 多选）与
-  `PostPickScreen`（两列网格 + 全选/下载）；远程缩略图复用 `RemoteThumb` 缓存
-- **全屏预览 Compose**：`ZoomPager`（HorizontalPager + `ZoomableImageView` AndroidView）
-  同时服务本地图库与远程大图；并发解码闸门与放大态停用翻页保持
+- **四个 Tab 纯 Compose**：设置/首页/超话/图库全部由 Compose 渲染，
+  `MainActivity` 使用 Navigation Compose + `NavigationBar`，旧 Fragment 与
+  `activity_main.xml`/`bottom_nav.xml` 已删除
+- **首页编排 ViewModel 化**：签到/同步/重登/超话清单/日志/昵称补拉全部在
+  `HomeViewModel`；对话框由 Compose 渲染，页面跳转走事件
 - **超话/图库编排 ViewModel 化**：`TopicViewModel` / `GalleryViewModel` 持有筛选/
-  展开/日志/进度/任务状态，Fragment 只剩 ComposeView + 目录 launcher
-- ViewBinding：剩余 `MainActivity` / `HomeFragment` / 登录页
-  （`LogPanel` 的通用 host 仍按 id 查找）
+  展开/日志/进度/任务状态；Fragment 壳与 `LogPanel` 已删除
+- **全部业务界面 Compose**：超话/图库网格/图库浏览/浏览博主/选图/本地与远程预览；
+  RecyclerView 适配器与旧布局全部删除
+- ViewBinding：仅剩登录页 `LoginWebViewActivity` 使用
 
 待办（按建议顺序）：
 
-1. `HomeFragment` 仍是 1376 行的编排 + 4 个 ComposeView；把它搬到 `HomeViewModel`
-   后四个 Tab 才都是纯 Compose 目的地。
-2. 导航壳：`MainActivity` 的 ViewPager/Fragment 壳换成 Navigation Compose；
-   登录 WebView 保持独立 Activity。
+1. 把浏览/选图/预览从独立 Activity 改成 NavHost route（登录 WebView 保持独立）。
+2. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路。
 3. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
    `:feature` 模块（需先把 `R.*` 资源迁移到 feature）。
 4. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路。

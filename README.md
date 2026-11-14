@@ -106,8 +106,7 @@ GitHub 同类项目盘点与改造路线见
 
 界面自 v2.0 起对齐面板端 UI 系统（`微博签到/docs/ui-redesign/tokens.css`）：
 冷灰底 + 纯白微描边卡 + 玫红只占小面积，颜色 / 字体 / 间距 / 圆角全部令牌化；
-四档宽度（手机 / 横屏 / 平板 / 桌面）各自覆写尺寸，边到边 + 状态栏 / 导航栏 / 挖孔 /
-键盘 / 深色模式统一在 `MainActivity` 的 insets 入口处理。
+四档宽度（手机 / 横屏 / 平板 / 桌面）各自覆写尺寸，边到边 + 状态栏 / 导航栏 / 挖孔 / 键盘 / 深色模式统一在 `MainActivity` 的 Compose 壳处理。
 规范、映射表与验收清单见 [`docs/design/ui-system-v2.0.md`](docs/design/ui-system-v2.0.md)，
 三屏浅深色对照稿见 [`docs/design/ui-preview.html`](docs/design/ui-preview.html)。
 
@@ -263,40 +262,28 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
 ├── .github/workflows/
 │   ├── build-apk.yml        # 日常 push：单测 + assembleDebug + 上传 APK 产物
 │   └── release-apk.yml      # 推 v* tag：签名 release APK + 自动发 GitHub Release
-└── app/                     # 唯一模块
+├── core/                    # 模型、纯算法、应用级协程
+├── domain/                  # 签到 / 抓取 / 保活 / 重登服务
+├── data/                    # 微博与面板网络、SharedPreferences、NDJSON、SAF、Keystore
+└── app/
     ├── build.gradle.kts     # namespace / applicationId / 签名 / 依赖
     ├── keystore/            # 固定签名 keystore（gitignore，需自行备份）
-    └── src/
-        ├── main/
-        │   ├── AndroidManifest.xml
-        │   ├── java/com/wcm/checkin/
-        │   │   ├── WcmApp.kt / MainActivity.kt            # 应用与主壳（4 Tab）
-        │   │   ├── AppScope.kt                            # 长任务的应用级协程作用域
-        │   │   ├── HomeFragment.kt / SettingsFragment.kt  # 首页签到 / 设置
-        │   │   ├── TopicFragment.kt / TopicStore.kt       # 超话面板 / 超话快照缓存
-        │   │   ├── GalleryFragment.kt / GalleryBrowseActivity.kt
-        │   │   ├── BrowsingActivity.kt / PostPickActivity.kt  # 浏览博主 / 选图勾选抓取（v0.9.11）
-        │   │   ├── RemoteThumb.kt / RemotePreviewActivity.kt  # 远程小图 / 远程大图预览（v0.9.17）
-        │   │   ├── ImagePreviewActivity.kt / ZoomableImageView.kt
-        │   │   ├── LoginWebViewActivity.kt                # 微博官方页登录取 Cookie
-        │   │   ├── CheckInWorker.kt                       # WorkManager 定时保活/同步
-        │   │   ├── AccountStore.kt / SafePrefs.kt         # 账号 / 配置 / 游标持久化
-        │   │   ├── ReloginPolicy.kt / AutoRelogin.kt      # 自动重登策略 / 触发
-        │   │   ├── WeiboPasswordLogin.kt / CredentialVault.kt  # SSO 账密登录 / 凭证加密
-        │   │   ├── WeiboApi.kt / Crawler.kt               # 超话签到 / 原图抓取
-        │   │   ├── GuestSession.kt / WebAjax.kt           # 游客身份（两步握手）/ Web ajax
-        │   │   ├── WeiboThrottle.kt                       # 请求间隔闸门
-        │   │   ├── CrawlPlanner.kt / CrawlCursor.kt       # 增量规划（纯函数）/ 游标模型
-        │   │   ├── CrawlIndex.kt / CrawlService.kt        # 去重索引（NDJSON）/ 抓取单闸门
-        │   │   ├── CrawlMarks.kt                           # 「已抓取」快照（预览页标记用）
-        │   │   ├── CrawlProgress.kt / SafAccess.kt        # 进度模型（纯函数）/ 目录授权自检
-        │   │   ├── AssetName.kt / Takeover.kt             # 命名规范化 / 相册已有文件接管
-        │   │   ├── Hashing.kt                             # 内容哈希（SHA-256 前 128bit）
-        │   │   ├── PanelApi.kt / PanelUrl.kt              # 面板同步 / 面板地址安全策略
-        │   │   ├── GalleryFiles.kt / ThumbLoader.kt       # 相册文件 / 筛选分组 / 缩略图
-        │   │   ├── GifEncoder.kt / LivePhotoConverter.kt  # Live Photo → GIF
-        │   │   └── LogPanel.kt / UiExt.kt                 # 日志面板 / 小 UI 辅助（共用）
-        │   └── res/           # layout / drawable / values / xml
+    └── src/main/
+        ├── AndroidManifest.xml
+        ├── java/com/wcm/checkin/
+        │   ├── WcmApp.kt / MainActivity.kt            # Hilt + Navigation Compose（4 Tab）
+        │   ├── HomeTab.kt / HomeViewModel.kt          # 首页（签到/同步/重登/超话清单）
+        │   ├── TopicTab.kt / TopicViewModel.kt        # 超话筛选/排序/详情/签到
+        │   ├── GalleryTab.kt / GalleryViewModel.kt    # 抓取目录/目标/进度/日志
+        │   ├── SettingsTab.kt / SettingsScreen.kt     # 设置页（Compose + ViewModel）
+        │   ├── HomeHero/HomeAccounts/HomeCookie/...   # 首页卡与对话框 Compose 组件
+        │   ├── GalleryBrowseActivity.kt / BrowsingActivity.kt
+        │   ├── PostPickActivity.kt / ImagePreviewActivity.kt
+        │   ├── RemotePreviewActivity.kt / RemoteThumb.kt
+        │   ├── LoginWebViewActivity.kt                # 微博官方页登录取 Cookie
+        │   ├── CheckInWorker.kt                       # WorkManager 定时保活/同步
+        │   └── ...                                    # 其余业务/网络/存储类
+        └── res/               # layout（仅登录页）/ drawable / values / xml
         └── test/java/com/wcm/checkin/                     # JVM 单测
 ```
 

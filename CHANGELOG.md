@@ -30,6 +30,11 @@
   本地/远程全屏预览 `HorizontalPager`（`ZoomableImageView` 通过 `AndroidView` 复用）。
 - **超话/图库 ViewModel 化**：`TopicViewModel` / `GalleryViewModel` 接管编排与状态，
   Fragment 只剩 ComposeView 与目录 launcher；切 Tab 保留筛选/展开/日志/进度。
+- **导航壳 Compose**：`MainActivity` 改为 Navigation Compose + `NavigationBar`，
+  四个 Tab 全部纯 Compose；Home/Topic/Gallery/Settings Fragment、`activity_main`、
+  `bottom_nav`、`LogPanel` 全部删除；ViewModel 挂 Activity 作用域。
+- **首页 ViewModel 化**：签到/同步/重登/超话清单/日志/昵称补拉迁入 `HomeViewModel`，
+  对话框与页面跳转由 Compose 壳桥接。
 - **模拟器冒烟（2026-11-14）**：首页/超话/图库/图库浏览/设置/登录/浏览页正常；
   超话筛选排序详情、图库多选、预览翻页均已走查；设置页深浅色、开关持久化、
   面板地址校验均通过；强制触发 WorkManager 后 `CheckInWorker` 由 Hilt 实例化并返回 SUCCESS。
