@@ -1,5 +1,8 @@
 package com.wcm.checkin
 
+import com.wcm.checkin.databinding.ActivityGalleryBrowseBinding
+import com.wcm.checkin.databinding.ItemGalleryGridBinding
+
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -60,6 +63,7 @@ class GalleryBrowseActivity : AppCompatActivity() {
     private lateinit var searchInput: EditText
     private lateinit var selectBar: View
     private lateinit var tvSelected: TextView
+    private lateinit var binding: ActivityGalleryBrowseBinding
     private val gridAdapter = GridAdapter()
 
     /** 目录里的全部行（已解析文件名），筛选/排序都基于它做内存运算。 */
@@ -109,7 +113,8 @@ class GalleryBrowseActivity : AppCompatActivity() {
         // 边到边：图库是沉浸浏览的场景，工具栏底色延伸到状态栏下方更自然
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_gallery_browse)
+        binding = ActivityGalleryBrowseBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
         treeUriRaw = intent.getStringExtra(EXTRA_TREE) ?: ""
         if (treeUriRaw.isEmpty()) {
@@ -118,16 +123,16 @@ class GalleryBrowseActivity : AppCompatActivity() {
         }
         treeUri = treeUriRaw.toUri()
 
-        toolbar = findViewById(R.id.galleryToolbar)
-        recycler = findViewById(R.id.galleryGrid)
-        emptyView = findViewById(R.id.galleryEmpty)
-        emptyText = findViewById(R.id.tvGalleryEmpty)
-        emptyAction = findViewById(R.id.btnGalleryEmptyAction)
-        filtersRow = findViewById(R.id.galleryFilters)
-        searchRow = findViewById(R.id.searchRow)
-        searchInput = findViewById(R.id.searchInput)
-        selectBar = findViewById(R.id.selectBar)
-        tvSelected = findViewById(R.id.tvSelectedCount)
+        toolbar = binding.galleryToolbar
+        recycler = binding.galleryGrid
+        emptyView = binding.galleryEmpty
+        emptyText = binding.tvGalleryEmpty
+        emptyAction = binding.btnGalleryEmptyAction
+        filtersRow = binding.galleryFilters
+        searchRow = binding.searchRow
+        searchInput = binding.searchInput
+        selectBar = binding.selectBar
+        tvSelected = binding.tvSelectedCount
 
         toolbar.setNavigationOnClickListener { finish() }
         toolbar.inflateMenu(R.menu.gallery_browser)
@@ -152,11 +157,11 @@ class GalleryBrowseActivity : AppCompatActivity() {
         recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> scheduleGridMetrics() }
         emptyAction.setOnClickListener { finish() }
 
-        findViewById<View>(R.id.btnGallerySort).setOnClickListener { showSortMenu(it) }
-        findViewById<View>(R.id.btnSearchClose).setOnClickListener { toggleSearch(forceOpen = false) }
-        findViewById<View>(R.id.btnSelectCancel).setOnClickListener { exitSelectMode() }
-        findViewById<View>(R.id.btnSelectShare).setOnClickListener { batchShare() }
-        findViewById<View>(R.id.btnSelectDelete).setOnClickListener { confirmBatchDelete() }
+        binding.btnGallerySort.setOnClickListener { showSortMenu(it) }
+        binding.btnSearchClose.setOnClickListener { toggleSearch(forceOpen = false) }
+        binding.btnSelectCancel.setOnClickListener { exitSelectMode() }
+        binding.btnSelectShare.setOnClickListener { batchShare() }
+        binding.btnSelectDelete.setOnClickListener { confirmBatchDelete() }
         searchInput.addTextChangedListenerText { text ->
             // 防抖 250ms：否则每敲一个字符就触发一次全量过滤（10 万张时直接卡顿）
             searchJob?.cancel()
@@ -293,8 +298,8 @@ class GalleryBrowseActivity : AppCompatActivity() {
     private fun gutterPx(): Int = resources.getDimensionPixelSize(R.dimen.gallery_gutter)
 
     private fun applyInsets() {
-        val root = findViewById<View>(R.id.galleryRoot)
-        val bottomBar = findViewById<View>(R.id.selectBar)
+        val root = binding.galleryRoot
+        val bottomBar = binding.selectBar
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
@@ -735,10 +740,11 @@ class GalleryBrowseActivity : AppCompatActivity() {
                 )
                 return HeaderHolder(tv)
             }
-            val view = LayoutInflater.from(parent.context)
-                .inflate(R.layout.item_gallery_grid, parent, false)
+            val binding = ItemGalleryGridBinding.inflate(
+                LayoutInflater.from(parent.context), parent, false,
+            )
             // 高度按列宽算好再上屏（具体在 bind 里落，列数/尺寸变化时复用的 holder 也能跟上）。
-            return CellHolder(view)
+            return CellHolder(binding)
         }
 
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
@@ -761,12 +767,13 @@ class GalleryBrowseActivity : AppCompatActivity() {
             }
         }
 
-        inner class CellHolder(view: View) : RecyclerView.ViewHolder(view) {
+        inner class CellHolder(private val binding: ItemGalleryGridBinding) :
+            RecyclerView.ViewHolder(binding.root) {
             private val card = itemView
-            private val image: ImageView = view.findViewById(R.id.gridImage)
-            private val badge: TextView = view.findViewById(R.id.gifBadge)
-            private val scrim: View = view.findViewById(R.id.selectScrim)
-            private val check: ImageView = view.findViewById(R.id.selectCheck)
+            private val image: ImageView = binding.gridImage
+            private val badge: TextView = binding.gifBadge
+            private val scrim: View = binding.selectScrim
+            private val check: ImageView = binding.selectCheck
             private var job: Job? = null
 
             fun cancelLoad() {
