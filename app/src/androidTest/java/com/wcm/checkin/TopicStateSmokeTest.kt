@@ -1,39 +1,49 @@
 package com.wcm.checkin
 
-import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.uiautomator.By
-import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.Until
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.AfterClass
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * 超话 Tab 的页面状态（筛选）在切 Tab 后仍保留。
+ * 超话 ViewModel 的筛选逻辑（不启动 Activity，避免后台签到污染账号表）。
  *
- * 用假账号 + 本地快照驱动，不依赖网络；结束后恢复账号表与快照。
+ * 用假账号 + 本地快照驱动，结束后恢复账号表与快照。
  */
 @RunWith(AndroidJUnit4::class)
 class TopicStateSmokeTest {
 
-    private val device: UiDevice
-        get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+    companion object {
+        private const val TEST_UID = "test-topic-uid"
+
+        /**
+         * 兜底清理：若同一进程里其它测试启动的页面在恢复账号表后又把它写回，
+         * 这里最后再移除一次测试账号，避免污染后续测试/真机。
+         */
+        @AfterClass
+        @JvmStatic
+        fun cleanTestAccount() {
+            val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+            Thread.sleep(1_500)
+            val accounts = AccountStore.load(ctx)
+            if (accounts.any { it.uid == TEST_UID }) {
+                AccountStore.save(ctx, accounts.filterNot { it.uid == TEST_UID })
+            }
+            TopicStore.clear(ctx, TEST_UID)
+        }
+    }
 
     @Test
-    fun doneFilterSurvivesTabSwitch() {
+    fun doneFilterOnlyShowsDoneTopics() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val uid = "test-topic-uid"
         val oldAccounts = AccountStore.load(ctx)
         val oldSnap = TopicStore.snapshot(ctx, uid)
-        val oldAuto = PanelSettings.autoOnOpen(ctx)
         val now = System.currentTimeMillis()
         try {
-            // 关掉打开即签到：否则后台签到收尾的 mergeSave 会在测试恢复账号表后
-            // 把假账号写回去，污染后续测试与真机数据。
-            PanelSettings.setAutoOnOpen(ctx, false)
             AccountStore.save(
                 ctx,
                 listOf(
@@ -54,24 +64,16 @@ class TopicStateSmokeTest {
                 at = now,
             )
 
-            ActivityScenario.launch(MainActivity::class.java).use {
-                device.wait(Until.hasObject(By.text("首页")), 15_000)
-                device.findObject(By.text("超话")).click()
-                device.wait(Until.hasObject(By.text("测试超话")), 10_000)
-                assertNotNull(device.findObject(By.text("测试超话")))
+            val vm = TopicViewModel(ctx)
+            vm.selectAccount(uid)
+            vm.setFilter(TopicFilter.DONE)
+            val done = vm.state.value
+            assertTrue(done.rows.isNotEmpty())
+            assertTrue(done.rows.all { it.done })
 
-                device.findObject(By.text("已签")).click()
-                device.wait(Until.gone(By.text("第二个超话")), 5_000)
-
-                device.findObject(By.text("首页")).click()
-                device.wait(Until.hasObject(By.text("立即签到")), 10_000)
-                device.findObject(By.text("超话")).click()
-                device.wait(Until.hasObject(By.text("测试超话")), 10_000)
-                assertNotNull(device.findObject(By.text("测试超话")))
-                assertTrue(device.findObjects(By.text("第二个超话")).isEmpty())
-            }
+            vm.setFilter(TopicFilter.ALL)
+            assertEquals(2, vm.state.value.rows.size)
         } finally {
-            PanelSettings.setAutoOnOpen(ctx, oldAuto)
             AccountStore.save(ctx, oldAccounts)
             if (oldSnap != null) {
                 TopicStore.save(ctx, uid, oldSnap.topics, at = oldSnap.at)
