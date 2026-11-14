@@ -106,49 +106,11 @@
              面板端的登录态约 7 天就会被微博吊销，而 App 只在同步那一瞬间知道
              「面板现在拿到的 cookie 是什么时候的」。这块卡把那个时间差摊开：
              每个账号还剩几天、什么时候到期，临期整行标红。 -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/syncCard"
-            style="@style/Widget.Wcm.Card">
-
-            <LinearLayout style="@style/Widget.Wcm.CardContent">
-
-                <LinearLayout style="@style/Widget.Wcm.CardHead">
-
-                    <TextView
-                        android:id="@+id/tvSyncTitle"
-                        style="@style/Widget.Wcm.Text.SectionTitle"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:text="@string/sync_card_title" />
-
-                    <TextView
-                        android:id="@+id/tvSyncPill"
-                        style="@style/Widget.Wcm.Pill.Neutral"
-                        android:layout_height="@dimen/pill_height_sm"
-                        android:textSize="11sp" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tvSyncHint"
-                    style="@style/Widget.Wcm.Text.Hint"
-                    android:layout_marginTop="@dimen/sp_1"
-                    android:text="@string/sync_card_hint" />
-
-                <LinearLayout
-                    android:id="@+id/cookieList"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/sp_2"
-                    android:orientation="vertical" />
-
-                <TextView
-                    android:id="@+id/tvSyncConfig"
-                    style="@style/Widget.Wcm.Text.Link"
-                    android:layout_marginTop="@dimen/sp_2"
-                    android:text="@string/sync_card_config"
-                    android:visibility="gone" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+        <androidx.compose.ui.platform.ComposeView
+            android:id="@+id/cookieCompose"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/card_gap" />
 
         <!-- ==================== 账号卡 ==================== -->
         <com.google.android.material.card.MaterialCardView

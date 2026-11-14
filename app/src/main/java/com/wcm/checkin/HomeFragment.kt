@@ -7,7 +7,6 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.fragment.app.viewModels
 import com.wcm.checkin.databinding.ItemAccountBinding
-import com.wcm.checkin.databinding.ItemCookieBinding
 import com.wcm.checkin.databinding.DialogReloginCredentialsBinding
 import com.wcm.checkin.databinding.DialogTopicListBinding
 import dagger.hilt.android.AndroidEntryPoint
@@ -75,6 +74,9 @@ class HomeFragment : Fragment() {
 
     /** 账号列表（Compose）的渲染状态；每次 render 重建。 */
     private val accountState = MutableStateFlow<List<AccountRowUi>>(emptyList())
+
+    /** Cookie 卡（Compose）的渲染状态；每次 render 重建。 */
+    private val cookieState = MutableStateFlow(CookieCardUi())
 
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
@@ -163,10 +165,6 @@ class HomeFragment : Fragment() {
         binding.btnRefreshTopics.setOnClickListener {
             refreshTopics(manual = true)
         }
-        // Cookie 卡上的「去设置配置面板」：面板没配时唯一的去处，别再让用户自己找
-        binding.tvSyncConfig.setOnClickListener {
-            (activity as? MainActivity)?.selectSettingsTab()
-        }
         // Hero 卡（Compose）：整块可点，直接进「超话」页并选中待签最多的账号
         binding.heroCompose.setViewCompositionStrategy(
             ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
@@ -206,6 +204,18 @@ class HomeFragment : Fragment() {
                         AccountStore.load(requireContext()).firstOrNull { it.uid == uid }
                             ?.let { confirmDeleteAccount(it) }
                     },
+                )
+            }
+        }
+        binding.cookieCompose.setViewCompositionStrategy(
+            ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
+        )
+        binding.cookieCompose.setContent {
+            val state by cookieState.collectAsState()
+            WcmTheme {
+                CookieCard(
+                    state = state,
+                    onConfig = { (activity as? MainActivity)?.selectSettingsTab() },
                 )
             }
         }
@@ -380,22 +390,18 @@ class HomeFragment : Fragment() {
      * 还剩几天」，只有 pill 变色时，眼睛会把它当成状态标签跳过；整行红字才会拉住视线。
      */
     private fun renderCookieValidity(accounts: List<AccountStore.Account>, panelReady: Boolean) {
-        val host = _binding ?: return
-        val pill = host.tvSyncPill
-        val hint = host.tvSyncHint
-        val list = host.cookieList
-        val config = host.tvSyncConfig
-
-        hint?.text = getString(
+        val hint = getString(
             if (panelReady) R.string.sync_card_hint else R.string.sync_card_hint_off
         )
-        // 面板没配时给一个明确去处，别让用户自己翻设置页
-        config?.visibility = if (panelReady) View.GONE else View.VISIBLE
-
-        list.removeAllViews()
         if (accounts.isEmpty()) {
-            list.addView(requireContext().emptyHintView(getString(R.string.sync_empty)))
-            applyPill(pill, getString(R.string.sync_pill_unknown), PillStyle.NEUTRAL)
+            cookieState.value = CookieCardUi(
+                pillText = getString(R.string.sync_pill_unknown),
+                pillTone = PillTone.NEUTRAL,
+                hint = hint,
+                showConfig = !panelReady,
+                emptyText = getString(R.string.sync_empty),
+                rows = emptyList(),
+            )
             return
         }
 
@@ -419,70 +425,52 @@ class HomeFragment : Fragment() {
         val unsynced = rows.count { !it.first.cookieDead && !it.second.known }
 
         // 卡头只讲「最坏的那一个」：一个号过期，面板上那个号就已经掉登录了
-        when {
-            !panelReady -> applyPill(pill, getString(R.string.sync_pill_off), PillStyle.NEUTRAL)
-            dead > 0 -> applyPill(
-                pill, getString(R.string.sync_pill_dead_fmt, dead), PillStyle.DANGER
-            )
-            expired > 0 -> applyPill(
-                pill, getString(R.string.sync_pill_expired_fmt, expired), PillStyle.DANGER
-            )
-            expiring > 0 -> applyPill(
-                pill, getString(R.string.sync_pill_warn_fmt, expiring), PillStyle.DANGER
-            )
-            unsynced == accounts.size -> applyPill(
-                pill, getString(R.string.sync_pill_unknown), PillStyle.NEUTRAL
-            )
-            unsynced > 0 -> applyPill(
-                pill, getString(R.string.sync_pill_unsynced_fmt, unsynced), PillStyle.WARN
-            )
-            else -> applyPill(pill, getString(R.string.sync_pill_ok), PillStyle.OK)
+        val (pillText, pillTone) = when {
+            !panelReady -> getString(R.string.sync_pill_off) to PillTone.NEUTRAL
+            dead > 0 -> getString(R.string.sync_pill_dead_fmt, dead) to PillTone.DANGER
+            expired > 0 -> getString(R.string.sync_pill_expired_fmt, expired) to PillTone.DANGER
+            expiring > 0 -> getString(R.string.sync_pill_warn_fmt, expiring) to PillTone.DANGER
+            unsynced == accounts.size -> getString(R.string.sync_pill_unknown) to PillTone.NEUTRAL
+            unsynced > 0 -> getString(R.string.sync_pill_unsynced_fmt, unsynced) to PillTone.WARN
+            else -> getString(R.string.sync_pill_ok) to PillTone.OK
         }
 
-        val inflater = LayoutInflater.from(requireContext())
-        rows.forEach { (acc, life) ->
-            val rowBinding = ItemCookieBinding.inflate(inflater, list, false)
-            val nameView = rowBinding.tvCookieName
-            val expiryView = rowBinding.tvCookieExpiry
-            val pillView = rowBinding.tvCookiePill
-            // 失效 / 临期 / 过期一律红：这三件事的动作都是「马上处理」
-            val danger = acc.cookieDead || life.alert
-
-            nameView.text = displayName(acc)
-            nameView.setTextColor(
-                ContextCompat.getColor(
-                    nameView.context,
-                    if (danger) R.color.danger_text else R.color.ink
-                )
-            )
-            expiryView.text = if (acc.cookieDead) {
-                getString(R.string.cookie_dead_hint)
-            } else {
-                val base = expiryLine(life, panelReady)
-                if (acc.cookieLastError.isNotEmpty()) {
-                    base + "\n" + getString(R.string.cookie_last_error_fmt, acc.cookieLastError)
+        cookieState.value = CookieCardUi(
+            pillText = pillText,
+            pillTone = pillTone,
+            hint = hint,
+            showConfig = !panelReady,
+            emptyText = "",
+            rows = rows.map { (acc, life) ->
+                val danger = acc.cookieDead || life.alert
+                val expiryText = if (acc.cookieDead) {
+                    getString(R.string.cookie_dead_hint)
                 } else {
-                    base
+                    val base = expiryLine(life, panelReady)
+                    if (acc.cookieLastError.isNotEmpty()) {
+                        base + "\n" + getString(R.string.cookie_last_error_fmt, acc.cookieLastError)
+                    } else {
+                        base
+                    }
                 }
-            }
-            expiryView.setTextColor(
-                ContextCompat.getColor(
-                    expiryView.context,
-                    if (danger) R.color.danger_text else R.color.ink_2
+                val (label, tone) = when {
+                    acc.cookieDead -> getString(R.string.cookie_dead_pill) to PillTone.DANGER
+                    life.state == CookieLife.State.EXPIRED ->
+                        getString(R.string.cookie_expired) to PillTone.DANGER
+                    life.state == CookieLife.State.EXPIRING ->
+                        cookieLeftLabel(life) to PillTone.DANGER
+                    life.state == CookieLife.State.OK -> cookieLeftLabel(life) to PillTone.OK
+                    else -> getString(R.string.cookie_unsynced) to PillTone.NEUTRAL
+                }
+                CookieRowUi(
+                    name = displayName(acc),
+                    danger = danger,
+                    expiryText = expiryText,
+                    pillText = label,
+                    pillTone = tone,
                 )
-            )
-            val (label, style) = when {
-                acc.cookieDead -> getString(R.string.cookie_dead_pill) to PillStyle.DANGER
-                life.state == CookieLife.State.EXPIRED ->
-                    getString(R.string.cookie_expired) to PillStyle.DANGER
-                life.state == CookieLife.State.EXPIRING ->
-                    cookieLeftLabel(life) to PillStyle.DANGER
-                life.state == CookieLife.State.OK -> cookieLeftLabel(life) to PillStyle.OK
-                else -> getString(R.string.cookie_unsynced) to PillStyle.NEUTRAL
-            }
-            applyPill(pillView, label, style)
-            list.addView(rowBinding.root)
-        }
+            },
+        )
     }
 
     /** 剩余天数文案：满 1 天给整数天，不足 1 天单独说，别显示「剩余 0 天」。 */
@@ -536,20 +524,7 @@ class HomeFragment : Fragment() {
         return if (life.alert) base + "\n" + getString(R.string.cookie_renew_hint) else base
     }
 
-    /** cookie 卡上的三种 pill 配色（绿 / 琥珀 / 红 / 中性），统一从这里取，别各写各的。 */
-    private enum class PillStyle(val bg: Int, val fg: Int) {
-        OK(R.drawable.bg_pill_ok, R.color.ok_text),
-        WARN(R.drawable.bg_pill_warn, R.color.warn_text),
-        DANGER(R.drawable.bg_pill_danger, R.color.danger_text),
-        NEUTRAL(R.drawable.bg_pill_neutral, R.color.ink_2),
-    }
-
-    private fun applyPill(pill: TextView, text: String, style: PillStyle) {
-        pill.text = text
-        pill.setBackgroundResource(style.bg)
-        pill.setTextColor(ContextCompat.getColor(pill.context, style.fg))
-    }
-
+    
     /**
      * 昵称兜底补拉：登录时资料接口没回昵称的账号，进首页后台补一次。
      *
