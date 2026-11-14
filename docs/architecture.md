@@ -85,7 +85,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 
 - 315 个 JVM 单测，0 failures
 - `assembleDebug` / `assembleRelease` 通过
-- release APK ≈ 3.65MB（R8 开启前 6.55MB；Compose 迁移中）
+- release APK ≈ 3.68MB（R8 开启前 6.55MB；Compose 迁移中）
 - `lint` 在本机 Windows 环境会长时间卡在 `lintAnalyzeDebug`；CI 的 `build-apk.yml`
   只跑单测 + assembleDebug，不依赖 lint
 
@@ -122,8 +122,10 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
   日志卡展开终端、空目标态正常。
 - 图库浏览 Compose：`LazyVerticalGrid` 3 列正方形格子 + 分组头「更早 · 6 张」；
   长按进入多选（已选 1/分享/删除/取消）、排序菜单 5 项、筛选 chip 正常。
-- 未覆盖：真实签到/抓取（需要微博账号）、选图/预览、
-  `PostPickActivity`/`ImagePreviewActivity`/`RemotePreviewActivity` 仍为 XML。
+- 浏览博主页 Compose：输入行/目标 chip/筛选/空态正常（假账号无网络时走空态）。
+- 全屏预览 Compose：本地图库点图打开 `HorizontalPager`，底部计数/文件名/分享/
+  打开/删除工具条正常，图片复用 `ZoomableImageView`；远程预览共用同一翻页器。
+- 未覆盖：真实签到/抓取（需要微博账号）、选图页实际载入（需要有效 cookie 的帖子详情）。
 
 已完成：
 
@@ -153,14 +155,20 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 - **图库浏览 Compose**：`GalleryBrowseScreen` + `GalleryBrowseUiState`
   （LazyVerticalGrid、分组头跨行、多选遮罩、搜索防抖、排序/分组菜单）；
   缩略图复用 `ThumbLoader` 的采样与 LruCache
-- ViewBinding：全部界面已替换（LogPanel 的通用 host 仍按 id 查找；Gallery 两个对话框输入框保留 dialogView 查找）
+- **浏览/选图 Compose**：`BrowsingScreen`（LazyColumn 卡片 + FlowRow 小图 + 多选）与
+  `PostPickScreen`（两列网格 + 全选/下载）；远程缩略图复用 `RemoteThumb` 缓存
+- **全屏预览 Compose**：`ZoomPager`（HorizontalPager + `ZoomableImageView` AndroidView）
+  同时服务本地图库与远程大图；并发解码闸门与放大态停用翻页保持
+- ViewBinding：剩余 `MainActivity` / `HomeFragment` 壳 / 登录页 / 两个抓取对话框
+  （`LogPanel` 的通用 host 仍按 id 查找）
 
 待办（按建议顺序）：
 
-1. 浏览/选图/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
-2. 导航壳与登录页收尾；删除已迁移的旧 XML。
-3. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
+1. 导航壳：把 `MainActivity` 的 ViewPager/Fragment 壳换成 Navigation Compose；
+   当前四个 Tab 的内容都已是 Compose，但 Host 仍是 Fragment。
+2. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
    `:feature` 模块（需先把 `R.*` 资源迁移到 feature）。
+3. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路。
 
 ## 7. 不变量（改动时必须保留）
 

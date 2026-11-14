@@ -23,9 +23,14 @@
 - **抓取单闸门类化**：`CrawlRunner` object → `CrawlService`，由 Hilt `@Singleton` 注入。
 - **设置页 Compose 试点**：`ComposeView` + `@HiltViewModel`；新增 Material3 `WcmTheme`
   （使用 `colors.xml` 品牌令牌，与 XML 页面一致）。
-- **模拟器冒烟（2026-11-14）**：首页/超话/图库/设置/登录/浏览页正常；设置页深浅色、
-  开关持久化、面板地址校验均通过；强制触发 WorkManager 后 `CheckInWorker` 由 Hilt
-  实例化并返回 SUCCESS。
+- **首页/超话/图库/图库浏览 Compose**：Hero、账号列表、Cookie 卡、日志卡、超话筛选/
+  排序/详情、抓取目标菜单/进度、`LazyVerticalGrid` 图库网格与多选均改为 Compose；
+  旧 XML 与 RecyclerView 适配器删除。
+- **浏览/选图/预览 Compose**：浏览页卡片 + FlowRow 小图、选图页两列网格、
+  本地/远程全屏预览 `HorizontalPager`（`ZoomableImageView` 通过 `AndroidView` 复用）。
+- **模拟器冒烟（2026-11-14）**：首页/超话/图库/图库浏览/设置/登录/浏览页正常；
+  超话筛选排序详情、图库多选、预览翻页均已走查；设置页深浅色、开关持久化、
+  面板地址校验均通过；强制触发 WorkManager 后 `CheckInWorker` 由 Hilt 实例化并返回 SUCCESS。
 - **ViewBinding 全量落地**：首页/超话/图库/浏览/选图/预览/登录等界面去掉手写
   `findViewById`（`LogPanel` 的通用 host 除外），Fragment 在 `onDestroyView` 清理 binding。
 - **首页 Hero Compose**：进度环/待签数/pill/一句话结论改为 `HomeHeroCard`。
