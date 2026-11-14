@@ -20,6 +20,7 @@
 - **前后台共用服务**：签到编排从 HomeFragment 抽到 `CheckinService`；
   探活/补昵称/面板同步从 HomeFragment 与 Worker 收敛到 `AccountMaintenanceService`。
 - **Hilt + HiltWorkerFactory**：`@HiltAndroidApp`、`@HiltWorker`，关闭 WorkManager 默认初始化。
+- **抓取单闸门类化**：`CrawlRunner` object → `CrawlService`，由 Hilt `@Singleton` 注入。
 - **设置页 Compose 试点**：`ComposeView` + `@HiltViewModel`；新增 Material3 `WcmTheme`
   （Android 12+ 跟随壁纸取色，低版本对齐 `colors.xml`）。其余页面仍为 XML，逐屏迁移。
 - **release 开启 R8/资源收缩**：APK 6.55MB → 3.54MB（含 Compose 运行时）。

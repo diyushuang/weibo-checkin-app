@@ -287,7 +287,7 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
         │   │   ├── GuestSession.kt / WebAjax.kt           # 游客身份（两步握手）/ Web ajax
         │   │   ├── WeiboThrottle.kt                       # 请求间隔闸门
         │   │   ├── CrawlPlanner.kt / CrawlCursor.kt       # 增量规划（纯函数）/ 游标模型
-        │   │   ├── CrawlIndex.kt / CrawlRunner.kt         # 去重索引（NDJSON）/ 抓取单闸门
+        │   │   ├── CrawlIndex.kt / CrawlService.kt        # 去重索引（NDJSON）/ 抓取单闸门
         │   │   ├── CrawlMarks.kt                           # 「已抓取」快照（预览页标记用）
         │   │   ├── CrawlProgress.kt / SafAccess.kt        # 进度模型（纯函数）/ 目录授权自检
         │   │   ├── AssetName.kt / Takeover.kt             # 命名规范化 / 相册已有文件接管

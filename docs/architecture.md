@@ -29,14 +29,14 @@
 | --- | --- | --- |
 | `:core` | `AssetName`、`Hashing`、`CrawlCursor`/`Budget`/`Phase`/`StopReason`、`ReloginPolicy`、`AccountStatusHead`、`AppScope` | Android UI、SharedPreferences、OkHttp 业务 |
 | `:data` | `WeiboHttp/Auth/Topic/Post/ImageUrl`、`PanelApi`、`GuestSession`、`WeiboPasswordLogin`、`AccountStore`、`PanelSettings`、`CrawlSettings`、`CrawlIndex`、`SafTreeStore`、`GalleryFiles`、`TopicStore`、`CredentialVault`、`GifEncoder`、`LivePhotoConverter` | View/Fragment、签到/抓取编排 |
-| `:domain` | `CheckinService`、`AccountMaintenanceService`、`CrawlEngine`、`AlbumCrawler`、`TimelineCrawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`CrawlRunner`、`PostAssets`、`AutoRelogin` | Android UI、资源 `R.*` |
+| `:domain` | `CheckinService`、`AccountMaintenanceService`、`CrawlEngine`、`AlbumCrawler`、`TimelineCrawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`CrawlService`、`PostAssets`、`AutoRelogin` | Android UI、资源 `R.*` |
 | `:app` | `MainActivity`、四个 Fragment、浏览/选图/预览 Activity、`RemoteThumb`、`ThumbLoader`、`ZoomableImageView`、`LogPanel`、`CheckInWorker`、`WcmApp`、Compose 设置页 | 业务规则、网络/存储实现 |
 
 ## 3. 状态与并发
 
 - **应用级长任务**挂在 `:core` 的 `AppScope`（`SupervisorJob + Dispatchers.IO`），
   不随页面销毁；ViewModel/页面只观察状态，不拥有任务。
-- **抓取单闸门**仍在 `CrawlRunner`：全应用同一时刻只允许一个抓取任务，
+- **抓取单闸门**仍在 `CrawlService`：全应用同一时刻只允许一个抓取任务，
   `StateFlow<RunState>` 向图库页/首页暴露进度；`requestStop` 对自动抓取同样生效。
 - **签到编排**在 `CheckinService`：账号循环、探活、列超话、逐条签到、记账；
   `CheckinService.noteResult` 是唯一的“上次结果”写入口。
@@ -53,11 +53,13 @@
   `HiltWorkerFactory` 通过 `@Inject` 注入。
 - `CheckInWorker` 标注 `@HiltWorker` + `@AssistedInject`；
   manifest 关闭 WorkManager 默认初始化，避免自定义 WorkerFactory 被覆盖。
-- 现阶段 Hilt 主要解决 **Application/Worker/ViewModel 的构造与初始化顺序**：
-  `CheckInWorker` 是 `@HiltWorker`，设置页 `SettingsViewModel` 是 `@HiltViewModel`
-  （`MainActivity` 与 `SettingsFragment` 均标 `@AndroidEntryPoint`）。
-  `CheckinService`/`CrawlRunner` 等仍是 `object`，后续再逐步改为构造注入的类
-  （见“待办”）。
+- 现阶段 Hilt 已覆盖 **Application / Worker / ViewModel / 抓取单闸门**：
+  `CheckInWorker` 是 `@HiltWorker`，设置页 `SettingsViewModel` 是 `@HiltViewModel`，
+  `CrawlService` 由 `DomainModule` 以 `@Singleton` 提供并被四个抓取入口注入
+  （`MainActivity` / `HomeFragment` / `GalleryFragment` / `BrowsingActivity` /
+  `PostPickActivity` 均标 `@AndroidEntryPoint`）。
+  `CheckinService` / `AccountMaintenanceService` / `AutoRelogin` 仍是 `object`，
+  后续再逐步改为构造注入的类（见“待办”）。
 - 版本：Hilt `2.51.1`、KSP `1.9.24-1.0.20`（与 Kotlin `1.9.24` 对齐）。
 
 ## 5. 构建与门禁
@@ -89,24 +91,24 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 - `AccountStore` 933 行 → `AccountStore`（643 行）+ `PanelSettings` + `CrawlSettings`
 - 签到编排/保活/重登从 UI 与 Worker 收敛到 `:domain` 服务
 - 4 模块 + Hilt + R8；所有改动行为保持，数据格式零迁移
+- **抓取单闸门类化**：`CrawlRunner` object → `CrawlService`，由 Hilt `@Singleton` 提供
 - **Compose 试点**：设置页改为 ComposeView + `SettingsViewModel`，新增 `WcmTheme`
   （Material3；Android 12+ 跟随壁纸取色，低版本对齐 `colors.xml`）
 - ViewBinding：设置页与主壳已替换，其余界面待迁移
 
 待办（按建议顺序）：
 
-1. `CrawlRunner` 收敛为可构造注入的 `CrawlService` 类（Hilt `@Singleton`）。
-2. 首页 MVVM：`HomeViewModel` 订阅 `CheckinService`/`CrawlRunner`，
+1. 首页 MVVM：`HomeViewModel` 订阅 `CheckinService`/`CrawlService`，
    删除 companion object 的进程级 UI 状态；随后迁移首页 Compose。
-3. 超话/图库/浏览/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
-4. 导航壳与登录页收尾；删除已迁移的旧 XML。
-5. 其余界面 ViewBinding 替换（约 180 处 findViewById）。
-6. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
+2. 超话/图库/浏览/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
+3. 导航壳与登录页收尾；删除已迁移的旧 XML。
+4. 其余界面 ViewBinding 替换（约 180 处 findViewById）。
+5. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
    `:feature` 模块（需先把 `R.*` 资源迁移到 feature）。
 
 ## 7. 不变量（改动时必须保留）
 
-- 抓取单闸门：任何新增入口（定时、通知、快捷方式）都必须经 `CrawlRunner`。
+- 抓取单闸门：任何新增入口（定时、通知、快捷方式）都必须经 `CrawlService`。
 - 三层去重与 `CrawlIndex` 的终态语义：不要绕过 `CrawlSaver` 直接写文件。
 - 账号表并发：`AccountStore` 的读改写仍在 `LOCK` 内；设置/账号分离后，
   抓取设置由 `CrawlSettings.LOCK` 保护。
