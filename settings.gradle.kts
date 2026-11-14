@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "wcm-checkin"
-include(":app")
+include(":app", ":core")
