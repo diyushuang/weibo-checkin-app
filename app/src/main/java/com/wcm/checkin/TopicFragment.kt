@@ -1,5 +1,7 @@
 package com.wcm.checkin
 
+import com.wcm.checkin.databinding.FragmentTopicBinding
+import com.wcm.checkin.databinding.ItemTopicBinding
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -80,6 +82,8 @@ class TopicFragment : Fragment() {
     private var multiAccountMode = false
 
     private lateinit var adapter: TopicAdapter
+    private var _binding: FragmentTopicBinding? = null
+    private val binding get() = _binding!!
     private lateinit var list: RecyclerView
     private lateinit var emptyBox: View
     private lateinit var errorBox: View
@@ -114,28 +118,31 @@ class TopicFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = inflater.inflate(R.layout.fragment_topic, container, false)
+    ): View {
+        _binding = FragmentTopicBinding.inflate(inflater, container, false)
+        return binding.root
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        list = view.findViewById(R.id.topicList)
-        emptyBox = view.findViewById(R.id.topicEmpty)
-        errorBox = view.findViewById(R.id.topicError)
-        progress = view.findViewById(R.id.prTopic)
-        pillsRow = view.findViewById(R.id.topicAccountPills)
-        filtersRow = view.findViewById(R.id.topicFilters)
+        list = binding.topicList
+        emptyBox = binding.topicEmpty
+        errorBox = binding.topicError
+        progress = binding.prTopic
+        pillsRow = binding.topicAccountPills
+        filtersRow = binding.topicFilters
 
         adapter = TopicAdapter()
         list.layoutManager = LinearLayoutManager(requireContext())
         list.adapter = adapter
 
-        view.findViewById<View>(R.id.btnTopicRefresh).setOnClickListener { refresh(manual = true) }
-        view.findViewById<View>(R.id.btnTopicEmptyAction).setOnClickListener {
+        binding.btnTopicRefresh.setOnClickListener { refresh(manual = true) }
+        binding.btnTopicEmptyAction.setOnClickListener {
             (activity as? MainActivity)?.selectHomeTab()
         }
-        view.findViewById<View>(R.id.btnTopicRetry).setOnClickListener { refresh(manual = true) }
-        view.findViewById<View>(R.id.btnTopicSort).setOnClickListener { showSortMenu(it) }
-        view.findViewById<View>(R.id.btnTopicMore).setOnClickListener { showOverflow(it) }
+        binding.btnTopicRetry.setOnClickListener { refresh(manual = true) }
+        binding.btnTopicSort.setOnClickListener { showSortMenu(it) }
+        binding.btnTopicMore.setOnClickListener { showOverflow(it) }
 
         TopicStore.ensureLoaded(requireContext())
         pendingUid?.let {
@@ -158,6 +165,7 @@ class TopicFragment : Fragment() {
         // 视图没了就把自建弹窗关掉，否则窗口挂着已 detach 的 Activity → WindowLeaked
         textDialog?.dismiss()
         textDialog = null
+        _binding = null
         super.onDestroyView()
     }
 
@@ -292,7 +300,7 @@ class TopicFragment : Fragment() {
 
     private fun render() {
         if (!isAdded) return
-        val host = view ?: return
+        val host = _binding ?: return
         val ctx = requireContext()
         val accounts = AccountStore.load(ctx)
         val snaps = TopicStore.all(ctx)
@@ -324,24 +332,24 @@ class TopicFragment : Fragment() {
         val total = rows.size
         val done = rows.count { it.topic.done }
         val dash = getString(R.string.topic_metric_empty)
-        host.findViewById<TextView>(R.id.tvMetricTotal).text =
+        host.tvMetricTotal.text =
             if (total > 0) total.toString() else dash
-        host.findViewById<TextView>(R.id.tvMetricDone).text =
+        host.tvMetricDone.text =
             if (staleDay || total == 0) dash else done.toString()
-        host.findViewById<TextView>(R.id.tvMetricPending).text =
+        host.tvMetricPending.text =
             if (staleDay || total == 0) dash else (total - done).toString()
         progress.setProgressCompat(if (total > 0 && !staleDay) done * 100 / total else 0, true)
         progress.visibility = if (loading) View.VISIBLE else View.GONE
 
         // 副标题：加载中 > 错误 > 跨天失效 > 更新时间
-        host.findViewById<TextView>(R.id.tvTopicSubtitle).text = when {
+        host.tvTopicSubtitle.text = when {
             loading -> getString(R.string.topic_subtitle_loading)
             error.isNotEmpty() -> getString(R.string.topic_subtitle_failed, error)
             staleDay -> getString(R.string.topic_subtitle_stale, atLabel)
             at > 0L -> getString(R.string.topic_subtitle_updated, atLabel)
             else -> getString(R.string.topic_subtitle_idle)
         }
-        host.findViewById<TextView>(R.id.tvTopicStatus).text = when {
+        host.tvTopicStatus.text = when {
             accounts.isEmpty() -> getString(R.string.topic_empty_no_account)
             error.isNotEmpty() -> getString(R.string.topic_subtitle_failed, error)
             staleDay -> getString(R.string.topic_subtitle_stale, atLabel)
@@ -357,15 +365,15 @@ class TopicFragment : Fragment() {
         val showError = shown.isEmpty() && error.isNotEmpty() && !loading
         val showEmpty = shown.isEmpty() && !showError && !loading
         errorBox.visibility = if (showError) View.VISIBLE else View.GONE
-        host.findViewById<TextView>(R.id.tvTopicError).text =
+        host.tvTopicError.text =
             getString(R.string.topic_subtitle_failed, error)
         emptyBox.visibility = if (showEmpty) View.VISIBLE else View.GONE
-        host.findViewById<TextView>(R.id.tvTopicEmpty).text = when {
+        host.tvTopicEmpty.text = when {
             accounts.isEmpty() -> getString(R.string.topic_empty_no_account)
             rows.isEmpty() -> getString(R.string.topic_empty_no_topic)
             else -> getString(R.string.topic_empty_filter)
         }
-        host.findViewById<View>(R.id.btnTopicEmptyAction).visibility =
+        host.btnTopicEmptyAction.visibility =
             if (accounts.isEmpty()) View.VISIBLE else View.GONE
         list.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
     }
@@ -813,9 +821,10 @@ class TopicFragment : Fragment() {
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-            val view = LayoutInflater.from(parent.context)
-                .inflate(R.layout.item_topic, parent, false)
-            return Holder(view)
+            val binding = ItemTopicBinding.inflate(
+                LayoutInflater.from(parent.context), parent, false,
+            )
+            return Holder(binding)
         }
 
         override fun getItemCount(): Int = items.size
@@ -824,17 +833,18 @@ class TopicFragment : Fragment() {
             holder.bind(items[position])
         }
 
-        inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
-            private val card = view
-            private val badge = view.findViewById<TextView>(R.id.tvLevelBadge)
-            private val name = view.findViewById<TextView>(R.id.tvTopicName)
-            private val meta = view.findViewById<TextView>(R.id.tvTopicMeta)
-            private val state = view.findViewById<TextView>(R.id.tvTopicState)
-            private val more = view.findViewById<ImageButton>(R.id.btnTopicMore)
-            private val detailBox = view.findViewById<View>(R.id.topicDetailBox)
-            private val intro = view.findViewById<TextView>(R.id.tvTopicIntro)
-            private val stats = view.findViewById<TextView>(R.id.tvTopicStats)
-            private val detailHint = view.findViewById<TextView>(R.id.tvTopicDetailHint)
+        inner class Holder(private val binding: ItemTopicBinding) :
+            RecyclerView.ViewHolder(binding.root) {
+            private val card = itemView
+            private val badge = binding.tvLevelBadge
+            private val name = binding.tvTopicName
+            private val meta = binding.tvTopicMeta
+            private val state = binding.tvTopicState
+            private val more = binding.btnTopicMore
+            private val detailBox = binding.topicDetailBox
+            private val intro = binding.tvTopicIntro
+            private val stats = binding.tvTopicStats
+            private val detailHint = binding.tvTopicDetailHint
 
             fun bind(row: TopicRow) {
                 val ctx = itemView.context
