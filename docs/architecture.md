@@ -38,6 +38,8 @@
   不随页面销毁；ViewModel/页面只观察状态，不拥有任务。
 - **首页 UI 状态**：忙碌闸门、日志缓冲、自动签到闩在 Hilt `HomeViewModel`；
   长任务仍挂 `AppScope`，ViewModel 只持有界面态。
+- **超话快照**：`HomeViewModel.topicStates` 是 `StateFlow<Map<String, TopicState>>`，
+  不可变 Map 整体替换；IO 线程写、主线程读，不会在遍历时被并发扩容打断。
 - **抓取单闸门**仍在 `CrawlService`：全应用同一时刻只允许一个抓取任务，
   `StateFlow<RunState>` 向图库页/首页暴露进度；`requestStop` 对自动抓取同样生效。
 - **签到编排**在 `CheckinService`：账号循环、探活、列超话、逐条签到、记账；
@@ -95,6 +97,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 - 4 模块 + Hilt + R8；所有改动行为保持，数据格式零迁移
 - **抓取单闸门类化**：`CrawlRunner` object → `CrawlService`，由 Hilt `@Singleton` 提供
 - **首页状态收口**：HomeFragment companion 的进程级 UI 状态迁入 Hilt `HomeViewModel`
+- **超话快照 StateFlow**：`TopicState` 提升为顶层，`topicStates` 由 ViewModel 持有
 - **Compose 试点**：设置页改为 ComposeView + `SettingsViewModel`，新增 `WcmTheme`
   （Material3；Android 12+ 跟随壁纸取色，低版本对齐 `colors.xml`）
 - ViewBinding：全部界面已替换（LogPanel 的通用 host 仍按 id 查找；Gallery 两个对话框输入框保留 dialogView 查找）

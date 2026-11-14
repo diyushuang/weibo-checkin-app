@@ -25,7 +25,8 @@
   （Android 12+ 跟随壁纸取色，低版本对齐 `colors.xml`）。其余页面仍为 XML，逐屏迁移。
 - **ViewBinding 全量落地**：首页/超话/图库/浏览/选图/预览/登录等界面去掉手写
   `findViewById`（`LogPanel` 的通用 host 除外），Fragment 在 `onDestroyView` 清理 binding。
-- **首页状态收口**：companion 的进程级 UI 状态迁入 Hilt `HomeViewModel`。
+- **首页状态收口**：companion 的进程级 UI 状态迁入 Hilt `HomeViewModel`；
+  超话快照改为 ViewModel 的 `StateFlow<Map<String, TopicState>>`。
 - **release 开启 R8/资源收缩**：APK 6.55MB → 3.55MB（含 Compose 运行时）。
 - **数据零迁移**：SharedPreferences 仍是 `wcm`，索引/游标/keystore/签名格式不变。
 - 验证：312 个 JVM 单测 / 0 failures；`assembleDebug` / `assembleRelease` 通过。
