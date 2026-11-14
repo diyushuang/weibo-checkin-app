@@ -96,6 +96,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 - 登录页打开微博官方登录 WebView；浏览博主页打开空态页。
 - WorkManager 周期任务已注册；`cmd jobscheduler run -f -n androidx.work.systemjobscheduler
   com.wcm.checkin 1` 强制触发后，`CheckInWorker` 由 Hilt 实例化并返回 SUCCESS。
+- 首页 Compose Hero：白卡视觉与 XML 一致，点击可跳转「超话」页。
 - 未覆盖：真实签到/抓取（需要微博账号）、选图/预览（需要图片数据）、
   `PostPickActivity`/`ImagePreviewActivity`/`RemotePreviewActivity`。
 
@@ -112,12 +113,13 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 - **超话快照 StateFlow**：`TopicState` 提升为顶层，`topicStates` 由 ViewModel 持有
 - **Compose 试点**：设置页改为 ComposeView + `SettingsViewModel`，新增 `WcmTheme`
   （Material3，使用 `colors.xml` 品牌令牌，与 XML 页面一致；不使用动态取色）
+- **首页 Hero Compose**：`HomeHeroCard` + `HomeHeroUiState`；`fragment_home` 的 Hero
+  卡已换成 ComposeView，其余账号/Cookie/日志区块仍为 XML
 - ViewBinding：全部界面已替换（LogPanel 的通用 host 仍按 id 查找；Gallery 两个对话框输入框保留 dialogView 查找）
 
 待办（按建议顺序）：
 
-1. 首页 Compose 化：`HomeViewModel` 已承接状态；下一步把 XML 渲染迁到 Compose，
-   并让 `topicStates`/日志走 StateFlow。
+1. 首页 Compose 化：Hero 卡已迁移；下一步把账号列表/Cookie 卡/日志卡/账号菜单迁到 Compose。
 2. 超话/图库/浏览/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
 3. 导航壳与登录页收尾；删除已迁移的旧 XML。
 4. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
