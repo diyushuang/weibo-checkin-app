@@ -1050,6 +1050,22 @@ private val NEGATIVE_WORDS = listOf(
     }
 
     /**
+     * 图片 URL → picId（路径最后一段去掉扩展名）。纯函数，JVM 可测。
+     *
+     * 索引里记的 key 就是详情 `pic_ids` 里的 pid，而微博图床的文件名恰好是同一个 pid ——
+     * 预览页只有 URL（列表卡片只给 url，不给 pid），靠这个反推才能回答「这张抓过没有」。
+     * 先剥 query / fragment 再剥扩展名（与 [Crawler] 的 pidOf 同口径）。
+     */
+    internal fun pidFromImageUrl(raw: String): String {
+        val t = raw.trim()
+        if (t.isEmpty()) return ""
+        val path = t.substringBefore('?').substringBefore('#')
+        val name = path.substringAfterLast('/')
+        if (name.isEmpty()) return ""
+        return name.replace(Regex("\\.(jpg|jpeg|png|gif|webp)$", RegexOption.IGNORE_CASE), "")
+    }
+
+    /**
      * 缩略图地址 → 同一张图的大图地址：把尺寸段换成 `large`。纯函数（不触网），JVM 可测。
      *
      * 浏览页的小图手里只有 `orj360` 这类缩略图 URL，点开要看大图就得换尺寸段。

@@ -126,6 +126,11 @@ class PostPickActivity : AppCompatActivity() {
         }
         btnDownload.setOnClickListener { submit(selected.toSet()) }
 
+        // 「哪些图已经在相册里」的快照（v0.9.18）：读完刷一遍格子，挑图时不用凭记忆
+        CrawlMarks.ensure(this) {
+            if (!isFinishing && !isDestroyed && loaded) adapter.notifyDataSetChanged()
+        }
+
         loadDetail()
     }
 
@@ -308,6 +313,11 @@ class PostPickActivity : AppCompatActivity() {
                         toast(getString(R.string.browse_done_fmt, summary.saved, suffix))
                     }
                 }
+                // 刚落了新文件：索引变了，重读一次快照，让「已抓取」小勾立刻出现
+                if ((summary?.saved ?: 0) > 0) {
+                    CrawlMarks.invalidate()
+                    CrawlMarks.ensure(this@PostPickActivity) { adapter.notifyDataSetChanged() }
+                }
                 render()
             }
         }
@@ -449,6 +459,7 @@ class PostPickActivity : AppCompatActivity() {
         inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
             private val image = view.findViewById<ImageView>(R.id.pickImage)
             private val badge = view.findViewById<TextView>(R.id.pickBadge)
+            private val done = view.findViewById<ImageView>(R.id.pickDone)
             private val scrim = view.findViewById<View>(R.id.pickScrim)
             private val check = view.findViewById<ImageView>(R.id.pickCheck)
 
@@ -487,6 +498,8 @@ class PostPickActivity : AppCompatActivity() {
                 image.contentDescription = getString(R.string.pick_pic_desc_fmt, position + 1)
                 badge.visibility = if (item.isLive || item.isGif) View.VISIBLE else View.GONE
                 badge.text = getString(if (item.isLive) R.string.pick_live_badge else R.string.pick_gif_badge)
+                // 这张已经在相册里了：右下角打勾，挑图时不用凭记忆（v0.9.18）
+                done.visibility = if (CrawlMarks.hasPic(item.picId)) View.VISIBLE else View.GONE
                 val checked = item.picId in selected
                 scrim.visibility = if (checked) View.VISIBLE else View.GONE
                 check.visibility = if (checked) View.VISIBLE else View.GONE

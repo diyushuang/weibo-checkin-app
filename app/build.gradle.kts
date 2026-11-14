@@ -79,8 +79,10 @@ android {
         // 0.9.17：浏览页预览图改成 48dp 小图（FIT_CENTER 整张缩进去）+ 点开全屏大图
         // （`RemotePreviewActivity`）；相册抓取的「补新」记住上次抓到最后一条微博，
         // 碰到它就停，不再每轮把前面已抓过的帖重新枚举一遍。
-        versionCode = 31
-        versionName = "0.9.17"
+        // 0.9.18：预览（浏览页小图 / 大图 / 选图页）标出「这张已经抓过」——
+        // 索引读一份只含 picId 与终态帖 id 的快照，按需加载、按 mtime 失效。
+        versionCode = 32
+        versionName = "0.9.18"
     }
 
     signingConfigs {

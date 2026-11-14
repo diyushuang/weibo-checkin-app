@@ -42,6 +42,20 @@
             android:textColor="@color/on_preview_surface"
             android:visibility="gone" />
 
+        <!-- 已抓取标记（v0.9.18）：右下角小勾，与 LIVE/GIF 徽标（左下）错开 -->
+        <ImageView
+            android:id="@+id/pickDone"
+            android:layout_width="@dimen/browse_thumb_badge"
+            android:layout_height="@dimen/browse_thumb_badge"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="@dimen/sp_1"
+            android:background="@drawable/bg_cell_check"
+            android:contentDescription="@string/browse_done_badge"
+            android:padding="2dp"
+            android:src="@drawable/ic_check"
+            android:visibility="gone"
+            app:tint="@color/brand_on" />
+
         <!-- 选中遮罩 -->
         <View
             android:id="@+id/pickScrim"

@@ -146,6 +146,9 @@
     <string name="browse_meta_retweet">转发</string>
     <string name="browse_meta_pics_fmt">%1$d 图</string>
     <string name="browse_meta_no_pic">无图</string>
+    <!-- 已抓取标记（v0.9.18）：元信息里说「这一帖的可见图里有几张已经在相册里」 -->
+    <string name="browse_meta_done_fmt">已抓 %1$d 张</string>
+    <string name="browse_done_badge">已抓取</string>
     <string name="browse_more_pics_fmt">+%1$d</string>
     <string name="browse_pic_desc_fmt">第 %1$d 张缩略图</string>
     <string name="browse_select_hint">点小图看大图 · 点卡片选图抓取 · 长按勾选整帖</string>
@@ -212,6 +215,8 @@
     <string name="preview_delete_msg">将从相册目录删除，无法恢复。</string>
     <string name="preview_delete_fail">删除失败（文件可能正被占用）</string>
     <string name="preview_index_fmt">%1$d / %2$d</string>
+    <!-- 大图预览里当前这张已经抓过（v0.9.18）：写在计数后面，不额外占一块界面 -->
+    <string name="preview_index_done_fmt">%1$d / %2$d · 已抓取</string>
     <string name="preview_load_fail">目录里没有图片</string>
     <!-- 远程大图预览（v0.9.17）：浏览页点小图后进来，图还在 CDN 上 -->
     <string name="preview_remote_desc">大图预览</string>

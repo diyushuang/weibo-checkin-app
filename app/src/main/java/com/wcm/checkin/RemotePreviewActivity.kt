@@ -105,6 +105,10 @@ class RemotePreviewActivity : AppCompatActivity() {
         pager.registerOnPageChangeCallback(pageCallback)
         pager.setCurrentItem(startIndex.coerceIn(0, urls.size - 1), false)
         renderIndex()
+        // 索引快照读完后刷一次：进来时可能还没读完，那时先不标「已抓取」
+        CrawlMarks.ensure(this) {
+            if (!isFinishing && !isDestroyed) renderIndex()
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -121,7 +125,13 @@ class RemotePreviewActivity : AppCompatActivity() {
     private fun renderIndex() {
         val pos = pager.currentItem
         if (pos !in urls.indices) return
-        tvIndex.text = getString(R.string.preview_index_fmt, pos + 1, urls.size)
+        // 这张抓过没有：计数后面跟一个「已抓取」，不额外占一块界面（v0.9.18）
+        val done = CrawlMarks.hasPic(WeiboApi.pidFromImageUrl(urls[pos]))
+        tvIndex.text = if (done) {
+            getString(R.string.preview_index_done_fmt, pos + 1, urls.size)
+        } else {
+            getString(R.string.preview_index_fmt, pos + 1, urls.size)
+        }
         loading.visibility = if (pos in settled) View.GONE else View.VISIBLE
     }
 

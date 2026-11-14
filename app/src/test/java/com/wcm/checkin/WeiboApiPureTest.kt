@@ -358,4 +358,29 @@ class WeiboApiPureTest {
             WeiboApi.fullFromThumb("https://wx1.sinaimg.cn/orj360/abc.jpg?from=timeline"),
         )
     }
+
+    // ---------- 图片 URL → picId（v0.9.18） ----------
+
+    @Test
+    fun pidFromImageUrl_takesBasename() {
+        assertEquals("0060jpg", WeiboApi.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/0060jpg.jpg"))
+        assertEquals("abc", WeiboApi.pidFromImageUrl("https://wx3.sinaimg.cn/large/abc.jpg"))
+        assertEquals("abc", WeiboApi.pidFromImageUrl("https://wx3.sinaimg.cn/orj360/abc.gif"))
+        assertEquals("ABC", WeiboApi.pidFromImageUrl("https://wx2.sinaimg.cn/thumb300/ABC.JPG"))
+    }
+
+    @Test
+    fun pidFromImageUrl_stripsQueryAndFragment() {
+        assertEquals("abc", WeiboApi.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/abc.jpg?from=timeline"))
+        assertEquals("abc", WeiboApi.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/abc.jpg#x"))
+        assertEquals("abc", WeiboApi.pidFromImageUrl("  https://wx1.sinaimg.cn/orj360/abc.jpg  "))
+    }
+
+    /** 没有扩展名 / 空串 / 只有目录：都返回空或原样基名，绝不返回整条 URL。 */
+    @Test
+    fun pidFromImageUrl_degradesSafely() {
+        assertEquals("", WeiboApi.pidFromImageUrl(""))
+        assertEquals("", WeiboApi.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/"))
+        assertEquals("abc", WeiboApi.pidFromImageUrl("abc"))
+    }
 }

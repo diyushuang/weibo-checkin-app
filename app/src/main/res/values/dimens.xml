@@ -121,6 +121,8 @@
          （5×56 + 4×4 = 296 ≤ 300 可用宽），320dp 屏自动降成 4 格。 -->
     <dimen name="browse_thumb_size">56dp</dimen>
     <dimen name="browse_thumb_radius">6dp</dimen>
+    <!-- 小图右下角「已抓取」小勾（v0.9.18）：14dp，够看见又不吃掉画面 -->
+    <dimen name="browse_thumb_badge">14dp</dimen>
 
     <!-- 列表分隔线缩进 -->
 </resources>

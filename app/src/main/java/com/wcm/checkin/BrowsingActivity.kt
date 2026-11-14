@@ -2,12 +2,14 @@ package com.wcm.checkin
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
@@ -194,6 +196,12 @@ class BrowsingActivity : AppCompatActivity() {
         // 先给上令牌值：第一帧的 fillPics 不能因为「还没测量」而整块跳过
         thumbPx = resources.getDimensionPixelSize(R.dimen.browse_thumb_size)
         thumbGap = resources.getDimensionPixelSize(R.dimen.gallery_gutter)
+
+        // 「哪些图已经抓过」的本地快照（v0.9.18）：索引解析在后台，读完刷一遍列表。
+        // 没读完之前一律不标 —— 宁可不标，也不能给没抓过的图打勾。
+        CrawlMarks.ensure(this) {
+            if (!isFinishing && !isDestroyed && visible.isNotEmpty()) adapter.notifyDataSetChanged()
+        }
 
         renderTargets()
         if (savedInstanceState == null) {
@@ -563,6 +571,11 @@ class BrowsingActivity : AppCompatActivity() {
                     // 重新载入后旧勾选会脱离列表，明确告知而不是静默少抓
                     toast("⚠️ " + missing + " " + getString(R.string.browse_missing_skipped))
                 }
+                // 刚落了新文件：索引变了，重读一次快照，让小勾立刻出现在刚抓的图上
+                if (summary != null && summary.saved > 0) {
+                    CrawlMarks.invalidate()
+                    CrawlMarks.ensure(this@BrowsingActivity) { adapter.notifyDataSetChanged() }
+                }
                 exitSelectMode()
             }
         }
@@ -578,6 +591,8 @@ class BrowsingActivity : AppCompatActivity() {
 
     private fun toast(text: String) =
         Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     // ---------- 列表 ----------
 
@@ -693,6 +708,7 @@ class BrowsingActivity : AppCompatActivity() {
             private fun metaLine(post: WeiboApi.RawPost): String {
                 val t = WeiboApi.parseWeiboTime(post.createdAt)
                 val whenStr = t?.let { "${it.first.substring(5)} ${it.second.substring(0, 5)}" } ?: "未知时间"
+                val doneCount = post.thumbs.count { CrawlMarks.hasPic(WeiboApi.pidFromImageUrl(it)) }
                 val tags = buildList {
                     if (post.pinned) add(getString(R.string.browse_meta_pinned))
                     if (post.isRetweet) {
@@ -702,8 +718,29 @@ class BrowsingActivity : AppCompatActivity() {
                     } else {
                         add(getString(R.string.browse_meta_no_pic))
                     }
+                    if (doneCount > 0) add(getString(R.string.browse_meta_done_fmt, doneCount))
                 }
                 return "$whenStr · ${tags.joinToString(" · ")}"
+            }
+
+            /** 右下角「已抓取」小勾：品牌实底圆 + 白勾，压在图片上（v0.9.18）。 */
+            private fun doneBadge(ctx: Context): ImageView {
+                val side = resources.getDimensionPixelSize(R.dimen.browse_thumb_badge)
+                val inset = dp(2)
+                return ImageView(ctx).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        side, side, Gravity.BOTTOM or Gravity.END,
+                    ).apply {
+                        marginEnd = inset
+                        bottomMargin = inset
+                    }
+                    setBackgroundResource(R.drawable.bg_cell_check)
+                    setImageResource(R.drawable.ic_check)
+                    imageTintList = ColorStateList.valueOf(getColor(R.color.brand_on))
+                    setPadding(dp(2), dp(2), dp(2), dp(2))
+                    contentDescription = getString(R.string.browse_done_badge)
+                    isClickable = false
+                }
             }
 
             /**
@@ -733,24 +770,34 @@ class BrowsingActivity : AppCompatActivity() {
                 val tiles = thumbs.take(MAX_TILES)
                 val jobs = ArrayList<Pair<ImageView, String>>(tiles.size)
                 tiles.forEachIndexed { i, url ->
-                    val iv = ImageView(ctx).apply {
+                    // 一格 = 圆角底托 + 图片 +（抓过的）右下角小勾。用 FrameLayout 包一层
+                    // 是因为 ImageView 装不下子视图，而勾要压在图上面（v0.9.18）
+                    val cell = FrameLayout(ctx).apply {
                         layoutParams = GridLayout.LayoutParams().apply {
                             width = thumbPx
                             height = thumbPx
                             marginEnd = if (i % thumbCols == thumbCols - 1) 0 else thumbGap
                             if (i >= thumbCols) topMargin = thumbGap
                         }
-                        scaleType = ImageView.ScaleType.FIT_CENTER
                         setBackgroundResource(R.drawable.bg_thumb)
                         clipToOutline = true
-                        contentDescription = getString(R.string.browse_pic_desc_fmt, i + 1)
                         setOnClickListener {
                             // 多选态：点图就是点卡片（勾选/取消整帖），不能跳去大图
                             if (selectMode) itemView.performClick() else openPreview(post, i)
                         }
                     }
+                    val iv = ImageView(ctx).apply {
+                        layoutParams = FrameLayout.LayoutParams(
+                            FrameLayout.LayoutParams.MATCH_PARENT,
+                            FrameLayout.LayoutParams.MATCH_PARENT,
+                        )
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        contentDescription = getString(R.string.browse_pic_desc_fmt, i + 1)
+                    }
                     iv.tag = url
-                    pics.addView(iv)
+                    cell.addView(iv)
+                    if (CrawlMarks.hasPic(WeiboApi.pidFromImageUrl(url))) cell.addView(doneBadge(ctx))
+                    pics.addView(cell)
                     jobs.add(iv to url)
                 }
                 pendingThumbs = jobs

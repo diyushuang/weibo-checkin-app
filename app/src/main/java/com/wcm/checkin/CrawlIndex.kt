@@ -676,6 +676,20 @@ class CrawlIndex private constructor(
         }
     }
 
+    /**
+     * 只读用完的收尾：不 flush、不重写「待重试」提示文件（v0.9.18）。
+     *
+     * 专给「查哪些图已经抓过」的预览页用：它们手里是加载那一刻的快照，
+     * 拿它回写 hint 会把并发抓取刚算出来的待重试数盖成旧值。
+     * 本实例从不写入，句柄本来就是空的，这里只做注销。
+     */
+    fun closeReadOnly() {
+        synchronized(LOCK) {
+            reopenWriter()
+            unregister(this)
+        }
+    }
+
     /** 同一索引文件上的其它活实例（不含自己）。 */
     private fun siblings(): List<CrawlIndex> = synchronized(LOCK) {
         LIVE[mainFile.absolutePath].orEmpty().filter { it !== this }
