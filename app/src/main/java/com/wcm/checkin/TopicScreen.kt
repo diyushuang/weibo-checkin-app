@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -64,11 +65,12 @@ fun TopicScreen(
     onEmptyAction: () -> Unit,
     onRetry: () -> Unit,
 ) {
+    val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(colorResource(R.color.bg)),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+        contentPadding = PaddingValues(horizontal = pagePad, vertical = pagePad),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item(key = "header") { Header(state, onRefresh, onOverflowField, onOverflowRefresh) }

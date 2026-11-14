@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -252,6 +253,7 @@ private fun PostList(
     onLoadMore: () -> Unit,
     onVisibleIndex: (Int) -> Unit,
 ) {
+    val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = state.initialScrollIndex)
     LaunchedEffect(listState) {
         snapshotFlow { listState.firstVisibleItemIndex }.collect { onVisibleIndex(it) }
@@ -265,7 +267,7 @@ private fun PostList(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = pagePad, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         items(state.posts.size, key = { state.posts[it].bid }) { index ->

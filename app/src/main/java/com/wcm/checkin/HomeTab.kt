@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -54,6 +55,7 @@ fun HomeTab(
     onOpenTopics: (String?) -> Unit,
     onSetBadge: (Int?) -> Unit,
 ) {
+    val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
     val hero by viewModel.hero.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
     val cookie by viewModel.cookie.collectAsState()
@@ -87,7 +89,7 @@ fun HomeTab(
             modifier = Modifier
                 .fillMaxSize()
                 .background(colorResource(R.color.bg)),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            contentPadding = PaddingValues(horizontal = pagePad, vertical = pagePad),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "header") {

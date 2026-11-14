@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -143,6 +144,7 @@ private fun PickGrid(
     onItemLongClick: (Int) -> Unit,
     onVisibleIndex: (Int) -> Unit,
 ) {
+    val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = state.initialScrollIndex)
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.firstVisibleItemIndex }.collect { onVisibleIndex(it) }
@@ -151,7 +153,7 @@ private fun PickGrid(
         columns = GridCells.Fixed(2),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = pagePad, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
