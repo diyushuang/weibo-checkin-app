@@ -114,8 +114,14 @@ class GalleryBrowseViewModel @Inject constructor(
         }
     }
 
-    fun setSort(order: GalleryFiles.SortOrder) {
-        sort = order
+    fun setSort(order: BrowseSort) {
+        sort = when (order) {
+            BrowseSort.NEWEST -> GalleryFiles.SortOrder.NEWEST
+            BrowseSort.OLDEST -> GalleryFiles.SortOrder.OLDEST
+            BrowseSort.NAME_ASC -> GalleryFiles.SortOrder.NAME_ASC
+            BrowseSort.SIZE_DESC -> GalleryFiles.SortOrder.SIZE_DESC
+            BrowseSort.SIZE_ASC -> GalleryFiles.SortOrder.SIZE_ASC
+        }
         scrollToTop()
         rebuild()
     }
@@ -126,8 +132,15 @@ class GalleryBrowseViewModel @Inject constructor(
         rebuild()
     }
 
-    fun setKind(kind: GalleryFiles.KindFilter) {
-        filter = filter.copy(kind = kind, label = "")
+    fun setKind(kind: BrowseKind) {
+        filter = filter.copy(
+            kind = when (kind) {
+                BrowseKind.ALL -> GalleryFiles.KindFilter.ALL
+                BrowseKind.STILL -> GalleryFiles.KindFilter.STILL
+                BrowseKind.GIF -> GalleryFiles.KindFilter.GIF
+            },
+            label = "",
+        )
         rebuild()
     }
 
@@ -147,11 +160,13 @@ class GalleryBrowseViewModel @Inject constructor(
         renderBrowse()
     }
 
-    fun onCellClick(row: GalleryFiles.Row) {
+    fun onCellClick(uri: String) {
+        val row = shownRows.firstOrNull { it.uri == uri } ?: return
         if (selectMode) toggleSelection(row) else openPreview(row)
     }
 
-    fun onCellLongClick(row: GalleryFiles.Row) {
+    fun onCellLongClick(uri: String) {
+        val row = shownRows.firstOrNull { it.uri == uri } ?: return
         if (!selectMode) enterSelectMode(row) else toggleSelection(row)
     }
 
@@ -253,11 +268,11 @@ class GalleryBrowseViewModel @Inject constructor(
                 }
                 val items = ArrayList<BrowseItemUi>(sorted.size + (groups?.size ?: 0))
                 if (groups == null) {
-                    sorted.forEach { items.add(BrowseItemUi.Cell(it)) }
+                    sorted.forEach { items.add(BrowseItemUi.Cell(it.uri, it.name, it.ext)) }
                 } else {
                     groups.forEach { group ->
                         items.add(BrowseItemUi.Header(group.key, titleOf(group)))
-                        group.rows.forEach { items.add(BrowseItemUi.Cell(it)) }
+                        group.rows.forEach { items.add(BrowseItemUi.Cell(it.uri, it.name, it.ext)) }
                     }
                 }
                 Computed(sorted, items)
@@ -316,16 +331,20 @@ class GalleryBrowseViewModel @Inject constructor(
 
     private fun buildFilters(): List<BrowseFilterChipUi> {
         val kinds = listOf(
-            GalleryFiles.KindFilter.ALL to R.string.gallery_filter_all,
-            GalleryFiles.KindFilter.STILL to R.string.gallery_filter_still,
-            GalleryFiles.KindFilter.GIF to R.string.gallery_filter_gif,
+            BrowseKind.ALL to R.string.gallery_filter_all,
+            BrowseKind.STILL to R.string.gallery_filter_still,
+            BrowseKind.GIF to R.string.gallery_filter_gif,
         )
         val chips = kinds.map { (kind, res) ->
             BrowseFilterChipUi(
                 kind = kind,
                 author = "",
                 label = ctx.getString(res),
-                selected = filter.kind == kind && filter.label.isEmpty(),
+                selected = when (kind) {
+                    BrowseKind.ALL -> filter.kind == GalleryFiles.KindFilter.ALL
+                    BrowseKind.STILL -> filter.kind == GalleryFiles.KindFilter.STILL
+                    BrowseKind.GIF -> filter.kind == GalleryFiles.KindFilter.GIF
+                } && filter.label.isEmpty(),
             )
         }.toMutableList()
         GalleryFiles.labelTabs(allRows).take(6).forEach { (label, count) ->

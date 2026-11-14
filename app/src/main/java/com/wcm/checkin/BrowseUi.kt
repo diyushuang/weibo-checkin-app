@@ -2,13 +2,21 @@ package com.wcm.checkin
 
 enum class GalleryGroupMode { NONE, DATE, AUTHOR }
 
+enum class BrowseSort { NEWEST, OLDEST, NAME_ASC, SIZE_DESC, SIZE_ASC }
+
+enum class BrowseKind { ALL, STILL, GIF }
+
 sealed interface BrowseItemUi {
     data class Header(val key: String, val title: String) : BrowseItemUi
-    data class Cell(val row: GalleryFiles.Row) : BrowseItemUi
+    data class Cell(
+        val uri: String,
+        val name: String,
+        val ext: String,
+    ) : BrowseItemUi
 }
 
 data class BrowseFilterChipUi(
-    val kind: GalleryFiles.KindFilter?,
+    val kind: BrowseKind?,
     val author: String,
     val label: String,
     val selected: Boolean,

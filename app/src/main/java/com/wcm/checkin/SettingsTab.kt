@@ -28,8 +28,7 @@ fun SettingsTab(viewModel: SettingsViewModel) {
         ).show()
     }
 
-    fun ensureLocalNetworkPermission(parsed: PanelUrl.Parsed) {
-        if (!parsed.isPrivateHost) return
+    fun requestLanPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < 37) return
         val granted = ContextCompat.checkSelfPermission(
             context, PERM_ACCESS_LOCAL_NETWORK,
@@ -42,17 +41,14 @@ fun SettingsTab(viewModel: SettingsViewModel) {
             when (event) {
                 is SettingsEvent.Saved -> {
                     Toast.makeText(context, R.string.settings_saved, Toast.LENGTH_SHORT).show()
-                    event.parsed?.let { ensureLocalNetworkPermission(it) }
+                    if (event.needsLanPermission) requestLanPermissionIfNeeded()
                 }
             }
         }
     }
     LaunchedEffect(Unit) {
         // 已经配过面板就在进页面时申请一次：升级到 Android 17 后不重新保存也能拿到权限
-        viewModel.state.value.panelUrl
-            .takeIf { it.isNotEmpty() }
-            ?.let { runCatching { PanelUrl.parse(it) }.getOrNull() }
-            ?.let { ensureLocalNetworkPermission(it) }
+        if (viewModel.currentNeedsLanPermission()) requestLanPermissionIfNeeded()
     }
 
     WcmTheme {

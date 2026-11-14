@@ -84,12 +84,12 @@ fun GalleryBrowseScreen(
     onToggleSearch: (Boolean) -> Unit,
     onQueryChange: (String) -> Unit,
     onSelectModeToggle: () -> Unit,
-    onSort: (GalleryFiles.SortOrder) -> Unit,
+    onSort: (BrowseSort) -> Unit,
     onGroup: (GalleryGroupMode) -> Unit,
-    onKindFilter: (GalleryFiles.KindFilter) -> Unit,
+    onKindFilter: (BrowseKind) -> Unit,
     onAuthorFilter: (String) -> Unit,
-    onCellClick: (GalleryFiles.Row) -> Unit,
-    onCellLongClick: (GalleryFiles.Row) -> Unit,
+    onCellClick: (String) -> Unit,
+    onCellLongClick: (String) -> Unit,
     onExitSelect: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
@@ -237,9 +237,9 @@ private fun SearchRow(
 @Composable
 private fun FilterRow(
     state: GalleryBrowseUiState,
-    onKindFilter: (GalleryFiles.KindFilter) -> Unit,
+    onKindFilter: (BrowseKind) -> Unit,
     onAuthorFilter: (String) -> Unit,
-    onSort: (GalleryFiles.SortOrder) -> Unit,
+    onSort: (BrowseSort) -> Unit,
     onGroup: (GalleryGroupMode) -> Unit,
 ) {
     var sortOpen by remember { mutableStateOf(false) }
@@ -264,7 +264,7 @@ private fun FilterRow(
                 Text(stringResource(R.string.gallery_sort_label), color = colorResource(R.color.ink_2))
             }
             DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
-                GalleryFiles.SortOrder.values().forEach { order ->
+                BrowseSort.values().forEach { order ->
                     DropdownMenuItem(
                         text = { Text(stringResource(sortLabel(order))) },
                         onClick = {
@@ -294,12 +294,12 @@ private fun FilterRow(
     }
 }
 
-private fun sortLabel(order: GalleryFiles.SortOrder): Int = when (order) {
-    GalleryFiles.SortOrder.NEWEST -> R.string.gallery_sort_newest
-    GalleryFiles.SortOrder.OLDEST -> R.string.gallery_sort_oldest
-    GalleryFiles.SortOrder.NAME_ASC -> R.string.gallery_sort_name
-    GalleryFiles.SortOrder.SIZE_DESC -> R.string.gallery_sort_size_desc
-    GalleryFiles.SortOrder.SIZE_ASC -> R.string.gallery_sort_size_asc
+private fun sortLabel(order: BrowseSort): Int = when (order) {
+    BrowseSort.NEWEST -> R.string.gallery_sort_newest
+    BrowseSort.OLDEST -> R.string.gallery_sort_oldest
+    BrowseSort.NAME_ASC -> R.string.gallery_sort_name
+    BrowseSort.SIZE_DESC -> R.string.gallery_sort_size_desc
+    BrowseSort.SIZE_ASC -> R.string.gallery_sort_size_asc
 }
 
 private fun groupLabel(mode: GalleryGroupMode): Int = when (mode) {
@@ -328,8 +328,8 @@ private fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun Grid(
     state: GalleryBrowseUiState,
-    onCellClick: (GalleryFiles.Row) -> Unit,
-    onCellLongClick: (GalleryFiles.Row) -> Unit,
+    onCellClick: (String) -> Unit,
+    onCellLongClick: (String) -> Unit,
     onVisibleIndex: (Int) -> Unit,
 ) {
     val gridState = rememberLazyGridState()
@@ -363,11 +363,13 @@ private fun Grid(
                     modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
                 )
                 is BrowseItemUi.Cell -> Cell(
-                    row = item.row,
-                    selected = item.row.uri in state.selected,
+                    uri = item.uri,
+                    name = item.name,
+                    ext = item.ext,
+                    selected = item.uri in state.selected,
                     selectMode = state.selectMode,
-                    onClick = { onCellClick(item.row) },
-                    onLongClick = { onCellLongClick(item.row) },
+                    onClick = { onCellClick(item.uri) },
+                    onLongClick = { onCellLongClick(item.uri) },
                 )
             }
         }
@@ -376,13 +378,15 @@ private fun Grid(
 
 private fun keyOf(item: BrowseItemUi): String = when (item) {
     is BrowseItemUi.Header -> "header:" + item.key
-    is BrowseItemUi.Cell -> item.row.uri
+    is BrowseItemUi.Cell -> item.uri
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Cell(
-    row: GalleryFiles.Row,
+    uri: String,
+    name: String,
+    ext: String,
     selected: Boolean,
     selectMode: Boolean,
     onClick: () -> Unit,
@@ -395,8 +399,8 @@ private fun Cell(
             .background(colorResource(R.color.surface_2))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
-        Thumbnail(row.uri)
-        if (row.ext == "gif") {
+        Thumbnail(uri)
+        if (ext == "gif") {
             Surface(
                 shape = RoundedCornerShape(4.dp),
                 color = Color(0xCC000000),

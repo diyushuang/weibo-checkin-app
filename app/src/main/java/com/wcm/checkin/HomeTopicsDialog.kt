@@ -24,11 +24,17 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
+data class TopicChoiceUi(
+    val key: String,
+    val name: String,
+    val done: Boolean,
+)
+
 data class TopicsDialogUi(
     val uid: String,
     val st: String?,
     val name: String,
-    val topics: List<WeiboTopicApi.Topic>,
+    val topics: List<TopicChoiceUi>,
 )
 
 /** 账号的超话清单：已签置灰勾选，待签可勾选后一键补签。 */
@@ -36,7 +42,7 @@ data class TopicsDialogUi(
 fun TopicsDialog(
     state: TopicsDialogUi,
     onDismiss: () -> Unit,
-    onResign: (List<WeiboTopicApi.Topic>) -> Unit,
+    onResign: (List<String>) -> Unit,
     onViewAll: () -> Unit,
 ) {
     val pending = state.topics.filter { !it.done }
@@ -110,7 +116,7 @@ fun TopicsDialog(
                 TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.ok)) }
             } else {
                 TextButton(onClick = {
-                    onResign(pending.filter { it.key in picked })
+                    onResign(pending.filter { it.key in picked }.map { it.key })
                 }) {
                     Text(stringResource(R.string.home_topic_resign))
                 }

@@ -148,9 +148,9 @@ fun HomeTab(
         TopicsDialog(
             state = dlg,
             onDismiss = { viewModel.dismissTopicsDialog() },
-            onResign = { picked ->
+            onResign = { pickedKeys ->
                 viewModel.dismissTopicsDialog()
-                viewModel.resignTopics(dlg, picked)
+                viewModel.resignTopics(dlg, pickedKeys)
             },
             onViewAll = {
                 viewModel.dismissTopicsDialog()

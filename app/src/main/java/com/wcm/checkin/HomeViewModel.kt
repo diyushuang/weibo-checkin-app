@@ -125,6 +125,7 @@ class HomeViewModel @Inject constructor(
 
     private var logExpanded = false
     private var pendingAutoRefresh = false
+    private var dialogTopicMap: Map<String, WeiboTopicApi.Topic> = emptyMap()
 
     private val topicStore = HomeTopicStates()
     val topicStates: StateFlow<Map<String, TopicState>> = topicStore.states
@@ -936,14 +937,21 @@ class HomeViewModel @Inject constructor(
     private fun presentTopics(uid: String, st: String?, topics: List<WeiboTopicApi.Topic>) {
         val name = AccountStore.load(ctx).firstOrNull { it.uid == uid }
             ?.let { displayName(it) } ?: uid
-        _topicsDialog.value = TopicsDialogUi(uid, st, name, topics)
+        dialogTopicMap = topics.associateBy { it.key }
+        _topicsDialog.value = TopicsDialogUi(
+            uid = uid,
+            st = st,
+            name = name,
+            topics = topics.map { TopicChoiceUi(it.key, it.name, it.done) },
+        )
     }
 
     fun dismissTopicsDialog() {
         _topicsDialog.value = null
     }
 
-    fun resignTopics(dialog: TopicsDialogUi, picked: List<WeiboTopicApi.Topic>) {
+    fun resignTopics(dialog: TopicsDialogUi, pickedKeys: List<String>) {
+        val picked = pickedKeys.mapNotNull { dialogTopicMap[it] }
         if (picked.isEmpty()) {
             toast(ctx.getString(R.string.home_topic_none_selected))
             return

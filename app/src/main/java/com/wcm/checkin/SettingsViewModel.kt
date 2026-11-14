@@ -24,8 +24,8 @@ data class SettingsUiState(
 )
 
 sealed interface SettingsEvent {
-    /** 保存成功；[parsed] 为 null 表示用户留空关闭了面板同步。 */
-    data class Saved(val parsed: PanelUrl.Parsed?) : SettingsEvent
+    /** 保存成功；[needsLanPermission] 表示当前面板是局域网地址。 */
+    data class Saved(val needsLanPermission: Boolean) : SettingsEvent
 }
 
 @HiltViewModel
@@ -75,6 +75,10 @@ class SettingsViewModel @Inject constructor(
         _state.update { it.copy(autoRelogin = value) }
     }
 
+    /** 当前面板地址是否需要 Android 17 的局域网权限（解析失败按不需要处理）。 */
+    fun currentNeedsLanPermission(): Boolean =
+        runCatching { PanelUrl.parse(_state.value.panelUrl) }.getOrNull()?.isPrivateHost == true
+
     fun save() {
         val current = _state.value
         val raw = current.panelUrl.trim()
@@ -84,7 +88,7 @@ class SettingsViewModel @Inject constructor(
             // 留空 = 关闭面板同步
             PanelSettings.savePanel(ctx, "", token)
             _state.update { it.copy(panelUrl = "", panelToken = token, urlError = null) }
-            _events.tryEmit(SettingsEvent.Saved(null))
+            _events.tryEmit(SettingsEvent.Saved(false))
             return
         }
         val parsed = try {
@@ -97,6 +101,6 @@ class SettingsViewModel @Inject constructor(
         PanelSettings.savePanel(ctx, parsed.base, token)
         // 回填规范化后的值：用户输入 "https://host/" 会被解析成 base
         _state.update { it.copy(panelUrl = parsed.base, panelToken = token, urlError = null) }
-        _events.tryEmit(SettingsEvent.Saved(parsed))
+        _events.tryEmit(SettingsEvent.Saved(parsed.isPrivateHost))
     }
 }
