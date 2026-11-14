@@ -28,6 +28,8 @@
   旧 XML 与 RecyclerView 适配器删除。
 - **浏览/选图/预览 Compose**：浏览页卡片 + FlowRow 小图、选图页两列网格、
   本地/远程全屏预览 `HorizontalPager`（`ZoomableImageView` 通过 `AndroidView` 复用）。
+- **超话/图库 ViewModel 化**：`TopicViewModel` / `GalleryViewModel` 接管编排与状态，
+  Fragment 只剩 ComposeView 与目录 launcher；切 Tab 保留筛选/展开/日志/进度。
 - **模拟器冒烟（2026-11-14）**：首页/超话/图库/图库浏览/设置/登录/浏览页正常；
   超话筛选排序详情、图库多选、预览翻页均已走查；设置页深浅色、开关持久化、
   面板地址校验均通过；强制触发 WorkManager 后 `CheckInWorker` 由 Hilt 实例化并返回 SUCCESS。
