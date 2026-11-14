@@ -39,6 +39,7 @@ fun GalleryTab(
     viewModel: GalleryViewModel,
     onPickDir: () -> Unit,
     onBrowse: (String) -> Unit,
+    onOpenGallery: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -78,7 +79,7 @@ fun GalleryTab(
                 if (raw.isEmpty()) {
                     Toast.makeText(context, R.string.gallery_need_dir, Toast.LENGTH_SHORT).show()
                 } else {
-                    GalleryBrowseActivity.start(context, raw)
+                    onOpenGallery(raw)
                 }
             },
             onModeToggle = viewModel::setMode,

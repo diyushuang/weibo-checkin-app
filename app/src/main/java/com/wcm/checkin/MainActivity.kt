@@ -24,11 +24,13 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,6 +64,8 @@ private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_BROWSING = "browsing"
 private const val ROUTE_POST_PICK = "post_pick"
 private const val ROUTE_REMOTE_PREVIEW = "remote_preview"
+private const val ROUTE_GALLERY_BROWSE = "gallery_browse"
+private const val ROUTE_IMAGE_PREVIEW = "image_preview"
 
 /**
  * 单 Activity + Navigation Compose 壳：四个 Tab 都是纯 Compose 目的地。
@@ -217,6 +221,9 @@ private fun AppShell(
                         onBrowse = { uid ->
                             nav.navigate("$ROUTE_BROWSING?uid=${Uri.encode(uid)}")
                         },
+                        onOpenGallery = { tree ->
+                            nav.navigate("$ROUTE_GALLERY_BROWSE?tree=${Uri.encode(tree)}")
+                        },
                     )
                 }
                 composable(
@@ -346,6 +353,172 @@ private fun AppShell(
                         loadPage = vm::loadPage,
                         onPageChanged = vm::onPageChanged,
                     )
+                }
+                composable(
+                    route = "$ROUTE_GALLERY_BROWSE?tree={tree}",
+                    arguments = listOf(
+                        navArgument("tree") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+                ) { entry ->
+                    val vm: GalleryBrowseViewModel = hiltViewModel()
+                    val state by vm.state.collectAsState()
+                    val tree = Uri.decode(entry.arguments?.getString("tree").orEmpty())
+                    var confirmDelete by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) { vm.start(tree) }
+                    OnResume { vm.onResume() }
+                    LaunchedEffect(vm) {
+                        vm.events.collect { event ->
+                            when (event) {
+                                is GalleryBrowseEvent.Toast ->
+                                    Toast.makeText(context, event.text, Toast.LENGTH_SHORT).show()
+                                is GalleryBrowseEvent.Share -> {
+                                    val uris = event.uris.map { Uri.parse(it) }
+                                    if (uris.isEmpty()) return@collect
+                                    val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                                        type = "image/*"
+                                        putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        clipData = android.content.ClipData.newUri(
+                                            context.contentResolver, "images", uris.first(),
+                                        ).apply {
+                                            uris.drop(1).forEach {
+                                                addItem(android.content.ClipData.Item(it))
+                                            }
+                                        }
+                                    }
+                                    context.startActivity(
+                                        Intent.createChooser(
+                                            send,
+                                            context.getString(R.string.gallery_batch_share),
+                                        ),
+                                    )
+                                }
+                                is GalleryBrowseEvent.OpenPreview ->
+                                    nav.navigate(
+                                        "$ROUTE_IMAGE_PREVIEW?tree=${Uri.encode(tree)}" +
+                                            "&index=${event.index}&name=${Uri.encode(event.name)}",
+                                    )
+                            }
+                        }
+                    }
+                    BackHandler(enabled = state.selectMode) { vm.exitSelectMode() }
+                    GalleryBrowseScreen(
+                        state = state,
+                        onBack = { nav.popBackStack() },
+                        onRefresh = vm::reload,
+                        onToggleSearch = vm::setSearchOpen,
+                        onQueryChange = vm::onQueryChanged,
+                        onSelectModeToggle = vm::toggleSelectMode,
+                        onSort = vm::setSort,
+                        onGroup = vm::setGroup,
+                        onKindFilter = vm::setKind,
+                        onAuthorFilter = vm::setAuthor,
+                        onCellClick = vm::onCellClick,
+                        onCellLongClick = vm::onCellLongClick,
+                        onExitSelect = vm::exitSelectMode,
+                        onShare = vm::shareSelected,
+                        onDelete = { confirmDelete = true },
+                        onEmptyAction = { nav.popBackStack() },
+                        onVisibleIndex = {},
+                    )
+                    if (confirmDelete) {
+                        AlertDialog(
+                            onDismissRequest = { confirmDelete = false },
+                            title = {
+                                Text(
+                                    stringResource(
+                                        R.string.gallery_batch_delete_title,
+                                        state.selectedCount,
+                                    ),
+                                )
+                            },
+                            text = { Text(stringResource(R.string.gallery_batch_delete_msg)) },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        confirmDelete = false
+                                        vm.batchDelete()
+                                    },
+                                ) { Text(stringResource(R.string.gallery_batch_delete)) }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { confirmDelete = false }) {
+                                    Text(stringResource(android.R.string.cancel))
+                                }
+                            },
+                        )
+                    }
+                }
+                composable(
+                    route = "$ROUTE_IMAGE_PREVIEW?tree={tree}&index={index}&name={name}",
+                    arguments = listOf(
+                        navArgument("tree") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                        navArgument("index") {
+                            type = NavType.StringType
+                            defaultValue = "0"
+                        },
+                        navArgument("name") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+                ) { entry ->
+                    val vm: ImagePreviewViewModel = hiltViewModel()
+                    val state by vm.state.collectAsState()
+                    val tree = Uri.decode(entry.arguments?.getString("tree").orEmpty())
+                    val index = entry.arguments?.getString("index")?.toIntOrNull() ?: 0
+                    val name = Uri.decode(entry.arguments?.getString("name").orEmpty())
+                    var deleteIndex by remember { mutableStateOf<Int?>(null) }
+                    LaunchedEffect(Unit) { vm.start(tree, index, name.ifEmpty { null }) }
+                    LaunchedEffect(vm) {
+                        vm.events.collect { event ->
+                            when (event) {
+                                is ImagePreviewEvent.Toast ->
+                                    Toast.makeText(context, event.text, Toast.LENGTH_SHORT).show()
+                                ImagePreviewEvent.Finish -> nav.popBackStack()
+                            }
+                        }
+                    }
+                    ImagePreviewScreen(
+                        state = state,
+                        nameAt = vm::nameAt,
+                        loadPage = vm::loadPage,
+                        onShare = vm::share,
+                        onOpen = vm::open,
+                        onDelete = { deleteIndex = it },
+                        onPageChanged = vm::onPageChanged,
+                    )
+                    deleteIndex?.let { at ->
+                        AlertDialog(
+                            onDismissRequest = { deleteIndex = null },
+                            title = { Text(stringResource(R.string.preview_delete_title)) },
+                            text = {
+                                Text(
+                                    vm.nameAt(at) + "\n" +
+                                        stringResource(R.string.preview_delete_msg),
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        deleteIndex = null
+                                        vm.delete(at)
+                                    },
+                                ) { Text(stringResource(R.string.preview_delete)) }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { deleteIndex = null }) {
+                                    Text(stringResource(android.R.string.cancel))
+                                }
+                            },
+                        )
+                    }
                 }
                 composable(ROUTE_SETTINGS) {
                     SettingsTab(viewModel = settingsViewModel)
