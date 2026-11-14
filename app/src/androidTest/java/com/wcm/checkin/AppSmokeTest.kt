@@ -8,6 +8,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -56,10 +57,13 @@ class AppSmokeTest {
         device.findObject(By.text("浏览博主抓图（预览 · 选图 · 批量）")).click()
         device.wait(Until.hasObject(By.text("浏览博主")), 10_000)
         assertNotNull(device.findObject(By.text("浏览博主")))
+        // 叶子路由隐藏底栏：这里不应再出现「设置」Tab
+        assertTrue(device.findObjects(By.text("设置")).isEmpty())
 
         device.pressBack()
         device.wait(Until.hasObject(By.text("浏览博主抓图（预览 · 选图 · 批量）")), 10_000)
         assertNotNull(device.findObject(By.text("浏览博主抓图（预览 · 选图 · 批量）")))
+        assertNotNull(device.findObject(By.text("设置")))
     }
 
     @Test
