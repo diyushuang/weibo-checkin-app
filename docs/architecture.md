@@ -87,6 +87,18 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 
 ## 6. 迁移状态与待办
 
+### 运行时验证（2026-11-14，Android 14 模拟器 `see-audit`）
+
+- 冷启动、首页/超话/图库/设置四 Tab 渲染正常，无 `FATAL EXCEPTION`。
+- 设置页 Compose：浅色/深色都正常；品牌玫红与 XML 页面一致；
+  开关切换后 `shared_prefs/wcm.xml` 即时落盘（`auto_on_open=false/true`）；
+  公网 `http://` 面板地址被拒绝并显示红色错误文案。
+- 登录页打开微博官方登录 WebView；浏览博主页打开空态页；WorkManager 周期任务
+  已注册到 JobScheduler，无初始化错误。
+- 未覆盖：真实签到/抓取（需要微博账号）、选图/预览（需要图片数据）、
+  `PostPickActivity`/`ImagePreviewActivity`/`RemotePreviewActivity`、
+  HiltWorker 的实际执行。
+
 已完成：
 
 - `WeiboApi` 1114 行 → `WeiboHttp/Auth/Topic/Post/ImageUrl`
@@ -99,7 +111,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 - **首页状态收口**：HomeFragment companion 的进程级 UI 状态迁入 Hilt `HomeViewModel`
 - **超话快照 StateFlow**：`TopicState` 提升为顶层，`topicStates` 由 ViewModel 持有
 - **Compose 试点**：设置页改为 ComposeView + `SettingsViewModel`，新增 `WcmTheme`
-  （Material3；Android 12+ 跟随壁纸取色，低版本对齐 `colors.xml`）
+  （Material3，使用 `colors.xml` 品牌令牌，与 XML 页面一致；不使用动态取色）
 - ViewBinding：全部界面已替换（LogPanel 的通用 host 仍按 id 查找；Gallery 两个对话框输入框保留 dialogView 查找）
 
 待办（按建议顺序）：

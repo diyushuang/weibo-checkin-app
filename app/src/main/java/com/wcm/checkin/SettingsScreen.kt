@@ -1,6 +1,5 @@
 package com.wcm.checkin
 
-import android.os.Build
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -27,30 +26,24 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-/** 对齐 values/colors.xml 的 Material3 主题（Android 12+ 跟随壁纸取色）。 */
+/** 对齐 values/colors.xml 的 Material3 主题（与 XML 页面保持同一套品牌色）。 */
 @Composable
 fun WcmTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val ctx = LocalContext.current
-    val scheme = when {
-        Build.VERSION.SDK_INT >= 31 ->
-            if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-        darkTheme -> darkColorScheme(
+    val scheme = if (darkTheme) {
+        darkColorScheme(
             primary = colorResource(R.color.brand),
             onPrimary = colorResource(R.color.brand_on),
             background = colorResource(R.color.bg),
@@ -61,7 +54,8 @@ fun WcmTheme(
             outline = colorResource(R.color.line_2),
             outlineVariant = colorResource(R.color.line),
         )
-        else -> lightColorScheme(
+    } else {
+        lightColorScheme(
             primary = colorResource(R.color.brand),
             onPrimary = colorResource(R.color.brand_on),
             background = colorResource(R.color.bg),

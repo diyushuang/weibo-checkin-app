@@ -22,7 +22,9 @@
 - **Hilt + HiltWorkerFactory**：`@HiltAndroidApp`、`@HiltWorker`，关闭 WorkManager 默认初始化。
 - **抓取单闸门类化**：`CrawlRunner` object → `CrawlService`，由 Hilt `@Singleton` 注入。
 - **设置页 Compose 试点**：`ComposeView` + `@HiltViewModel`；新增 Material3 `WcmTheme`
-  （Android 12+ 跟随壁纸取色，低版本对齐 `colors.xml`）。其余页面仍为 XML，逐屏迁移。
+  （使用 `colors.xml` 品牌令牌，与 XML 页面一致）。
+- **模拟器冒烟（2026-11-14）**：首页/超话/图库/设置/登录/浏览页正常；设置页深浅色、
+  开关持久化、面板地址校验均通过；WorkManager 周期任务成功注册。
 - **ViewBinding 全量落地**：首页/超话/图库/浏览/选图/预览/登录等界面去掉手写
   `findViewById`（`LogPanel` 的通用 host 除外），Fragment 在 `onDestroyView` 清理 binding。
 - **首页状态收口**：companion 的进程级 UI 状态迁入 Hilt `HomeViewModel`；
