@@ -9,10 +9,4 @@
 -->
 <resources>
     <dimen name="page_padding_horizontal">24dp</dimen>
-    <dimen name="page_padding_bottom">32dp</dimen>
-    <dimen name="card_padding">16dp</dimen>
-    <dimen name="card_padding_hero">20dp</dimen>
-    <dimen name="card_gap">12dp</dimen>
-    <dimen name="log_window_height">280dp</dimen>
-    <dimen name="crawl_log_window_height">260dp</dimen>
-</resources>
+    </resources>

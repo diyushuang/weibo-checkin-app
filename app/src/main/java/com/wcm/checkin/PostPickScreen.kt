@@ -242,6 +242,7 @@ private fun PickThumb(url: String) {
         )
     }
 }
+@Suppress("UseKtx") // BitmapDrawable(null, …) 保持 density=NONE，缩放坐标才不漂移
 @Composable
 fun FullPickPreviewDialog(
     fullUrl: String,

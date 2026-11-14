@@ -78,15 +78,6 @@
     </style>
 
     <!-- 全屏图片预览：纯黑沉浸背景，系统栏图标恒为浅色 -->
-    <style name="Theme.Wcm.Preview">
-        <item name="colorPrimary">@color/brand</item>
-        <item name="android:windowBackground">#FF000000</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="o_mr1">
-            shortEdges
-        </item>
-    </style>
-
     <!-- 弹窗：24dp 大圆角 + 抬高一层底色，与卡片形成"层更高、角更圆"的一致心智 -->
     <style name="ThemeOverlay.Wcm.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="shapeAppearance">@style/ShapeAppearance.Wcm.ExtraLarge</item>

@@ -9,6 +9,4 @@
 -->
 <resources>
     <dimen name="page_padding_horizontal">20dp</dimen>
-    <dimen name="log_window_height">140dp</dimen>
-    <dimen name="crawl_log_window_height">132dp</dimen>
-</resources>
+    </resources>

@@ -40,8 +40,6 @@
     <color name="danger_soft">#3A1818</color>
 
     <!-- 图片占位 -->
-    <color name="image_placeholder">#22272F</color>
-
     <!-- 超话等级徽章：暗底低明度同色系，字提到高对比 -->
     <color name="level_neutral_bg">#262B34</color>
     <color name="level_neutral_fg">#A2A9B4</color>

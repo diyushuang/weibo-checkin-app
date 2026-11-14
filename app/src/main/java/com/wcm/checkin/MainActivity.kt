@@ -45,6 +45,7 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -374,7 +375,7 @@ private fun AppShell(
                                 is GalleryBrowseEvent.Toast ->
                                     Toast.makeText(context, event.text, Toast.LENGTH_SHORT).show()
                                 is GalleryBrowseEvent.Share -> {
-                                    val uris = event.uris.map { Uri.parse(it) }
+                                    val uris = event.uris.map { it.toUri() }
                                     if (uris.isEmpty()) return@collect
                                     val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
                                         type = "image/*"

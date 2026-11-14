@@ -167,7 +167,6 @@
     <string name="pick_download_zero">下载选中 0 张</string>
     <string name="pick_download_fmt">下载选中 %1$d 张</string>
     <string name="pick_downloading">正在下载…</string>
-    <string name="pick_pic_desc">微博配图缩略图</string>
     <string name="pick_pic_desc_fmt">第 %1$d 张，可勾选下载</string>
     <string name="pick_live_badge">实况</string>
     <string name="pick_gif_badge">GIF</string>
@@ -439,7 +438,6 @@
     <string name="crawl_retry_action">立即重试</string>
     <string name="crawl_retry_none">没有待重试的帖子</string>
     <string name="crawl_retry_running">正在重试失败的帖子…</string>
-    <string name="crawl_saf_lost">目录授权已失效，抓取会失败</string>
     <string name="crawl_saf_lost_action">重新选择</string>
     <string name="crawl_saf_readonly">只有只读权限，可能无法写入新图片</string>
 </resources>
