@@ -31,7 +31,7 @@
 | `:core` | `AssetName`、`Hashing`、`CrawlCursor`/`Budget`/`Phase`/`StopReason`、`ReloginPolicy`、`AccountStatusHead`、`AppScope` | Android UI、SharedPreferences、OkHttp 业务 |
 | `:data` | `WeiboHttp/Auth/Topic/Post/ImageUrl`、`PanelApi`、`GuestSession`、`WeiboPasswordLogin`、`AccountStore`、`PanelSettings`、`CrawlSettings`、`CrawlIndex`、`SafTreeStore`、`GalleryFiles`、`TopicStore`、`CredentialVault`、`GifEncoder`、`LivePhotoConverter` | View/Fragment、签到/抓取编排 |
 | `:domain` | `CheckinService`、`AccountMaintenanceService`、`CrawlEngine`、`AlbumCrawler`、`TimelineCrawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`CrawlService`、`PostAssets`、`AutoRelogin` | Android UI、资源 `R.*` |
-| `:app` | `MainActivity`（Navigation 壳，全部页面为 route）、`LoginWebViewActivity`、四个 Tab 的 Screen/ViewModel、`ZoomPager`、`CheckInWorker`、`WcmApp` | 业务规则、网络/存储实现 |
+| `:app` | `MainActivity`（ComponentActivity + Navigation 壳，全部页面为 route）、`LoginWebViewActivity`、四个 Tab 的 Screen/ViewModel、`ZoomPager`、`CheckInWorker`、`WcmApp` | 业务规则、网络/存储实现 |
 
 ## 3. 状态与并发
 
