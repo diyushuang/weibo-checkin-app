@@ -126,43 +126,13 @@ class HomeFragment : Fragment() {
         else -> SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(atMs))
     }
 
-    /**
-     * 各账号最近一次超话状态（key = uid）。
-     *
-     * 用**不可变 Map + 整体替换**，而不是 HashMap 原地改：写入方是 IO 线程（刷新 / 签到），
-     * 读取方是主线程（render、进度环、账号行、Hero 卡遍历）。HashMap 并发扩容会丢条目，
-     * 遍历时还可能抛 `ConcurrentModificationException` —— Hero 卡点击恰好在遍历 entries。
-     * 换成 volatile 引用之后，读到的永远是某一份完整快照。
-     */
-    @Volatile private var topicStates: Map<String, TopicState> = emptyMap()
+    /** 各账号最近一次超话状态：由 [HomeViewModel] 持有，读到的始终是一份完整快照。 */
+    private val topicStates: Map<String, TopicState> get() = viewModel.topicStates.value
 
-    /** 单条更新：`volatile` 引用 + 新建 map，不会打断正在被遍历的旧快照。 */
-    private fun setTopicState(uid: String, state: TopicState) {
-        synchronized(this) { topicStates = topicStates + (uid to state) }
-    }
+    /** 单条更新：StateFlow + 新建 map，不会打断正在被遍历的旧快照。 */
+    private fun setTopicState(uid: String, state: TopicState) = viewModel.setTopicState(uid, state)
 
-    private fun removeTopicState(uid: String) {
-        synchronized(this) { topicStates = topicStates - uid }
-    }
-
-    private data class TopicState(
-        val topics: List<WeiboTopicApi.Topic> = emptyList(),
-        /**
-         * 这份状态的取得时刻（epoch ms；0 = 没有时间戳）。
-         *
-         * 存时间戳而不是格式化好的 "HH:mm"：签到状态是**按天**的，界面上要能判断
-         * 「这是今天的结论，还是昨天的」。只留 HH:mm 就永远分不出跨天。
-         */
-        val atMs: Long = 0L,
-        val error: String = "",
-        val loading: Boolean = false,
-    ) {
-        val total: Int get() = topics.size
-        val done: Int get() = topics.count { it.done }
-
-        /** 是否是「今天」取得的状态（false 时不能拿来当今日已签/待签的结论）。 */
-        val freshToday: Boolean get() = TopicStore.isToday(atMs)
-    }
+    private fun removeTopicState(uid: String) = viewModel.removeTopicState(uid)
 
     override fun onCreateView(
         inflater: LayoutInflater,

@@ -3,7 +3,31 @@ package com.wcm.checkin
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import javax.inject.Inject
+
+/** 各账号最近一次超话状态（key = uid）。 */
+data class TopicState(
+    val topics: List<WeiboTopicApi.Topic> = emptyList(),
+    /**
+     * 这份状态的取得时刻（epoch ms；0 = 没有时间戳）。
+     *
+     * 存时间戳而不是格式化好的 "HH:mm"：签到状态是**按天**的，界面上要能判断
+     * 「这是今天的结论，还是昨天的」。只留 HH:mm 就永远分不出跨天。
+     */
+    val atMs: Long = 0L,
+    val error: String = "",
+    val loading: Boolean = false,
+) {
+    val total: Int get() = topics.size
+    val done: Int get() = topics.count { it.done }
+
+    /** 是否是「今天」取得的状态（false 时不能拿来当今日已签/待签的结论）。 */
+    val freshToday: Boolean get() = TopicStore.isToday(atMs)
+}
 
 /**
  * 首页的进程级 UI 状态：忙碌闸门、自动签到闩、日志缓冲、昵称补拉标记。
@@ -40,4 +64,22 @@ class HomeViewModel @Inject constructor() : ViewModel() {
 
     /** 当前这轮 busy 是否是「Cookie 同步」。 */
     @Volatile var busySyncing = false
+
+    /**
+     * 各账号最近一次超话状态。
+     *
+     * 用 StateFlow + 不可变 Map 整体替换，而不是 HashMap 原地改：写入方是 IO 线程
+     * （刷新 / 签到），读取方是主线程（render、进度环、账号行、Hero 卡遍历）。
+     * 读到的永远是某一份完整快照，不会在遍历时被并发扩容打断。
+     */
+    private val _topicStates = MutableStateFlow<Map<String, TopicState>>(emptyMap())
+    val topicStates: StateFlow<Map<String, TopicState>> = _topicStates.asStateFlow()
+
+    fun setTopicState(uid: String, state: TopicState) {
+        _topicStates.update { it + (uid to state) }
+    }
+
+    fun removeTopicState(uid: String) {
+        _topicStates.update { it - uid }
+    }
 }
