@@ -892,6 +892,12 @@ class HomeFragment : Fragment() {
      * 超话状态已知时用「已签 / 待签」两个 chip 表示（成功=绿、待签=琥珀），
      * 状态未知（未刷新 / 刷新中 / 刷新失败 / 没关注超话）时退化成一行说明文字，
      * 不再把所有信息拼成一条逗号长句。
+     *
+     * 第一行答的是「**今天**签了吗」，证据按 [AccountStatusHead] 的顺序取：
+     * 今日超话快照 → 今天写的小结 → 更早的小结（标明「上次」）→ 尚未签到。
+     * 不再无条件拿 `lastResult` 当今日结论 —— 那个字段只在**本机发起过签到**时才写，
+     * 打开 App 自动刷新出来的「已签 7 / 待签 0」不会写它，于是同一行里
+     * chip 说签完、文字说「尚未签到」。
      */
     private fun bindAccountStatus(row: View, acc: AccountStore.Account) {
         val st = topicStates[acc.uid]
@@ -923,8 +929,37 @@ class HomeFragment : Fragment() {
             !st.freshToday -> getString(R.string.home_topics_stale_fmt, topicStateTime(st.atMs))
             else -> getString(R.string.home_topics_updated_fmt, topicStateTime(st.atMs))
         }
+        val head = AccountStatusHead.of(
+            loaded = loaded,
+            done = st?.done ?: 0,
+            total = st?.total ?: 0,
+            lastResult = acc.lastResult,
+            // 没有时间戳（旧版本写的）就当「不是今天」：宁可多标一个「上次」，
+            // 也不能把昨天的「签到 7/7」摆成今天的结论
+            lastResultToday = TopicStore.isToday(acc.lastResultAt),
+            lastResultAt = acc.lastResultAt,
+        )
+        val headText = when (head) {
+            is AccountStatusHead.Head.TodayAll ->
+                getString(R.string.home_status_today_all_fmt, head.done, head.total)
+            is AccountStatusHead.Head.TodayLeft ->
+                getString(
+                    R.string.home_status_today_left_fmt,
+                    head.done, head.total, head.total - head.done,
+                )
+            is AccountStatusHead.Head.LastToday -> head.result
+            is AccountStatusHead.Head.LastEarlier -> if (head.atMs > 0L) {
+                getString(
+                    R.string.home_status_last_fmt,
+                    head.result, topicStateTime(head.atMs),
+                )
+            } else {
+                getString(R.string.home_status_last_plain_fmt, head.result)
+            }
+            AccountStatusHead.Head.Idle -> getString(R.string.home_status_idle)
+        }
         row.findViewById<TextView>(R.id.tvStatus).text = buildString {
-            append(acc.lastResult.ifEmpty { getString(R.string.home_status_idle) })
+            append(headText)
             append('\n')
             append(note)
         }
@@ -1526,8 +1561,11 @@ class HomeFragment : Fragment() {
      * 首页账号行于是停在「尚未签到」，与同一次签到刷绿的「已签 N」chip 自相矛盾。
      */
     private fun noteResult(ctx: Context, acc: AccountStore.Account, text: String) {
+        val at = System.currentTimeMillis()
         acc.lastResult = text
-        saveLastResult(ctx, acc.uid, text)
+        // 时间戳同步落到快照与库里：界面靠它判断这条小结能不能当「今天」的结论
+        acc.lastResultAt = at
+        AccountStore.setLastResult(ctx, acc.uid, text, at)
     }
 
     private fun syncOnly() {

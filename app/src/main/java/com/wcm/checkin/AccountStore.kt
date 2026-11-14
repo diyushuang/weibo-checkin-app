@@ -13,6 +13,13 @@ object AccountStore {
         val name: String,
         var cookie: String,
         var lastResult: String = "",
+        /**
+         * [lastResult] 的写入时刻（epoch ms；0 = 旧版本写的 / 时间未知）。
+         *
+         * 签到状态是**按天**的：只有知道小结是哪天写的，才能判断它能不能当「今天」的
+         * 结论。没有这个时间戳时，昨天 22:00 的「签到 7/7 · 22:00」会被当成今天已签。
+         */
+        var lastResultAt: Long = 0L,
         /** 本机首次存下这份 cookie 的时刻（epoch ms；0 = 没有记录）。 */
         var cookieIssuedAt: Long = 0L,
         /** 最近一次观察到微博**真的换发**登录关键字段（SUB/SUBP/SCF/SSOLoginState/ALF）的时刻。 */
@@ -156,6 +163,7 @@ object AccountStore {
                     .put("name", it.name)
                     .put("cookie", it.cookie)
                     .put("lastResult", it.lastResult)
+                    .put("lastResultAt", it.lastResultAt)
                     .put("issuedAt", it.cookieIssuedAt)
                     .put("rotatedAt", it.cookieRotatedAt)
                     .put("seenAt", it.cookieSeenAt)
@@ -192,6 +200,7 @@ object AccountStore {
                         name = o.optString("name", "未命名账号"),
                         cookie = o.optString("cookie", ""),
                         lastResult = o.optString("lastResult", ""),
+                        lastResultAt = o.optLong("lastResultAt", 0L),
                         // 旧版本没有这些键：时间戳落 0 = 没有锚点（界面显示「未同步」），
                         // 失效标记落 false = 还没被探活判过
                         cookieIssuedAt = o.optLong("issuedAt", 0L),
@@ -250,10 +259,11 @@ object AccountStore {
      * 方向自相矛盾 —— 后台保活 Worker 跑着时用户前台重新扫码登录，Worker 结束时
      * 会把**任务开始前的旧 cookie** 写回去，用户立刻掉登录，界面还显示「刚刚验证」。
      *
-     * 但 `lastResult` 多一条兜底：库里还是**空白**（从未写过小结）时收下快照那份。
+     * 但 `lastResult` 多一条兜底：**空串不算结论** —— 只有一侧有值就用那一侧。
      * 这是「签到成功却仍显示尚未签到」的成因之一 —— 任务途中 [markVerified] 会把库里的
      * 锚点推进到快照之后，于是 `snapNewer=false`，快照里刚算出来的「签到 7/7」被
-     * 库里那个空串顶掉。兜底只做「空 → 非空」，不会用旧结果覆盖库里已有的新结果。
+     * 库里那个空串顶掉；反过来，任务开始前的旧快照也不能拿空串把库里刚写好的结果抹掉。
+     * 时间戳 [Account.lastResultAt] 跟着被采纳的那一份走，界面据此判断能否当今日结论。
      */
     fun mergeAccounts(current: List<Account>, snapshot: List<Account>): List<Account> =
         current.map { cur ->
@@ -261,13 +271,15 @@ object AccountStore {
                 ?.let { snap ->
                     // 最新锚点决定谁是「新的那一份」
                     val snapNewer = newestAnchor(snap) > newestAnchor(cur)
+                    // lastResult 与它的时间戳**成对**选：两侧都有值时取锚点新的一侧，
+                    // 空串不算结论 —— 否则「库里刚空、快照里刚算出签到 7/7」或反过来
+                    // 「快照是任务开始前的空壳」都会把已有小结抹成空白。
+                    val takeSnapResult = snap.lastResult.isNotEmpty() &&
+                        (snapNewer || cur.lastResult.isEmpty())
                     cur.copy(
                         cookie = if (snapNewer) snap.cookie else cur.cookie,
-                        lastResult = when {
-                            snapNewer -> snap.lastResult
-                            cur.lastResult.isBlank() -> snap.lastResult
-                            else -> cur.lastResult
-                        },
+                        lastResult = if (takeSnapResult) snap.lastResult else cur.lastResult,
+                        lastResultAt = if (takeSnapResult) snap.lastResultAt else cur.lastResultAt,
                         name = if (needsNameResolve(cur) && !needsNameResolve(snap)) {
                             snap.name
                         } else {
@@ -622,13 +634,18 @@ object AccountStore {
         SafePrefs.string(prefs(ctx), KEY_AUTO_RELOGIN_BACKOFF, "6")
             .toDoubleOrNull()?.coerceIn(0.5, 24.0) ?: 6.0
 
-    /** 只写一行 `lastResult`（签到小结），不影响其它字段。 */
-    fun setLastResult(ctx: Context, uid: String, result: String) {
+    /** 只写一行 `lastResult`（签到小结）与它的写入时刻，不影响其它字段。 */
+    fun setLastResult(
+        ctx: Context,
+        uid: String,
+        result: String,
+        at: Long = System.currentTimeMillis(),
+    ) {
         synchronized(LOCK) {
             val list = load(ctx)
             val index = list.indexOfFirst { it.uid == uid }
             if (index < 0) return
-            list[index] = list[index].copy(lastResult = result)
+            list[index] = list[index].copy(lastResult = result, lastResultAt = at)
             save(ctx, list)
         }
     }

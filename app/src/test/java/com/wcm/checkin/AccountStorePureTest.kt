@@ -190,6 +190,55 @@ class AccountStorePureTest {
         assertEquals(0L, parsed[0].cookieSyncedAt)
     }
 
+    // ---------- lastResult 的写入时刻（决定它能不能当「今天」的结论） ----------
+
+    @Test
+    fun serialize_deserialize_keepsLastResultAt() {
+        val acc = acc("1001", lastResult = "已签 7/7 · 22:04").copy(lastResultAt = 1_700_000_000_000L)
+        val parsed = AccountStore.deserializeAccounts(AccountStore.serializeAccounts(listOf(acc)))
+        assertEquals("已签 7/7 · 22:04", parsed[0].lastResult)
+        assertEquals(1_700_000_000_000L, parsed[0].lastResultAt)
+    }
+
+    @Test
+    fun deserialize_legacyJsonWithoutLastResultAt_isZero() {
+        // 旧版本只存了字符串：时间落 0 = 未知，界面据此标「上次」而不是冒充今天
+        val parsed = AccountStore.deserializeAccounts(
+            """[{"uid":"1001","cookie":"SUB=a","lastResult":"签到 7/7 · 22:04"}]"""
+        )
+        assertEquals(0L, parsed[0].lastResultAt)
+    }
+
+    @Test
+    fun mergeAccounts_takesResultTimestampTogetherWithResult() {
+        val current = listOf(acc("1001").copy(cookieSeenAt = 100L))
+        val snapshot = listOf(
+            acc("1001", lastResult = "签到 7/7 · 22:02")
+                .copy(cookieSeenAt = 900L, lastResultAt = 500L)
+        )
+
+        val merged = AccountStore.mergeAccounts(current, snapshot)
+
+        assertEquals("签到 7/7 · 22:02", merged[0].lastResult)
+        assertEquals(500L, merged[0].lastResultAt)
+    }
+
+    @Test
+    fun mergeAccounts_blankSnapshotResultNeverWipesCurrentEntry() {
+        // 快照是「任务开始前」的空壳（锚点还更新）：空串不是结论，不能把库里
+        // 刚写好的小结连同时间戳一起抹掉
+        val current = listOf(
+            acc("1001", lastResult = "签到 7/7 · 22:02")
+                .copy(cookieSeenAt = 100L, lastResultAt = 500L)
+        )
+        val snapshot = listOf(acc("1001").copy(cookieSeenAt = 900L))
+
+        val merged = AccountStore.mergeAccounts(current, snapshot)
+
+        assertEquals("签到 7/7 · 22:02", merged[0].lastResult)
+        assertEquals(500L, merged[0].lastResultAt)
+    }
+
     @Test
     fun mergeAccounts_takesLatestAnchors() {
         val current = listOf(

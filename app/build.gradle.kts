@@ -74,8 +74,10 @@ android {
         // 一格一格来」。完整清单见 CHANGELOG.md。
         // 0.9.15：账号密码自动重登（Keystore 加密凭证 + SSO 登录 + 退避/硬停策略）；
         // 有效期口径改为「只从真实登录/关键字段换发起算」，同步与探活不再续命。
-        versionCode = 29
-        versionName = "0.9.15"
+        // 0.9.16：账号行第一行改答「今天签了吗」——今日超话快照优先，`lastResult` 不再
+        // 冒充今日结论（它只在真的发起过签到时才写），并给它补上写入时刻以便判跨天。
+        versionCode = 30
+        versionName = "0.9.16"
     }
 
     signingConfigs {

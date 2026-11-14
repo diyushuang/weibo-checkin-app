@@ -214,6 +214,12 @@
     <string name="home_uid_fmt">UID %1$s</string>
     <string name="home_name_unknown">（未获取到昵称）</string>
     <string name="home_status_idle">尚未签到</string>
+    <!-- 账号行第一行＝「今天签了吗」。快照已知时按快照算，不再读「本机上一次小结」：
+         那个字段只在真的发起过签到时才写，光刷新一次超话是空的，会跟 chip 打架。 -->
+    <string name="home_status_today_all_fmt">今日已全部签到 · %1$d/%2$d</string>
+    <string name="home_status_today_left_fmt">今日已签 %1$d/%2$d，还有 %3$d 个未签</string>
+    <string name="home_status_last_fmt">上次：%1$s · %2$s</string>
+    <string name="home_status_last_plain_fmt">上次：%1$s</string>
     <!-- 超话页单条签到后的账号状态行：与账号卡上的「已签 / 待签」chip 同一口径，
          不能只写「签到成功」—— 用户要在同一行里直接对上 chip 上的数字 -->
     <string name="home_status_signed_fmt">已签 %1$d/%2$d · %3$s</string>
