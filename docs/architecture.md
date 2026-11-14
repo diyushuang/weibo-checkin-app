@@ -36,6 +36,8 @@
 
 - **应用级长任务**挂在 `:core` 的 `AppScope`（`SupervisorJob + Dispatchers.IO`），
   不随页面销毁；ViewModel/页面只观察状态，不拥有任务。
+- **首页 UI 状态**：忙碌闸门、日志缓冲、自动签到闩在 Hilt `HomeViewModel`；
+  长任务仍挂 `AppScope`，ViewModel 只持有界面态。
 - **抓取单闸门**仍在 `CrawlService`：全应用同一时刻只允许一个抓取任务，
   `StateFlow<RunState>` 向图库页/首页暴露进度；`requestStop` 对自动抓取同样生效。
 - **签到编排**在 `CheckinService`：账号循环、探活、列超话、逐条签到、记账；
@@ -77,7 +79,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 
 - 312 个 JVM 单测，0 failures
 - `assembleDebug` / `assembleRelease` 通过
-- release APK ≈ 3.54MB（R8 开启前 6.55MB；Compose 试点后 3.54MB）
+- release APK ≈ 3.55MB（R8 开启前 6.55MB；Compose 试点后 3.55MB）
 - `lint` 在本机 Windows 环境会长时间卡在 `lintAnalyzeDebug`；CI 的 `build-apk.yml`
   只跑单测 + assembleDebug，不依赖 lint
 
@@ -92,14 +94,15 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 - 签到编排/保活/重登从 UI 与 Worker 收敛到 `:domain` 服务
 - 4 模块 + Hilt + R8；所有改动行为保持，数据格式零迁移
 - **抓取单闸门类化**：`CrawlRunner` object → `CrawlService`，由 Hilt `@Singleton` 提供
+- **首页状态收口**：HomeFragment companion 的进程级 UI 状态迁入 Hilt `HomeViewModel`
 - **Compose 试点**：设置页改为 ComposeView + `SettingsViewModel`，新增 `WcmTheme`
   （Material3；Android 12+ 跟随壁纸取色，低版本对齐 `colors.xml`）
 - ViewBinding：全部界面已替换（LogPanel 的通用 host 仍按 id 查找；Gallery 两个对话框输入框保留 dialogView 查找）
 
 待办（按建议顺序）：
 
-1. 首页 MVVM：`HomeViewModel` 订阅 `CheckinService`/`CrawlService`，
-   删除 companion object 的进程级 UI 状态；随后迁移首页 Compose。
+1. 首页 Compose 化：`HomeViewModel` 已承接状态；下一步把 XML 渲染迁到 Compose，
+   并让 `topicStates`/日志走 StateFlow。
 2. 超话/图库/浏览/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
 3. 导航壳与登录页收尾；删除已迁移的旧 XML。
 4. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
