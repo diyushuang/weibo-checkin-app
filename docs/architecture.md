@@ -102,8 +102,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
    删除 companion object 的进程级 UI 状态；随后迁移首页 Compose。
 2. 超话/图库/浏览/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
 3. 导航壳与登录页收尾；删除已迁移的旧 XML。
-4. 其余界面 ViewBinding 替换（约 180 处 findViewById）。
-5. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
+4. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
    `:feature` 模块（需先把 `R.*` 资源迁移到 feature）。
 
 ## 7. 不变量（改动时必须保留）
