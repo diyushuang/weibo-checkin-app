@@ -75,6 +75,9 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline \
 
 # release（R8 + 资源收缩 + 固定签名）
 JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
+
+# 真机/模拟器冒烟（需要已连接的设备或模拟器）
+JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 ```
 
 当前基线（2026-11-14）：
@@ -86,6 +89,15 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
   只跑单测 + assembleDebug，不依赖 lint
 
 ## 6. 迁移状态与待办
+
+### 自动化冒烟
+
+`app/src/androidTest/.../AppSmokeTest.kt`（UiAutomator）覆盖：
+- 冷启动 + 首页渲染；
+- 通过 `MainActivity.selectSettingsTab()` 打开设置页，断言面板同步/行为/关于；
+- 切换「打开 App 即自动签到」，断言 `shared_prefs/wcm.xml` 持久化并恢复原值。
+
+运行：`./gradlew :app:connectedDebugAndroidTest`（需要设备/模拟器；CI 未接入 emulator）。
 
 ### 运行时验证（2026-11-14，Android 14 模拟器 `see-audit`）
 
