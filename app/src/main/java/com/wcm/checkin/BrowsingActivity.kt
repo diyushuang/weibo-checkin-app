@@ -1,5 +1,7 @@
 package com.wcm.checkin
 
+import com.wcm.checkin.databinding.ActivityBrowsingBinding
+import com.wcm.checkin.databinding.ItemBrowsePostBinding
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.content.Context
@@ -82,6 +84,7 @@ class BrowsingActivity : AppCompatActivity() {
     private lateinit var chipPic: TextView
     private lateinit var targetsRow: LinearLayout
     private lateinit var targetsScroll: HorizontalScrollView
+    private lateinit var binding: ActivityBrowsingBinding
 
     private var uid = ""
 
@@ -129,25 +132,26 @@ class BrowsingActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_browsing)
+        binding = ActivityBrowsingBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        toolbar = findViewById(R.id.browseToolbar)
-        etInput = findViewById(R.id.etBrowseInput)
-        recycler = findViewById(R.id.browseList)
-        tvEmpty = findViewById(R.id.tvBrowseEmpty)
-        loading = findViewById(R.id.browseLoading)
-        selectBar = findViewById(R.id.browseSelectBar)
-        tvSelected = findViewById(R.id.tvBrowseSelected)
-        btnDownload = findViewById(R.id.btnBrowseDownload)
-        tvCount = findViewById(R.id.tvBrowseCount)
-        tvHint = findViewById(R.id.tvBrowseHint)
-        chipOriginal = findViewById(R.id.chipBrowseOriginal)
-        chipPic = findViewById(R.id.chipBrowsePic)
-        targetsRow = findViewById(R.id.browseTargetsRow)
-        targetsScroll = findViewById(R.id.browseTargetsScroll)
+        toolbar = binding.browseToolbar
+        etInput = binding.etBrowseInput
+        recycler = binding.browseList
+        tvEmpty = binding.tvBrowseEmpty
+        loading = binding.browseLoading
+        selectBar = binding.browseSelectBar
+        tvSelected = binding.tvBrowseSelected
+        btnDownload = binding.btnBrowseDownload
+        tvCount = binding.tvBrowseCount
+        tvHint = binding.tvBrowseHint
+        chipOriginal = binding.chipBrowseOriginal
+        chipPic = binding.chipBrowsePic
+        targetsRow = binding.browseTargetsRow
+        targetsScroll = binding.browseTargetsScroll
 
-        val btnLoad = findViewById<MaterialButton>(R.id.btnBrowseLoad)
-        val btnExitSelect = findViewById<MaterialButton>(R.id.btnBrowseExitSelect)
+        val btnLoad = binding.btnBrowseLoad
+        val btnExitSelect = binding.btnBrowseExitSelect
 
         toolbar.setNavigationOnClickListener { finish() }
         recycler.layoutManager = LinearLayoutManager(this)
@@ -161,7 +165,7 @@ class BrowsingActivity : AppCompatActivity() {
         })
         recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> measureThumbs() }
 
-        findViewById<View>(R.id.browseRoot)?.let { root ->
+        binding.browseRoot.let { root ->
             ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
                 val bars = insets.getInsets(
                     WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
@@ -604,9 +608,10 @@ class BrowsingActivity : AppCompatActivity() {
     private inner class PostAdapter : RecyclerView.Adapter<PostAdapter.Holder>() {
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-            val view = LayoutInflater.from(parent.context)
-                .inflate(R.layout.item_browse_post, parent, false)
-            return Holder(view)
+            val binding = ItemBrowsePostBinding.inflate(
+                LayoutInflater.from(parent.context), parent, false,
+            )
+            return Holder(binding)
         }
 
         override fun getItemCount(): Int = visible.size
@@ -635,12 +640,13 @@ class BrowsingActivity : AppCompatActivity() {
             super.onViewRecycled(holder)
         }
 
-        inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
-            private val meta = view.findViewById<TextView>(R.id.tvBrowseMeta)
-            private val text = view.findViewById<TextView>(R.id.tvBrowseText)
-            private val pics = view.findViewById<GridLayout>(R.id.browsePics)
-            private val scrim = view.findViewById<View>(R.id.browseScrim)
-            private val check = view.findViewById<ImageView>(R.id.browseCheck)
+        inner class Holder(private val binding: ItemBrowsePostBinding) :
+            RecyclerView.ViewHolder(binding.root) {
+            private val meta = binding.tvBrowseMeta
+            private val text = binding.tvBrowseText
+            private val pics = binding.browsePics
+            private val scrim = binding.browseScrim
+            private val check = binding.browseCheck
 
             /** 当前卡的缩略图请求；换绑 / 滑出可见区时取消，避免排队请求堆积。 */
             private var thumbJob: Job? = null
