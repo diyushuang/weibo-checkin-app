@@ -170,11 +170,10 @@
                         android:text="@string/home_row_hint_short" />
                 </LinearLayout>
 
-                <LinearLayout
-                    android:id="@+id/accountList"
+                <androidx.compose.ui.platform.ComposeView
+                    android:id="@+id/accountCompose"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
+                    android:layout_height="wrap_content" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

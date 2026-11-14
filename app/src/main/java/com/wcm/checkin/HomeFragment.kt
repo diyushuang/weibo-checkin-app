@@ -73,6 +73,9 @@ class HomeFragment : Fragment() {
     /** Hero 卡（Compose）的渲染状态；每次 render 重建。 */
     private val heroState = MutableStateFlow(HomeHeroUiState())
 
+    /** 账号列表（Compose）的渲染状态；每次 render 重建。 */
+    private val accountState = MutableStateFlow<List<AccountRowUi>>(emptyList())
+
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
 
@@ -181,6 +184,27 @@ class HomeFragment : Fragment() {
                             }
                             .maxByOrNull { it.value.total - it.value.done }?.key
                         jumpToTopics(uid)
+                    },
+                )
+            }
+        }
+        binding.accountCompose.setViewCompositionStrategy(
+            ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
+        )
+        binding.accountCompose.setContent {
+            val rows by accountState.collectAsState()
+            WcmTheme {
+                AccountList(
+                    rows = rows,
+                    onRowClick = ::showTopics,
+                    onViewTopics = ::showTopics,
+                    onRelogin = { uid ->
+                        AccountStore.load(requireContext()).firstOrNull { it.uid == uid }
+                            ?.let { showReloginDialog(it) }
+                    },
+                    onDelete = { uid ->
+                        AccountStore.load(requireContext()).firstOrNull { it.uid == uid }
+                            ?.let { confirmDeleteAccount(it) }
                     },
                 )
             }
@@ -337,36 +361,9 @@ class HomeFragment : Fragment() {
                 getString(R.string.accounts_count_fmt, accounts.size)
             }
 
-        val container = _binding?.accountList ?: return
-        container.removeAllViews()
         // Cookie 有效期面板：账号为空时它也要渲染（显示空态并引导去添加账号）
         renderCookieValidity(accounts, panelReady)
-        if (accounts.isEmpty()) {
-            container.addView(requireContext().emptyHintView(getString(R.string.home_account_empty)))
-            // 空账号时进度环也要回到占位态，否则会留着上一次的百分比
-            renderTopicProgress(accounts, panelReady)
-            return
-        }
-        val inflater = LayoutInflater.from(ctx)
-        accounts.forEach { acc ->
-            val rowBinding = ItemAccountBinding.inflate(inflater, container, false)
-            val avatar = rowBinding.tvAvatar
-            avatar.text = avatarInitial(acc)
-            paintAvatar(avatar, topicStates[acc.uid])
-            rowBinding.tvName.text = displayName(acc)
-            rowBinding.tvUid.text = getString(R.string.home_uid_fmt, acc.uid)
-            bindAccountStatus(rowBinding, acc)
-            // 整行点按仍然进入超话清单（行为不变）
-            rowBinding.root.setOnClickListener { showTopics(acc.uid) }
-            val more = rowBinding.btnAccountMore
-            more.setOnClickListener { showAccountMenu(it, acc) }
-            // 长按同一入口，习惯长按的用户也不必先去找右上角的点
-            rowBinding.root.setOnLongClickListener {
-                showAccountMenu(more, acc)
-                true
-            }
-            container.addView(rowBinding.root)
-        }
+        accountState.value = accounts.map(::buildAccountRow)
         renderTopicProgress(accounts, panelReady)
     }
 
@@ -647,24 +644,6 @@ class HomeFragment : Fragment() {
     }
 
     /**
-     * 头像配色跟随账号状态：全部签完 = 绿，部分/全未签 = 琥珀，状态未知 = 品牌色。
-     * 这是列表里成本最低的信号 —— 不用读文字，扫一眼颜色就知道哪个号要处理。
-     */
-    private fun paintAvatar(avatar: TextView, state: TopicState?) {
-        val ctx = requireContext()
-        val doneAll = state != null && !state.loading && state.error.isEmpty() &&
-            state.total > 0 && state.done >= state.total
-        val hasPending = state != null && !state.loading && state.error.isEmpty() && state.done < state.total
-        val (bg, fg) = when {
-            doneAll -> R.drawable.bg_avatar_ok to R.color.ok_text
-            hasPending -> R.drawable.bg_avatar_warn to R.color.warn_text
-            else -> R.drawable.bg_avatar to R.color.brand_strong
-        }
-        avatar.setBackgroundResource(bg)
-        avatar.setTextColor(ContextCompat.getColor(ctx, fg))
-    }
-
-    /**
      * 头像首字（v0.7）：取昵称的第一个码点。
      *
      * 微博图文接口不返回头像，用「首字 + 品牌容器色圆底」代替，
@@ -677,30 +656,6 @@ class HomeFragment : Fragment() {
         if (name.isEmpty()) return "微"
         val first = name.codePointAt(0)
         return String(Character.toChars(first))
-    }
-
-    /** 账号行溢出菜单：查看超话清单 / 删除账号（删除不再常驻在行尾）。 */
-    private fun showAccountMenu(anchor: View, acc: AccountStore.Account) {
-        val popup = PopupMenu(requireContext(), anchor)
-        popup.menuInflater.inflate(R.menu.item_account_actions, popup.menu)
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_view_topics -> {
-                    showTopics(acc.uid)
-                    true
-                }
-                R.id.action_relogin_credentials -> {
-                    showReloginDialog(acc)
-                    true
-                }
-                R.id.action_delete_account -> {
-                    confirmDeleteAccount(acc)
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
     }
 
     /** 删除账号确认：与改造前完全一致（只删本机登录态，不影响面板）。 */
@@ -858,27 +813,24 @@ class HomeFragment : Fragment() {
      * 打开 App 自动刷新出来的「已签 7 / 待签 0」不会写它，于是同一行里
      * chip 说签完、文字说「尚未签到」。
      */
-    private fun bindAccountStatus(row: ItemAccountBinding, acc: AccountStore.Account) {
+    /** 把一个账号的当前状态翻译成 Compose 行模型（头像/状态 chip/说明）。 */
+    private fun buildAccountRow(acc: AccountStore.Account): AccountRowUi {
         val st = topicStates[acc.uid]
-        val chipRow = row.chipRow
-        // 「已签 / 待签」是**今天**的结论：跨天的快照不参与（否则会把昨天的已签
-        // 显示成今天已签，待签数还会变成 0）
+        // 「已签 / 待签」是**今天**的结论：跨天的快照不参与
         val loaded = st != null && !st.loading && st.error.isEmpty() && st.total > 0 && st.freshToday
-        chipRow.visibility = if (loaded) View.VISIBLE else View.GONE
-        if (st != null && loaded) {
-            row.chipDone.text =
-                getString(R.string.account_chip_done_fmt, st.done)
-            row.chipPending.text =
-                getString(R.string.account_chip_pending_fmt, st.total - st.done)
-        }
-        // 最高超话等级：一眼看出这个号在超话里的分量（没有等级字段的账号直接隐藏）
-        val maxLevel = if (loaded) st?.topics?.maxOfOrNull { it.level } ?: 0 else 0
-        val levelChip = row.chipLevel
-        if (maxLevel > 0) {
-            levelChip.visibility = View.VISIBLE
-            levelChip.text = getString(R.string.account_chip_level_fmt, maxLevel)
+        val chips = if (st != null && loaded) {
+            val maxLevel = st.topics.maxOfOrNull { it.level } ?: 0
+            AccountChipsUi(
+                level = if (maxLevel > 0) {
+                    getString(R.string.account_chip_level_fmt, maxLevel)
+                } else {
+                    null
+                },
+                done = getString(R.string.account_chip_done_fmt, st.done),
+                pending = getString(R.string.account_chip_pending_fmt, st.total - st.done),
+            )
         } else {
-            levelChip.visibility = View.GONE
+            null
         }
         val note = when {
             st == null -> getString(R.string.home_topics_idle)
@@ -893,8 +845,6 @@ class HomeFragment : Fragment() {
             done = st?.done ?: 0,
             total = st?.total ?: 0,
             lastResult = acc.lastResult,
-            // 没有时间戳（旧版本写的）就当「不是今天」：宁可多标一个「上次」，
-            // 也不能把昨天的「签到 7/7」摆成今天的结论
             lastResultToday = TopicStore.isToday(acc.lastResultAt),
             lastResultAt = acc.lastResultAt,
         )
@@ -908,20 +858,26 @@ class HomeFragment : Fragment() {
                 )
             is AccountStatusHead.Head.LastToday -> head.result
             is AccountStatusHead.Head.LastEarlier -> if (head.atMs > 0L) {
-                getString(
-                    R.string.home_status_last_fmt,
-                    head.result, topicStateTime(head.atMs),
-                )
+                getString(R.string.home_status_last_fmt, head.result, topicStateTime(head.atMs))
             } else {
                 getString(R.string.home_status_last_plain_fmt, head.result)
             }
             AccountStatusHead.Head.Idle -> getString(R.string.home_status_idle)
         }
-        row.tvStatus.text = buildString {
-            append(headText)
-            append('\n')
-            append(note)
+        val tone = when {
+            loaded && st != null && st.done >= st.total -> AvatarTone.OK
+            loaded && st != null && st.done < st.total -> AvatarTone.WARN
+            else -> AvatarTone.BRAND
         }
+        return AccountRowUi(
+            uid = acc.uid,
+            name = displayName(acc),
+            uidText = getString(R.string.home_uid_fmt, acc.uid),
+            avatarInitial = avatarInitial(acc),
+            avatarTone = tone,
+            statusText = headText + "\n" + note,
+            chips = chips,
+        )
     }
 
     // ========================= 日志（可滚动，不打断阅读） =========================
