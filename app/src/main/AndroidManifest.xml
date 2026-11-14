@@ -54,8 +54,5 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- 图库（v0.4.0）：网格浏览与全屏预览，均为内部页面 -->
-<!-- 浏览博主抓图（v0.9.11）：博主微博预览 + 选图/勾选抓取，均为内部页面 -->
-<!-- 远程大图预览（v0.9.17）：浏览页点小图进来，只读 CDN 上的大图 -->
 </application>
 </manifest>
