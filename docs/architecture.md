@@ -102,9 +102,10 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 - 超话 ViewModel 用假账号+本地快照验证「已签」筛选；测试结束兜底清理假账号；
 - 首页无账号时点「立即签到」：展开日志并提示「没有账号，请先添加账号」；
 - 设置页输入公网 `http://` 面板地址：保存被拒绝并出现 https 错误文案；
+- 首页 Cookie 卡「去设置配置面板」与 Hero 卡分别跳转设置/超话；
 - 切换「打开 App 即自动签到」，断言 `shared_prefs/wcm.xml` 持久化并恢复原值。
 
-运行：`./gradlew :app:connectedDebugAndroidTest`（6 tests，需要设备/模拟器；CI 未接入 emulator）。
+运行：`./gradlew :app:connectedDebugAndroidTest`（7 tests，需要设备/模拟器；CI 未接入 emulator）。
 
 ### 运行时验证（2026-11-14，Android 14 模拟器 `see-audit`）
 
