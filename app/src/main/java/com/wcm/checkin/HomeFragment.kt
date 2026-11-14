@@ -8,7 +8,6 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.fragment.app.viewModels
 import com.wcm.checkin.databinding.ItemAccountBinding
-import com.wcm.checkin.databinding.DialogReloginCredentialsBinding
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.app.AlertDialog
@@ -103,6 +102,9 @@ class HomeFragment : Fragment() {
     /** 超话清单弹窗状态（Compose AlertDialog）。 */
     private val topicsDialogState = MutableStateFlow<TopicsDialogUi?>(null)
 
+    /** 自动重登凭证弹窗状态（Compose AlertDialog）。 */
+    private val reloginDialogState = MutableStateFlow<ReloginDialogUi?>(null)
+
     /**
      * 时间格式化：`SimpleDateFormat` **不是线程安全的**。
      *
@@ -194,6 +196,7 @@ class HomeFragment : Fragment() {
         binding.accountCompose.setContent {
             val rows by accountState.collectAsState()
             val topicsDialog by topicsDialogState.collectAsState()
+            val reloginDialog by reloginDialogState.collectAsState()
             WcmTheme {
                 Box {
                     AccountList(
@@ -225,6 +228,16 @@ class HomeFragment : Fragment() {
                                 topicsDialogState.value = null
                                 jumpToTopics(dlg.uid)
                             },
+                        )
+                    }
+                    reloginDialog?.let { dlg ->
+                        ReloginDialog(
+                            state = dlg,
+                            onDismiss = { reloginDialogState.value = null },
+                            onSave = { user, pass ->
+                                saveReloginCredentials(dlg.uid, user, pass)
+                            },
+                            onDelete = { deleteReloginCredentials(dlg.uid) },
                         )
                     }
                 }
@@ -668,14 +681,9 @@ class HomeFragment : Fragment() {
      */
     private fun showReloginDialog(acc: AccountStore.Account) {
         val ctx = requireContext()
-        val dialogBinding = DialogReloginCredentialsBinding.inflate(LayoutInflater.from(ctx))
-        val etUser = dialogBinding.etReloginUser
-        val etPassword = dialogBinding.etReloginPassword
-        val tvStatus = dialogBinding.tvReloginStatus
-
         val hasCredential = CredentialVault.has(ctx, acc.uid)
         val state = AccountStore.reloginState(acc)
-        tvStatus.text = buildString {
+        val status = buildString {
             if (hasCredential) {
                 append(
                     getString(
@@ -712,56 +720,37 @@ class HomeFragment : Fragment() {
                 }
             }
         }
+        reloginDialogState.value = ReloginDialogUi(acc.uid, status, hasCredential)
+    }
 
-        val dialog = MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.relogin_dialog_title)
-            .setView(dialogBinding.root)
-            .setPositiveButton(R.string.relogin_action_save, null)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setNeutralButton(R.string.relogin_action_delete, null)
-            .create()
-
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val username = etUser.text?.toString()?.trim().orEmpty()
-                val password = etPassword.text?.toString().orEmpty()
-                if (username.isEmpty() || password.isEmpty()) {
-                    Toast.makeText(ctx, R.string.relogin_need_both, Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                try {
-                    // 明文只在内存里停留这一次；落盘即密文
-                    CredentialVault.save(ctx, acc.uid, username, password)
-                    AccountStore.setCredentialAt(ctx, acc.uid, System.currentTimeMillis())
-                    AccountStore.setAccountAutoRelogin(ctx, acc.uid, true)
-                } catch (e: Exception) {
-                    Toast.makeText(
-                        ctx,
-                        getString(R.string.relogin_failure_fmt, "凭证加密保存失败"),
-                        Toast.LENGTH_LONG,
-                    ).show()
-                    return@setOnClickListener
-                }
-                Toast.makeText(ctx, R.string.relogin_saved, Toast.LENGTH_SHORT).show()
-                dialog.dismiss()
-                runManualRelogin(acc)
-            }
-
-            val deleteButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
-            deleteButton.isEnabled = hasCredential
-            deleteButton.setOnClickListener {
-                CredentialVault.clear(ctx, acc.uid)
-                AccountStore.saveReloginState(
-                    ctx, acc.uid,
-                    ReloginPolicy.State(credentialAt = 0L),
-                )
-                AccountStore.setAccountAutoRelogin(ctx, acc.uid, false)
-                Toast.makeText(ctx, R.string.relogin_deleted, Toast.LENGTH_SHORT).show()
-                dialog.dismiss()
-                render()
-            }
+    /** 保存凭证并立即尝试一次手动重登；返回是否保存成功（Compose 弹窗据此决定是否关闭）。 */
+    private fun saveReloginCredentials(uid: String, username: String, password: String): Boolean {
+        val ctx = requireContext()
+        if (username.isEmpty() || password.isEmpty()) {
+            toast(getString(R.string.relogin_need_both))
+            return false
         }
-        dialog.show()
+        try {
+            // 明文只在内存里停留这一次；落盘即密文
+            CredentialVault.save(ctx, uid, username, password)
+            AccountStore.setCredentialAt(ctx, uid, System.currentTimeMillis())
+            AccountStore.setAccountAutoRelogin(ctx, uid, true)
+        } catch (e: Exception) {
+            toast(getString(R.string.relogin_failure_fmt, "凭证加密保存失败"))
+            return false
+        }
+        toast(getString(R.string.relogin_saved))
+        AccountStore.load(ctx).firstOrNull { it.uid == uid }?.let { runManualRelogin(it) }
+        return true
+    }
+
+    private fun deleteReloginCredentials(uid: String) {
+        val ctx = requireContext()
+        CredentialVault.clear(ctx, uid)
+        AccountStore.saveReloginState(ctx, uid, ReloginPolicy.State(credentialAt = 0L))
+        AccountStore.setAccountAutoRelogin(ctx, uid, false)
+        toast(getString(R.string.relogin_deleted))
+        render()
     }
 
     /** 前台手动重登：force 越过退避/次数上限，但密码错误、验证码等硬停仍会被策略拒绝。 */
