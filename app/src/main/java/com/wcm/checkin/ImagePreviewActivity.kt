@@ -1,5 +1,6 @@
 package com.wcm.checkin
 
+import com.wcm.checkin.databinding.ActivityImagePreviewBinding
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -36,6 +37,8 @@ import kotlinx.coroutines.withContext
  * 列表与图库页同源（同一 treeUri 重查、同名降序），只传初始下标，避免大 Intent。
  */
 class ImagePreviewActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityImagePreviewBinding
 
     private val items = ArrayList<GalleryFiles.GalleryItem>()
     private val pagerAdapter = PagerAdapter()
@@ -80,15 +83,16 @@ class ImagePreviewActivity : AppCompatActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_image_preview)
+        binding = ActivityImagePreviewBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        pager = findViewById(R.id.previewPager)
-        tvIndex = findViewById(R.id.tvPreviewIndex)
-        tvName = findViewById(R.id.tvPreviewName)
+        pager = binding.previewPager
+        tvIndex = binding.tvPreviewIndex
+        tvName = binding.tvPreviewName
         pager.adapter = pagerAdapter
         pager.registerOnPageChangeCallback(pageCallback)
 
-        findViewById<View>(R.id.previewRoot)?.let { root ->
+        binding.previewRoot.let { root ->
             ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
                 val bars = insets.getInsets(
                     WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
@@ -104,9 +108,9 @@ class ImagePreviewActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<View>(R.id.btnShare).setOnClickListener { shareCurrent() }
-        findViewById<View>(R.id.btnOpen).setOnClickListener { openCurrent() }
-        findViewById<View>(R.id.btnDelete).setOnClickListener { confirmDelete() }
+        binding.btnShare.setOnClickListener { shareCurrent() }
+        binding.btnOpen.setOnClickListener { openCurrent() }
+        binding.btnDelete.setOnClickListener { confirmDelete() }
 
         val treeUriRaw = intent.getStringExtra(EXTRA_TREE) ?: ""
         val startIndex = intent.getIntExtra(EXTRA_INDEX, 0)

@@ -1,5 +1,6 @@
 package com.wcm.checkin
 
+import com.wcm.checkin.databinding.ActivityRemotePreviewBinding
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.BitmapDrawable
@@ -44,6 +45,8 @@ import kotlinx.coroutines.withContext
  */
 class RemotePreviewActivity : AppCompatActivity() {
 
+    private lateinit var binding: ActivityRemotePreviewBinding
+
     private lateinit var pager: ViewPager2
     private lateinit var tvIndex: TextView
     private lateinit var loading: ProgressBar
@@ -71,11 +74,12 @@ class RemotePreviewActivity : AppCompatActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_remote_preview)
+        binding = ActivityRemotePreviewBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        pager = findViewById(R.id.remotePreviewPager)
-        tvIndex = findViewById(R.id.tvRemotePreviewIndex)
-        loading = findViewById(R.id.remotePreviewLoading)
+        pager = binding.remotePreviewPager
+        tvIndex = binding.tvRemotePreviewIndex
+        loading = binding.remotePreviewLoading
 
         savedInstanceState?.getStringArrayList(KEY_URLS)?.let { urls.addAll(it) }
         if (urls.isEmpty()) {
@@ -88,7 +92,7 @@ class RemotePreviewActivity : AppCompatActivity() {
         var startIndex = intent.getIntExtra(EXTRA_INDEX, 0)
         savedInstanceState?.let { startIndex = it.getInt(KEY_INDEX, startIndex) }
 
-        findViewById<View>(R.id.remotePreviewRoot)?.let { root ->
+        binding.remotePreviewRoot.let { root ->
             ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
                 val bars = insets.getInsets(
                     WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),

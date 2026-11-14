@@ -1,5 +1,6 @@
 package com.wcm.checkin
 
+import com.wcm.checkin.databinding.ActivityLoginBinding
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
@@ -43,6 +44,8 @@ import kotlinx.coroutines.withContext
  */
 class LoginWebViewActivity : AppCompatActivity() {
 
+    private lateinit var binding: ActivityLoginBinding
+
     private lateinit var webView: WebView
     private lateinit var statusView: TextView
     private val handler = Handler(Looper.getMainLooper())
@@ -77,11 +80,12 @@ class LoginWebViewActivity : AppCompatActivity() {
         // 需要让出状态栏，否则文字会压到时间/电量上。
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_login)
-        webView = findViewById(R.id.webView)
-        statusView = findViewById(R.id.loginStatus)
+        binding = ActivityLoginBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        webView = binding.webView
+        statusView = binding.loginStatus
 
-        findViewById<View>(R.id.loginRoot)?.let { root ->
+        binding.loginRoot.let { root ->
             ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
                 val bars = insets.getInsets(
                     WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
