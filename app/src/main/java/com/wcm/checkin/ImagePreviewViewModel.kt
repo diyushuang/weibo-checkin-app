@@ -88,7 +88,9 @@ class ImagePreviewViewModel @Inject constructor(
     fun nameAt(index: Int): String = items.getOrNull(index)?.name.orEmpty()
 
     fun onPageChanged(index: Int) {
-        _state.update { it.copy(initialPage = index) }
+        // targetPage 同步成当前页：旋转重建时 ZoomPager 用 targetPage 做一次性定位，
+        // 若仍停留在删除时的旧目标，会把用户拉回那一页。
+        _state.update { it.copy(initialPage = index, targetPage = index) }
     }
 
     suspend fun loadPage(index: Int): Drawable? {
