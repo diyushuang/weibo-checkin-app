@@ -1,6 +1,7 @@
 package com.wcm.checkin
 
 import com.wcm.checkin.databinding.FragmentHomeBinding
+import androidx.fragment.app.viewModels
 import com.wcm.checkin.databinding.ItemAccountBinding
 import com.wcm.checkin.databinding.ItemCookieBinding
 import com.wcm.checkin.databinding.DialogReloginCredentialsBinding
@@ -63,6 +64,8 @@ class HomeFragment : Fragment() {
 
     @Inject lateinit var crawlService: CrawlService
 
+    private val viewModel: HomeViewModel by viewModels()
+
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
 
@@ -74,43 +77,6 @@ class HomeFragment : Fragment() {
      * 用户再点一次就成了同一批账号被并发签到两轮。
      */
     private companion object {
-        /** 本次进程只自动签到一次（切 Tab 不重复触发）。 */
-        @Volatile private var autoHandled = false
-
-        /** 本次进程只自动刷新一次超话状态（打开 App 时那一次），切回首页不再重拉。 */
-        @Volatile private var topicsAutoHandled = false
-
-        @Volatile private var busy = false
-        @Volatile private var topicBusy = false
-
-        /**
-         * 当前正在跑的签到 / 同步协程（挂在 [AppScope] 上，不随视图销毁而取消）。
-         *
-         * [busy] 只是**界面态**，真实「有没有在跑」以这个 Job 为准：协程在真正开始执行前
-         * 就被取消（视图销毁、旋转、用户切走）时，`try/finally` 一次都不会执行，
-         * `busy` 会永久停在 true。旧实现据此把「立即签到」置灰，于是按钮彻底静默 ——
-         * 点下去不弹 toast、不展开日志、什么都不发生，正是「点了没反应」的成因。
-         */
-        @Volatile private var taskJob: Job? = null
-
-        /** 正在跑的「刷新超话状态」协程，作用同 [taskJob]。 */
-        @Volatile private var topicJob: Job? = null
-
-        /** 日志行缓冲：放进程级，旋转后日志不丢。 */
-        private val logLines = ArrayDeque<String>()
-
-        /**
-         * 已经尝试过补拉昵称的账号集合（`uid` 升序拼接）。
-         *
-         * 用集合而不是布尔闸门：新添加的账号、上一步失败的账号只要进入待补列表就应该
-         * 再试一次，而同一批账号在同一个进程里只补一次（补拉要发探活 + 资料两个请求）。
-         * 放进程级：旋转屏幕重建 Fragment 不该把它重置掉。
-         */
-        @Volatile private var nameBackfillFor = ""
-
-        /** 当前这轮 busy 是否是「Cookie 同步」（决定两个按钮各自的进行中文案）。 */
-        @Volatile private var busySyncing = false
-
         private const val LOG_MAX_LINES = 500
     }
 
@@ -231,7 +197,7 @@ class HomeFragment : Fragment() {
         // 日志卡：卡头整行可点，收起时只显示一行摘要
         panel = LogPanel(
             host = view,
-            lines = logLines,
+            lines = viewModel.logLines,
             scrollId = R.id.logScroll,
             textId = R.id.logView,
             summaryId = R.id.tvLogSummary,
@@ -261,12 +227,12 @@ class HomeFragment : Fragment() {
         // autoHandled 是「本进程只自动签一次」的闩；但如果这次没真的跑起来
         // （没账号 / 已关自动 / runAll 因 busy 早退），闩住就等于把整次开机机会吞掉，
         // 6 小时内都不会再试。所以：条件成立才置位，时间戳等确实启动后再落。
-        if (!autoHandled && PanelSettings.autoOnOpen(ctx) && AccountStore.load(ctx).isNotEmpty()
+        if (!viewModel.autoHandled && PanelSettings.autoOnOpen(ctx) && AccountStore.load(ctx).isNotEmpty()
             && System.currentTimeMillis() - PanelSettings.lastAutoAt(ctx) > 6 * 3600_000L
         ) {
             val started = runAll(true)
             if (started) {
-                autoHandled = true
+                viewModel.autoHandled = true
                 PanelSettings.setLastAutoAt(ctx, System.currentTimeMillis())
                 autoCheckinStarted = true
             }
@@ -308,14 +274,14 @@ class HomeFragment : Fragment() {
 
     /** 只在「latch 说在跑、但没有活着的 Job」时把界面态归位；真在跑就保持不动。 */
     private fun settleBusy() {
-        if (topicBusy && topicJob?.isActive != true) {
-            topicBusy = false
+        if (viewModel.topicBusy && viewModel.topicJob?.isActive != true) {
+            viewModel.topicBusy = false
         }
-        if (busy && taskJob?.isActive != true) {
+        if (viewModel.busy && viewModel.taskJob?.isActive != true) {
             setBusy(false)
             return
         }
-        setBusy(busy)
+        setBusy(viewModel.busy)
     }
 
     /**
@@ -624,8 +590,8 @@ class HomeFragment : Fragment() {
         val pending = AccountStore.load(ctx).filter { AccountStore.needsNameResolve(it) }
         if (pending.isEmpty()) return
         val marker = pending.map { it.uid }.sorted().joinToString(",")
-        if (marker == nameBackfillFor) return
-        nameBackfillFor = marker
+        if (marker == viewModel.nameBackfillFor) return
+        viewModel.nameBackfillFor = marker
 
         AppScope.launch {
             var fixed = 0
@@ -986,9 +952,9 @@ class HomeFragment : Fragment() {
      * 所以先无条件入缓冲，有面板时再触发渲染（重建时 onViewCreated 会 render 一次）。
      */
     private fun log(line: String) {
-        synchronized(logLines) {
-            logLines.addLast(line)
-            while (logLines.size > LOG_MAX_LINES) logLines.removeFirst()
+        synchronized(viewModel.logLines) {
+            viewModel.logLines.addLast(line)
+            while (viewModel.logLines.size > LOG_MAX_LINES) viewModel.logLines.removeFirst()
         }
         // render() 直接改 TextView（tv.text / tv.append），而本函数绝大多数调用点
         // 在 AppScope(Dispatchers.IO) 的签到协程里 —— 视图 attach 时改 View 会直接抛
@@ -1017,7 +983,7 @@ class HomeFragment : Fragment() {
      * 其余按钮同理不置灰：它们的入口自带闸门与新账号合并逻辑，无需靠禁用防重入。
      */
     private fun setBusy(value: Boolean) {
-        busy = value
+        viewModel.busy = value
         renderRunButtons()
     }
 
@@ -1031,9 +997,9 @@ class HomeFragment : Fragment() {
      */
     private fun renderRunButtons() {
         val host = _binding ?: return
-        val running = busy
+        val running = viewModel.busy
         // 两枚按钮各自说自己正在干什么：同步时把「立即签到」改成「正在签到…」会误导
-        val syncing = running && busySyncing
+        val syncing = running && viewModel.busySyncing
         host.btnCheckin.apply {
             text = getString(
                 if (running && !syncing) R.string.btn_checkin_running else R.string.btn_checkin
@@ -1047,7 +1013,7 @@ class HomeFragment : Fragment() {
     }
 
     private fun setTopicBusy(value: Boolean) {
-        topicBusy = value
+        viewModel.topicBusy = value
     }
 
     // ========================= 超话状态刷新 =========================
@@ -1062,11 +1028,11 @@ class HomeFragment : Fragment() {
      * 跨天场景仍会被覆盖：进程重启后这里的闸门归零，会重新拉一次。
      */
     private fun autoRefreshTopicsOnOpen() {
-        if (topicsAutoHandled) return
-        topicsAutoHandled = true
+        if (viewModel.topicsAutoHandled) return
+        viewModel.topicsAutoHandled = true
         if (AccountStore.load(requireContext()).isEmpty()) return
         // 有任务在跑就不必再刷：签到会顺带把超话列表拉一遍（见 CheckinService.runAccount）
-        if (busy || topicBusy) return
+        if (viewModel.busy || viewModel.topicBusy) return
         refreshTopics(manual = false)
     }
 
@@ -1082,7 +1048,7 @@ class HomeFragment : Fragment() {
             if (manual) toast(getString(R.string.home_no_account))
             return
         }
-        if (busy || topicBusy) {
+        if (viewModel.busy || viewModel.topicBusy) {
             if (manual) toast(getString(R.string.busy)) else pendingAutoRefresh = true
             return
         }
@@ -1095,7 +1061,7 @@ class HomeFragment : Fragment() {
         render()
         log("==== 刷新超话状态 · ${now()} ====")
 
-        topicJob = AppScope.launch {
+        viewModel.topicJob = AppScope.launch {
             try {
                 accounts.forEachIndexed { index, acc ->
                     if (index > 0) delay(800)
@@ -1156,8 +1122,8 @@ class HomeFragment : Fragment() {
                         // 刷新期间被推迟的请求（例如自动刷新撞上签到）→ 补一轮，仍只补一次
                         if (pendingAutoRefresh) {
                             pendingAutoRefresh = false
-                            topicsAutoHandled = true
-                            if (!busy) refreshTopics(manual = false)
+                            viewModel.topicsAutoHandled = true
+                            if (!viewModel.busy) refreshTopics(manual = false)
                         }
                     }
                 }
@@ -1185,11 +1151,11 @@ class HomeFragment : Fragment() {
 
     // ========================= 签到 / 同步 =========================
 
-    /** @return 是否真的启动了（被 busy 拦下或没有账号时返回 false，供自动签到判定）。 */
+    /** @return 是否真的启动了（被 viewModel.busy 拦下或没有账号时返回 false，供自动签到判定）。 */
     private fun runAll(auto: Boolean): Boolean {
-        if (busy) {
+        if (viewModel.busy) {
             // busy 只是界面态：真在跑才拦，否则（协程被取消后残留的 latch）归位后照常开跑
-            if (taskJob?.isActive == true) {
+            if (viewModel.taskJob?.isActive == true) {
                 toast(getString(R.string.busy))
                 return false
             }
@@ -1208,7 +1174,7 @@ class HomeFragment : Fragment() {
         setBusy(true)
         setLogExpanded(true)            // 运行时自动展开日志，进度可见
         // 挂在 AppScope：一整轮签到可能几分钟，旋转 / 切页都不该把它砍断
-        taskJob = AppScope.launch {
+        viewModel.taskJob = AppScope.launch {
             try {
                 log("==== ${if (auto) "打开自动" else "手动"}签到 · ${now()} ====")
                 CheckinService.runAll(
@@ -1256,7 +1222,7 @@ class HomeFragment : Fragment() {
                         render()
                         if (pendingAutoRefresh) {
                             pendingAutoRefresh = false
-                            if (!topicBusy) refreshTopics(manual = false)
+                            if (!viewModel.topicBusy) refreshTopics(manual = false)
                         }
                     }
                 }
@@ -1292,7 +1258,7 @@ class HomeFragment : Fragment() {
 
     /** 点按账号行：重新拉一次该账号的超话，然后弹出完整清单。 */
     private fun showTopics(uid: String) {
-        if (busy || topicBusy) {
+        if (viewModel.busy || viewModel.topicBusy) {
             toast(getString(R.string.busy))
             return
         }
@@ -1301,7 +1267,7 @@ class HomeFragment : Fragment() {
         setTopicBusy(true)
         setLogExpanded(true)
         log("── 查询 ${acc.name.ifEmpty { acc.uid }} 的超话 ──")
-        topicJob = AppScope.launch {
+        viewModel.topicJob = AppScope.launch {
             try {
                 val verify = try {
                     WeiboAuthApi.verify(acc.cookie)
@@ -1337,7 +1303,7 @@ class HomeFragment : Fragment() {
                 log("  ✗ 超话查询失败：${e.message}")
             } finally {
                 withContext(Dispatchers.Main + NonCancellable) {
-                    if (isAdded) setTopicBusy(false) else topicBusy = false
+                    if (isAdded) setTopicBusy(false) else viewModel.topicBusy = false
                 }
             }
         }
@@ -1411,8 +1377,8 @@ class HomeFragment : Fragment() {
      */
     private fun resignTopics(uid: String, st: String?, topics: List<WeiboTopicApi.Topic>) {
         if (topics.isEmpty()) return
-        if (busy) {
-            if (taskJob?.isActive == true) {
+        if (viewModel.busy) {
+            if (viewModel.taskJob?.isActive == true) {
                 toast(getString(R.string.busy))
                 return
             }
@@ -1422,7 +1388,7 @@ class HomeFragment : Fragment() {
         setBusy(true)
         setLogExpanded(true)
         log("── 补签 ${topics.size} 个超话 ──")
-        taskJob = AppScope.launch {
+        viewModel.taskJob = AppScope.launch {
             try {
                 val acc = AccountStore.load(ctx).firstOrNull { it.uid == uid }
                 if (acc == null) {
@@ -1489,8 +1455,8 @@ class HomeFragment : Fragment() {
     }
 
     private fun syncOnly() {
-        if (busy) {
-            if (taskJob?.isActive == true) {
+        if (viewModel.busy) {
+            if (viewModel.taskJob?.isActive == true) {
                 toast(getString(R.string.busy))
                 return
             }
@@ -1504,10 +1470,10 @@ class HomeFragment : Fragment() {
             toast(getString(R.string.home_no_account))
             return
         }
-        busySyncing = true
+        viewModel.busySyncing = true
         setBusy(true)
         setLogExpanded(true)
-        taskJob = AppScope.launch {
+        viewModel.taskJob = AppScope.launch {
             try {
                 log("==== Cookie 同步 · ${now()} ====")
                 var ok = 0
@@ -1538,7 +1504,7 @@ class HomeFragment : Fragment() {
                     log("保存账号失败：${e.message}")
                 }
                 withContext(Dispatchers.Main + NonCancellable) {
-                    busySyncing = false
+                    viewModel.busySyncing = false
                     setBusy(false)
                     if (isAdded) render()
                 }
