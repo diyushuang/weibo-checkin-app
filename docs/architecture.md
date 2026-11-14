@@ -102,6 +102,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 - 首页日志卡：收起摘要与展开终端窗口（深色/等宽/贴底）正常。
 - 首页删除确认：Compose AlertDialog 正常（假账号，未实际删除）。
 - 超话清单 Compose 对话框：编译通过；需要有效微博账号才能触发运行时验证。
+- 重登凭证 Compose 对话框：状态/账号/密码/说明/保存/删除渲染正常（未实际保存凭证）。
 - 未覆盖：真实签到/抓取（需要微博账号）、选图/预览（需要图片数据）、
   `PostPickActivity`/`ImagePreviewActivity`/`RemotePreviewActivity`。
 
@@ -124,16 +125,15 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
   空态与账号菜单也由 Compose 渲染
 - **首页 Cookie 卡 Compose**：`CookieCard` 负责卡头 pill/提示/逐账号有效期/配置入口
 - **首页日志卡 Compose**：`LogCard` 负责收起摘要/展开终端窗口/贴底跟随
-- **首页对话框 Compose**：账号删除确认与超话清单（勾选补签/查看全部）已 Compose；
-  自动重登凭证对话框仍为 Android Dialog
+- **首页全量 Compose**：Hero/账号列表/Cookie 卡/日志卡/账号菜单/删除确认/超话清单/
+  重登凭证对话框均已 Compose；`HomeFragment` 只保留编排与状态构建
 - ViewBinding：全部界面已替换（LogPanel 的通用 host 仍按 id 查找；Gallery 两个对话框输入框保留 dialogView 查找）
 
 待办（按建议顺序）：
 
-1. 首页 Compose 化：主区块已完成；仅自动重登凭证对话框仍为 Android Dialog。
-2. 超话/图库/浏览/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
-3. 导航壳与登录页收尾；删除已迁移的旧 XML。
-4. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
+1. 超话/图库/浏览/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
+2. 导航壳与登录页收尾；删除已迁移的旧 XML。
+3. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
    `:feature` 模块（需先把 `R.*` 资源迁移到 feature）。
 
 ## 7. 不变量（改动时必须保留）

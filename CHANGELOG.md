@@ -33,7 +33,8 @@
   `WcmTheme` 补齐 M3 容器色，菜单/卡片不再被品牌色 tint。
 - **首页 Cookie 卡 Compose**：卡头 pill、提示、逐账号有效期、配置入口迁到 Compose。
 - **首页日志卡 Compose**：收起摘要、展开终端窗口、贴底跟随迁到 Compose。
-- **首页对话框 Compose**：账号删除确认、超话清单（勾选补签/查看全部）迁到 Compose。
+- **首页对话框 Compose**：账号删除确认、超话清单（勾选补签/查看全部）、重登凭证迁到 Compose。
+- **首页 Compose 化完成**：Hero/账号/Cookie/日志/菜单/对话框全部 Compose，Fragment 只保留编排。
 - **release 开启 R8/资源收缩**：APK 6.55MB → 3.55MB（含 Compose 运行时）。
 - **数据零迁移**：SharedPreferences 仍是 `wcm`，索引/游标/keystore/签名格式不变。
 - 验证：312 个 JVM 单测 / 0 failures；`assembleDebug` / `assembleRelease` 通过。
