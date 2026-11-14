@@ -1,29 +1,25 @@
 package com.wcm.checkin
 
-import com.wcm.checkin.databinding.ActivityImagePreviewBinding
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.view.View
-import android.view.ViewGroup
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.net.toUri
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.RecyclerView
-import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -38,13 +34,9 @@ import kotlinx.coroutines.withContext
  */
 class ImagePreviewActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityImagePreviewBinding
-
     private val items = ArrayList<GalleryFiles.GalleryItem>()
-    private val pagerAdapter = PagerAdapter()
-    private lateinit var pager: ViewPager2
-    private lateinit var tvIndex: TextView
-    private lateinit var tvName: TextView
+
+    private val uiState = MutableStateFlow(ImagePreviewUiState())
 
     /** 删除闸门：连点两次「删除」会并发两个 IO 删除，第二个用旧位置移除 = 删错图。 */
     private var deleting = false
@@ -69,12 +61,6 @@ class ImagePreviewActivity : AppCompatActivity() {
         maxOf(dm.widthPixels, dm.heightPixels).coerceIn(720, 2048)
     }
 
-    private val pageCallback = object : ViewPager2.OnPageChangeCallback() {
-        override fun onPageSelected(position: Int) {
-            updateInfo()
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         // 本页背景恒为纯黑，系统栏图标必须**恒为浅色**，因此不用 auto（它会跟随
         // 系统深浅模式切成深色图标，浅色模式下就看不见了）。
@@ -83,34 +69,6 @@ class ImagePreviewActivity : AppCompatActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
-        binding = ActivityImagePreviewBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        pager = binding.previewPager
-        tvIndex = binding.tvPreviewIndex
-        tvName = binding.tvPreviewName
-        pager.adapter = pagerAdapter
-        pager.registerOnPageChangeCallback(pageCallback)
-
-        binding.previewRoot.let { root ->
-            ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-                val bars = insets.getInsets(
-                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-                )
-                // 左右也要让位：横屏时挖孔/手势区在侧边，图片与底部工具条不该被挡住
-                root.updatePadding(
-                    top = bars.top,
-                    bottom = bars.bottom,
-                    left = bars.left,
-                    right = bars.right,
-                )
-                WindowInsetsCompat.CONSUMED
-            }
-        }
-
-        binding.btnShare.setOnClickListener { shareCurrent() }
-        binding.btnOpen.setOnClickListener { openCurrent() }
-        binding.btnDelete.setOnClickListener { confirmDelete() }
 
         val treeUriRaw = intent.getStringExtra(EXTRA_TREE) ?: ""
         val startIndex = intent.getIntExtra(EXTRA_INDEX, 0)
@@ -121,6 +79,25 @@ class ImagePreviewActivity : AppCompatActivity() {
         }
         val treeUri = treeUriRaw.toUri()
         val resolver = contentResolver
+
+        val composeView = ComposeView(this)
+        composeView.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        composeView.setContent {
+            val state by uiState.collectAsState()
+            WcmTheme {
+                ImagePreviewScreen(
+                    state = state,
+                    nameAt = { index -> items.getOrNull(index)?.name.orEmpty() },
+                    loadPage = { index -> loadPage(index) },
+                    onShare = { index -> shareCurrent(index) },
+                    onOpen = { index -> openCurrent(index) },
+                    onDelete = { index -> confirmDelete(index) },
+                    onPageChanged = {},
+                )
+            }
+        }
+        setContentView(composeView)
+
         lifecycleScope.launch(Dispatchers.IO) {
             items.addAll(
                 try {
@@ -136,32 +113,34 @@ class ImagePreviewActivity : AppCompatActivity() {
                     finish()
                     return@withContext
                 }
-                // 首次填充：适配器此前是空的，用「插入一段」比自己刷全表更精确
-                pagerAdapter.notifyItemRangeInserted(0, items.size)
                 // 优先按文件名定位（图库页可能已筛选/排序）；找不到才用下标
                 val pos = startName?.let { n -> items.indexOfFirst { it.name == n } }
                     ?.takeIf { it >= 0 } ?: startIndex
-                pager.setCurrentItem(pos.coerceIn(0, items.size - 1), false)
-                updateInfo()
+                val safe = pos.coerceIn(0, items.size - 1)
+                uiState.value = ImagePreviewUiState(
+                    count = items.size,
+                    initialPage = safe,
+                    targetPage = safe,
+                )
             }
         }
     }
 
-    override fun onDestroy() {
-        pager.unregisterOnPageChangeCallback(pageCallback)
-        super.onDestroy()
-    }
-
-    private fun currentItem(): GalleryFiles.GalleryItem? {
-        val pos = pager.currentItem
-        return if (pos in items.indices) items[pos] else null
-    }
-
-    private fun updateInfo() {
-        val pos = pager.currentItem
-        if (pos !in items.indices) return
-        tvIndex.text = getString(R.string.preview_index_fmt, pos + 1, items.size)
-        tvName.text = items[pos].name
+    private suspend fun loadPage(page: Int): Drawable? {
+        val item = items.getOrNull(page) ?: return null
+        val resolver = contentResolver
+        return withContext(Dispatchers.IO) {
+            try {
+                // 并发闸门：同一时刻最多解 2 张，快速连滑时排队而不是一起 OOM
+                fullLoadSlot.withPermit {
+                    ThumbLoader.fullDrawable(resolver, item.uri, previewMaxSize)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
     }
 
     private fun mimeOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
@@ -173,8 +152,8 @@ class ImagePreviewActivity : AppCompatActivity() {
         else -> "image/*"
     }
 
-    private fun shareCurrent() {
-        val item = currentItem() ?: return
+    private fun shareCurrent(index: Int) {
+        val item = items.getOrNull(index) ?: return
         val send = Intent(Intent.ACTION_SEND).apply {
             type = mimeOf(item.name)
             putExtra(Intent.EXTRA_STREAM, item.uri)
@@ -189,8 +168,8 @@ class ImagePreviewActivity : AppCompatActivity() {
         }
     }
 
-    private fun openCurrent() {
-        val item = currentItem() ?: return
+    private fun openCurrent(index: Int) {
+        val item = items.getOrNull(index) ?: return
         try {
             startActivity(
                 Intent(Intent.ACTION_VIEW).apply {
@@ -203,23 +182,21 @@ class ImagePreviewActivity : AppCompatActivity() {
         }
     }
 
-    private fun confirmDelete() {
+    private fun confirmDelete(index: Int) {
         // 删除进行中不再弹第二个确认框（第二次点进来用的会是错位的位置）
         if (deleting) return
-        val item = currentItem() ?: return
+        val item = items.getOrNull(index) ?: return
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.preview_delete_title)
             .setMessage(item.name + "\n" + getString(R.string.preview_delete_msg))
             .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.preview_delete) { _, _ -> deleteCurrent() }
+            .setPositiveButton(R.string.preview_delete) { _, _ -> deleteCurrent(index) }
             .show()
     }
 
-    private fun deleteCurrent() {
+    private fun deleteCurrent(index: Int) {
         if (deleting) return
-        val pos = pager.currentItem
-        if (pos !in items.indices) return
-        val item = items[pos]
+        val item = items.getOrNull(index) ?: return
         deleting = true
         val resolver = contentResolver
         lifecycleScope.launch(Dispatchers.IO) {
@@ -254,24 +231,20 @@ class ImagePreviewActivity : AppCompatActivity() {
                     if (at < 0) {
                         // 防御分支：挂起期间列表里已经没有这张了。当前只有 deleteCurrent 一处会改
                         // items 且有 deleting 闸门，正常路径进不来；这里数据本身已是最新，
-                        // 只需把可能越界的当前页拉回来，不必整体重绑（重绑会把已解码的大图全丢掉）。
+                        // 只需把可能越界的当前页拉回来。
                         if (items.isEmpty()) {
                             finish()
                         } else {
-                            pager.setCurrentItem(pager.currentItem.coerceIn(0, items.size - 1), false)
-                            updateInfo()
+                            publishPage(index)
                         }
                         return@withContext
                     }
                     items.removeAt(at)
-                    // 只删了这一页：精确通知单条移除，ViewPager2 会用它做删除动画，
-                    // 也不会把其它页已加载好的大图丢掉重解
-                    pagerAdapter.notifyItemRemoved(at)
+                    // 只重排这一页：其余页已解码的大图不受影响
                     if (items.isEmpty()) {
                         finish()
                     } else {
-                        pager.setCurrentItem(at.coerceIn(0, items.size - 1), false)
-                        updateInfo()
+                        publishPage(at)
                     }
                 }
             } finally {
@@ -280,6 +253,14 @@ class ImagePreviewActivity : AppCompatActivity() {
                 if (!released) withContext(NonCancellable + Dispatchers.Main) { deleting = false }
             }
         }
+    }
+
+    private fun publishPage(target: Int) {
+        uiState.value = ImagePreviewUiState(
+            count = items.size,
+            initialPage = uiState.value.initialPage,
+            targetPage = target.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
+        )
     }
 
     /**
@@ -297,69 +278,6 @@ class ImagePreviewActivity : AppCompatActivity() {
             }
         } finally {
             idx.close()
-        }
-    }
-
-    private inner class PagerAdapter : RecyclerView.Adapter<PagerAdapter.Holder>() {
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-            val view = ZoomableImageView(parent.context).apply {
-                layoutParams = RecyclerView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                )
-            }
-            return Holder(view)
-        }
-
-        override fun getItemCount(): Int = items.size
-
-        override fun onBindViewHolder(holder: Holder, position: Int) {
-            holder.bind(items[position])
-        }
-
-        override fun onViewRecycled(holder: Holder) {
-            super.onViewRecycled(holder)
-            holder.cancel()
-        }
-
-        inner class Holder(val zoomView: ZoomableImageView) : RecyclerView.ViewHolder(zoomView) {
-
-            /** 当前这张大图的解码任务；换绑/回收时必须取消，否则滑过去还在解。 */
-            private var job: Job? = null
-
-            fun bind(item: GalleryFiles.GalleryItem) {
-                // 放大态停用翻页手势，回到 1x 恢复
-                zoomView.onZoomChanged = { zoomed -> pager.isUserInputEnabled = !zoomed }
-                zoomView.setImageDrawable(null)
-                val key = item.uri.toString()
-                zoomView.tag = key
-                job?.cancel()
-                val resolver = contentResolver
-                job = lifecycleScope.launch(Dispatchers.IO) {
-                    val drawable = try {
-                        // 并发闸门：同一时刻最多解 2 张，快速连滑时排队而不是一起 OOM
-                        fullLoadSlot.withPermit {
-                            ThumbLoader.fullDrawable(resolver, item.uri, previewMaxSize)
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        null
-                    }
-                    withContext(Dispatchers.Main) {
-                        if (zoomView.tag == key && drawable != null) {
-                            zoomView.setImageDrawable(drawable)
-                        }
-                    }
-                }
-            }
-
-            /** 视图被回收：取消未完成的解码，别让它在后台继续占着内存。 */
-            fun cancel() {
-                job?.cancel()
-                job = null
-            }
         }
     }
 

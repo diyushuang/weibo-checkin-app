@@ -1,72 +1,40 @@
 package com.wcm.checkin
 
-import com.wcm.checkin.databinding.ActivityRemotePreviewBinding
 import android.content.Context
 import android.content.Intent
-import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.view.View
-import android.view.ViewGroup
-import android.widget.ProgressBar
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
-import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.RecyclerView
-import androidx.viewpager2.widget.ViewPager2
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /**
- * 远程大图预览（v0.9.17）：浏览博主页点小图后进来，看的是 CDN 上的大图。
+ * 远程大图预览（v0.9.17）：浏览页点小图后的全屏查看。
  *
- * 与本地图库的 [ImagePreviewActivity] 的分工：那个读 SAF 里的文件（有分享 / 删除 /
- * 用系统应用打开），这个只读远程 URL，所以只有「翻页 + 缩放」两件事 ——
- * 不落盘、不提供分享，也就没有额外权限与临时文件。
- *
- * 关键取舍：
- * - **尺寸段**：列表里的小图是 `orj360`（最长边 360），直接放大是一张糊图。
- *   这里统一用 [WeiboImageUrl.fullFromThumb] 换到 `large` 段（原分辨率）；
- *   换不出来（非 sinaimg 地址）才退回缩略图地址。
- * - **并发闸门**：`large` 单张可达 2MB+，解出来 12-16MB。快速连滑会同时解出十几张，
- *   低端机直接 OOM —— 用 [Semaphore] 限 2 路（当前页 + 预取下一页）。
- * - **取消**：页被回收立刻取消未完成的解码，否则滑过去还在后台解。
- * - 系统栏图标恒为浅色（纯黑背景），不用 auto（浅色模式下会切成看不见的深色图标）。
+ * 背景恒为纯黑，系统栏图标恒为浅色；左右翻页 + 双指缩放复用 [ZoomPager] /
+ * [ZoomableImageView]（放大态停用翻页手势）。
  */
 class RemotePreviewActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityRemotePreviewBinding
-
-    private lateinit var pager: ViewPager2
-    private lateinit var tvIndex: TextView
-    private lateinit var loading: ProgressBar
-
     private val urls = ArrayList<String>()
-    private val adapter = PagerAdapter()
+    private val uiState = MutableStateFlow(RemotePreviewUiState())
 
-    /** 已经出过结果（成功或失败）的页：只影响进度圈，不影响内容。 */
-    private val settled = HashSet<Int>()
-
-    /** 失败提示只弹一次：连着翻几张都失败时不该刷一串 toast。 */
+    /** 已出过结果的页：失败提示只弹一次。 */
     private var failToasted = false
+    private var lastPage = 0
 
     private val fullLoadSlot = Semaphore(2)
-
-    private val pageCallback = object : ViewPager2.OnPageChangeCallback() {
-        override fun onPageSelected(position: Int) {
-            renderIndex()
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -74,12 +42,6 @@ class RemotePreviewActivity : AppCompatActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
-        binding = ActivityRemotePreviewBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        pager = binding.remotePreviewPager
-        tvIndex = binding.tvRemotePreviewIndex
-        loading = binding.remotePreviewLoading
 
         savedInstanceState?.getStringArrayList(KEY_URLS)?.let { urls.addAll(it) }
         if (urls.isEmpty()) {
@@ -91,125 +53,70 @@ class RemotePreviewActivity : AppCompatActivity() {
         }
         var startIndex = intent.getIntExtra(EXTRA_INDEX, 0)
         savedInstanceState?.let { startIndex = it.getInt(KEY_INDEX, startIndex) }
+        lastPage = startIndex.coerceIn(0, urls.size - 1)
+        uiState.value = RemotePreviewUiState(
+            urls = urls.toList(),
+            initialPage = lastPage,
+        )
 
-        binding.remotePreviewRoot.let { root ->
-            ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-                val bars = insets.getInsets(
-                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+        val composeView = ComposeView(this)
+        composeView.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        composeView.setContent {
+            val state by uiState.collectAsState()
+            WcmTheme {
+                RemotePreviewScreen(
+                    state = state,
+                    isDoneAt = { index ->
+                        val url = urls.getOrNull(index) ?: return@RemotePreviewScreen false
+                        CrawlMarks.hasPic(WeiboImageUrl.pidFromImageUrl(url))
+                    },
+                    loadPage = { index -> loadPage(index) },
+                    onPageChanged = { lastPage = it },
                 )
-                // 左右也要让位：横屏时挖孔/手势区在侧边
-                root.updatePadding(
-                    top = bars.top, bottom = bars.bottom, left = bars.left, right = bars.right,
-                )
-                WindowInsetsCompat.CONSUMED
             }
         }
+        setContentView(composeView)
 
-        pager.adapter = adapter
-        pager.registerOnPageChangeCallback(pageCallback)
-        pager.setCurrentItem(startIndex.coerceIn(0, urls.size - 1), false)
-        renderIndex()
         // 索引快照读完后刷一次：进来时可能还没读完，那时先不标「已抓取」
         CrawlMarks.ensure(this) {
-            if (!isFinishing && !isDestroyed) renderIndex()
+            if (!isFinishing && !isDestroyed) {
+                uiState.value = uiState.value.copy(marksVersion = uiState.value.marksVersion + 1)
+            }
+        }
+    }
+
+    private suspend fun loadPage(index: Int): Drawable? {
+        val url = urls.getOrNull(index) ?: return null
+        return withContext(Dispatchers.IO) {
+            val big = WeiboImageUrl.fullFromThumb(url).ifEmpty { url }
+            val bmp = try {
+                fullLoadSlot.withPermit { RemoteThumb.loadFull(big) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            if (bmp == null) {
+                withContext(Dispatchers.Main) {
+                    if (!failToasted && !isFinishing && !isDestroyed) {
+                        failToasted = true
+                        Toast.makeText(
+                            applicationContext,
+                            R.string.preview_remote_fail,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            }
+            @Suppress("UseKtx")
+            bmp?.let { android.graphics.drawable.BitmapDrawable(null, it) }
         }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putStringArrayList(KEY_URLS, ArrayList(urls))
-        outState.putInt(KEY_INDEX, pager.currentItem)
-    }
-
-    override fun onDestroy() {
-        pager.unregisterOnPageChangeCallback(pageCallback)
-        super.onDestroy()
-    }
-
-    private fun renderIndex() {
-        val pos = pager.currentItem
-        if (pos !in urls.indices) return
-        // 这张抓过没有：计数后面跟一个「已抓取」，不额外占一块界面（v0.9.18）
-        val done = CrawlMarks.hasPic(WeiboImageUrl.pidFromImageUrl(urls[pos]))
-        tvIndex.text = if (done) {
-            getString(R.string.preview_index_done_fmt, pos + 1, urls.size)
-        } else {
-            getString(R.string.preview_index_fmt, pos + 1, urls.size)
-        }
-        loading.visibility = if (pos in settled) View.GONE else View.VISIBLE
-    }
-
-    private inner class PagerAdapter : RecyclerView.Adapter<PagerAdapter.Holder>() {
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-            val view = ZoomableImageView(parent.context).apply {
-                layoutParams = RecyclerView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                )
-                contentDescription = getString(R.string.preview_remote_desc)
-            }
-            return Holder(view)
-        }
-
-        override fun getItemCount(): Int = urls.size
-
-        override fun onBindViewHolder(holder: Holder, position: Int) {
-            holder.bind(urls[position])
-        }
-
-        override fun onViewRecycled(holder: Holder) {
-            super.onViewRecycled(holder)
-            holder.cancel()
-        }
-
-        inner class Holder(val zoomView: ZoomableImageView) : RecyclerView.ViewHolder(zoomView) {
-
-            /** 当前这张大图的解码任务；换绑/回收时必须取消。 */
-            private var job: Job? = null
-
-            fun bind(url: String) {
-                // 放大态停用翻页手势，回到 1x 恢复
-                zoomView.onZoomChanged = { zoomed -> pager.isUserInputEnabled = !zoomed }
-                zoomView.setImageDrawable(null)
-                zoomView.tag = url
-                job?.cancel()
-                job = lifecycleScope.launch(Dispatchers.IO) {
-                    val big = WeiboImageUrl.fullFromThumb(url).ifEmpty { url }
-                    val bmp = try {
-                        fullLoadSlot.withPermit { RemoteThumb.loadFull(big) }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        null
-                    }
-                    withContext(Dispatchers.Main) {
-                        if (isFinishing || isDestroyed) return@withContext
-                        // 换绑 / 回收之后结果作废：tag 不再是这个 URL 就别往这张图上盖
-                        if (zoomView.tag != url) return@withContext
-                        val at = bindingAdapterPosition
-                        if (at != RecyclerView.NO_POSITION) settled.add(at)
-                        if (pager.currentItem == at) loading.visibility = View.GONE
-                        if (bmp != null) {
-                            // 刻意 BitmapDrawable(null, ...)：density=NONE 才不会被按屏幕密度
-                            // 缩放，ZoomableImageView 的缩放/位移坐标映射才不漂移
-                            @Suppress("UseKtx")
-                            zoomView.setImageDrawable(BitmapDrawable(null, bmp))
-                        } else if (!failToasted) {
-                            failToasted = true
-                            Toast.makeText(
-                                applicationContext, R.string.preview_remote_fail, Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    }
-                }
-            }
-
-            fun cancel() {
-                job?.cancel()
-                job = null
-            }
-        }
+        outState.putInt(KEY_INDEX, lastPage)
     }
 
     companion object {
