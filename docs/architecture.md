@@ -16,7 +16,7 @@
 依赖规则：
 
 - `:app -> :domain, :data, :core`
-- `:domain -> :data, :core`
+- `:domain -> :data, :core`（已知偏差：domain 直接使用 data 的网络/存储实现，尚未反转为 data 实现 domain 端口；新功能立项时再拆）
 - `:data -> :core`
 - `:core` 不依赖任何上层模块；`domain` 不得引用 Android UI；`data` 不得引用 UI/domain。
 
