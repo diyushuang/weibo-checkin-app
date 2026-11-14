@@ -245,13 +245,13 @@ class HomeFragment : Fragment() {
         // autoHandled 是「本进程只自动签一次」的闩；但如果这次没真的跑起来
         // （没账号 / 已关自动 / runAll 因 busy 早退），闩住就等于把整次开机机会吞掉，
         // 6 小时内都不会再试。所以：条件成立才置位，时间戳等确实启动后再落。
-        if (!autoHandled && AccountStore.autoOnOpen(ctx) && AccountStore.load(ctx).isNotEmpty()
-            && System.currentTimeMillis() - AccountStore.lastAutoAt(ctx) > 6 * 3600_000L
+        if (!autoHandled && PanelSettings.autoOnOpen(ctx) && AccountStore.load(ctx).isNotEmpty()
+            && System.currentTimeMillis() - PanelSettings.lastAutoAt(ctx) > 6 * 3600_000L
         ) {
             val started = runAll(true)
             if (started) {
                 autoHandled = true
-                AccountStore.setLastAutoAt(ctx, System.currentTimeMillis())
+                PanelSettings.setLastAutoAt(ctx, System.currentTimeMillis())
                 autoCheckinStarted = true
             }
         }
@@ -343,8 +343,8 @@ class HomeFragment : Fragment() {
         renderRunButtons()
         val ctx = requireContext()
         val accounts = AccountStore.load(ctx)
-        val panelReady = AccountStore.panelUrl(ctx).isNotEmpty() &&
-            AccountStore.panelToken(ctx).isNotEmpty()
+        val panelReady = PanelSettings.panelUrl(ctx).isNotEmpty() &&
+            PanelSettings.panelToken(ctx).isNotEmpty()
 
         // 应用栏（v2.0）：问候语 + 「日期 · 账号数」。
         // 每次 render 都重算，跨天回前台、增删账号都会自动更新。
@@ -1212,7 +1212,7 @@ class HomeFragment : Fragment() {
                     onAccountDone = { postRender() },
                 )
                 log("==== 全部完成 · ${now()} ====")
-                if (AccountStore.crawlAuto(ctx)) {
+                if (CrawlSettings.crawlAuto(ctx)) {
                     try {
                         // 与图库页手动抓取共用闸门：正跑着就静默跳过，自动流程不该弹提示
                         if (CrawlRunner.runAll(ctx, ::log, auto = true) == CrawlRunner.RunResult.Busy) {

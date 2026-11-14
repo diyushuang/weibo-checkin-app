@@ -468,7 +468,7 @@ class BrowsingActivity : AppCompatActivity() {
 
     private fun renderTargets() {
         targetsRow.removeAllViews()
-        val targets = AccountStore.crawlTargets(this)
+        val targets = CrawlSettings.crawlTargets(this)
         if (targets.isEmpty()) {
             targetsScroll.visibility = View.GONE
             return

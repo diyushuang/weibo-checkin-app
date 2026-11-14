@@ -69,7 +69,7 @@ object CrawlMarks {
      * 回调**一定**会在主线程被调用一次。
      */
     fun ensure(ctx: Context, onReady: () -> Unit) {
-        val treeUri = AccountStore.crawlTreeUri(ctx)
+        val treeUri = CrawlSettings.crawlTreeUri(ctx)
         if (treeUri.isEmpty()) {
             onReady()
             return
@@ -90,7 +90,7 @@ object CrawlMarks {
             val snap = withContext(Dispatchers.IO) { load(app, tag, file) }
             withContext(Dispatchers.Main) {
                 // 加载期间换了相册目录：这一份作废，别把旧目录的标记刷到新目录上
-                val nowTag = CrawlIndex.treeTagOf(AccountStore.crawlTreeUri(app))
+                val nowTag = CrawlIndex.treeTagOf(CrawlSettings.crawlTreeUri(app))
                 if (tag == nowTag) {
                     snapshot = snap
                     loadedTag = tag

@@ -64,8 +64,8 @@ object Crawler {
         full: Boolean = false,
     ) {
         // 单博主抓取：先按 UID 收窄，再走完全相同的链路（顺序仍是用户看到的顺序）
-        val targets = AccountStore.selectTargets(AccountStore.crawlTargets(ctx), onlyUids)
-        val treeUriRaw = AccountStore.crawlTreeUri(ctx)
+        val targets = CrawlSettings.selectTargets(CrawlSettings.crawlTargets(ctx), onlyUids)
+        val treeUriRaw = CrawlSettings.crawlTreeUri(ctx)
         val accounts = AccountStore.load(ctx)
         if (accounts.isEmpty()) {
             log("✗ 没有登录账号，先在首页添加账号")
@@ -191,8 +191,8 @@ object Crawler {
         onlyUids: Set<String> = emptySet(),
         full: Boolean = false,
     ): Boolean {
-        val targets = AccountStore.selectTargets(AccountStore.crawlTargets(ctx), onlyUids)
-        val treeUriRaw = AccountStore.crawlTreeUri(ctx)
+        val targets = CrawlSettings.selectTargets(CrawlSettings.crawlTargets(ctx), onlyUids)
+        val treeUriRaw = CrawlSettings.crawlTreeUri(ctx)
         if (targets.isEmpty() || treeUriRaw.isEmpty()) {
             if (!autoMode) {
                 log(
@@ -265,7 +265,7 @@ object Crawler {
 
     private suspend fun crawlAlbumTarget(
         ctx: Context,
-        target: AccountStore.CrawlTarget,
+        target: CrawlTarget,
         accounts: List<AccountStore.Account>,
         state: CrawlContext,
         log: (String) -> Unit,
@@ -275,14 +275,14 @@ object Crawler {
         full: Boolean = false,
     ): AlbumTargetResult {
         val uid = target.uid
-        val sinceDate = AccountStore.crawlSince(ctx, uid)
-        val savedCursor = AccountStore.albumSince(ctx, state.treeTag, uid)
+        val sinceDate = CrawlSettings.crawlSince(ctx, uid)
+        val savedCursor = CrawlSettings.albumSince(ctx, state.treeTag, uid)
         // 全量只是「每轮走得更深」，不需要新的断点字段：相册墙游标本身就是位置
         val historyPages = if (full) ALBUM_FULL_PAGES else ALBUM_HISTORY_PAGES
 
         // 「上次抓到哪条微博」的记忆（v0.9.17）。全量刻意不用它：全量的语义就是
         // 从头重新枚举一遍，拿记忆去提前收工会把它变成「增量」。
-        val memoRaw = if (full) "" else AccountStore.albumLastPost(ctx, state.treeTag, uid)
+        val memoRaw = if (full) "" else CrawlSettings.albumLastPost(ctx, state.treeTag, uid)
         val memoMid = AlbumMemo.midOf(memoRaw)
         val memoYm = AlbumMemo.ymOf(memoRaw)
         if (memoMid.isNotEmpty()) {
@@ -409,7 +409,7 @@ object Crawler {
 
         // 记忆推进：命中旧记忆（说明本轮没往下走）或本轮中断在页中（lastMid 为空）都不动
         if (!newPass.hitWatermark && newPass.lastMid.isNotEmpty() && newPass.lastMid != memoMid) {
-            AccountStore.setAlbumLastPost(
+            CrawlSettings.setAlbumLastPost(
                 ctx, state.treeTag, uid, AlbumMemo.encode(newPass.lastMid, newPass.lastYm),
             )
         }
@@ -435,7 +435,7 @@ object Crawler {
         }
         if (reachedBottom) nextCursor = ""
 
-        AccountStore.setAlbumSince(ctx, state.treeTag, uid, nextCursor)
+        CrawlSettings.setAlbumSince(ctx, state.treeTag, uid, nextCursor)
         return AlbumTargetResult(true, saved)
     }
 
@@ -452,7 +452,7 @@ object Crawler {
         ctx: Context,
         uid: String,
         mid: String,
-        target: AccountStore.CrawlTarget,
+        target: CrawlTarget,
         state: CrawlContext,
         log: (String) -> Unit,
         onEvent: (CrawlEvent) -> Unit,
@@ -542,7 +542,7 @@ object Crawler {
     private suspend fun crawlTarget(
         ctx: Context,
         cookie: String,
-        target: AccountStore.CrawlTarget,
+        target: CrawlTarget,
         state: CrawlContext,
         log: (String) -> Unit,
         retryOnly: Boolean = false,
@@ -552,8 +552,8 @@ object Crawler {
         allowRetry: Boolean = true,
     ): Int {
         val uid = target.uid
-        val sinceDate = AccountStore.crawlSince(ctx, uid)
-        var cursor = AccountStore.crawlCursor(ctx, state.treeTag, uid)
+        val sinceDate = CrawlSettings.crawlSince(ctx, uid)
+        var cursor = CrawlSettings.crawlCursor(ctx, state.treeTag, uid)
         var downloaded = 0
         val started = System.currentTimeMillis()
         var details = 0
@@ -623,7 +623,7 @@ object Crawler {
             log("  A 预算耗尽（${processedA}/${planA.batch.size}），覆盖边界本轮不推进")
         }
         if (planA.stop == StopReason.PAGE_EXHAUSTED) cursor = cursor.copy(reachedBottom = true)
-        AccountStore.saveCrawlCursor(ctx, state.treeTag, cursor)
+        CrawlSettings.saveCrawlCursor(ctx, state.treeTag, cursor)
         CrawlEngine.logPlan("A", planA, cursor, log)
 
         // ---- Phase B：从断点锚点继续补历史 ----
@@ -650,7 +650,7 @@ object Crawler {
                 if (planB.reachedBottom) cursor = cursor.copy(reachedBottom = true)
             }
             state.index.flush()
-            AccountStore.saveCrawlCursor(ctx, state.treeTag, cursor)
+            CrawlSettings.saveCrawlCursor(ctx, state.treeTag, cursor)
             CrawlEngine.logPlan("B", planB, cursor, log)
         }
         return downloaded
@@ -671,15 +671,15 @@ object Crawler {
     private suspend fun crawlFullScan(
         ctx: Context,
         cookie: String,
-        target: AccountStore.CrawlTarget,
+        target: CrawlTarget,
         state: CrawlContext,
         log: (String) -> Unit,
         onEvent: (CrawlEvent) -> Unit,
         isStopped: () -> Boolean,
     ): Int {
         val uid = target.uid
-        val sinceDate = AccountStore.crawlSince(ctx, uid)
-        var cursor = AccountStore.crawlCursor(ctx, state.treeTag, uid)
+        val sinceDate = CrawlSettings.crawlSince(ctx, uid)
+        var cursor = CrawlSettings.crawlCursor(ctx, state.treeTag, uid)
         var downloaded = 0
         var details = 0
         val started = System.currentTimeMillis()
@@ -720,7 +720,7 @@ object Crawler {
             log("  全量预算耗尽（$processed/${plan.batch.size}），断点留在第 ${plan.startPage} 页，下轮重试")
         }
         state.index.flush()
-        AccountStore.saveCrawlCursor(ctx, state.treeTag, cursor)
+        CrawlSettings.saveCrawlCursor(ctx, state.treeTag, cursor)
         CrawlEngine.logPlan("全量", plan, cursor, log)
         return downloaded
     }
@@ -732,7 +732,7 @@ object Crawler {
         cookie: String,
         postId: String,
         uid: String,
-        target: AccountStore.CrawlTarget,
+        target: CrawlTarget,
         state: CrawlContext,
         log: (String) -> Unit,
         onlySlots: Set<Int>?,

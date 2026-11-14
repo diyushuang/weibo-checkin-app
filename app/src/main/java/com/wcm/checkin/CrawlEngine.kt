@@ -58,7 +58,7 @@ object CrawlEngine {
     /** 抓取一条微博的全部原图与 Live。幂等：三层去重，不占用增量进度。 */
     suspend fun crawlSinglePost(ctx: Context, bid: String, log: (String) -> Unit) {
         val cookie = pickCrawlCookie(ctx, AccountStore.load(ctx), log) ?: return
-        val treeUriRaw = AccountStore.crawlTreeUri(ctx)
+        val treeUriRaw = CrawlSettings.crawlTreeUri(ctx)
         if (treeUriRaw.isEmpty()) {
             log("✗ 请先选择相册目录")
             return
@@ -126,7 +126,7 @@ object CrawlEngine {
         isStopped: () -> Boolean = { false },
     ): PickedSummary {
         val cookie = pickCrawlCookie(ctx, AccountStore.load(ctx), log) ?: return PickedSummary()
-        val treeUriRaw = AccountStore.crawlTreeUri(ctx)
+        val treeUriRaw = CrawlSettings.crawlTreeUri(ctx)
         if (treeUriRaw.isEmpty()) {
             log("✗ 请先选择相册目录")
             return PickedSummary()
@@ -218,10 +218,10 @@ object CrawlEngine {
             if (report.degraded) log("⚠ 索引有 ${report.skipped} 行损坏，已降级为「仅文件名去重」")
 
             // 旧版 crawl_done 一次性迁移（反向不可逆：失败槽位无法从旧数据还原）
-            val legacy = AccountStore.crawlDoneLegacy(ctx)
+            val legacy = CrawlSettings.crawlDoneLegacy(ctx)
             if (legacy.isNotEmpty()) {
                 val n = idx.migrateLegacy(legacy)
-                AccountStore.clearCrawlDoneLegacy(ctx)
+                CrawlSettings.clearCrawlDoneLegacy(ctx)
                 if (n > 0) log("索引迁移：$n 帖从旧进度接管")
             }
 

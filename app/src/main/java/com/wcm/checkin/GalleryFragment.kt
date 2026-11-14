@@ -105,7 +105,7 @@ class GalleryFragment : Fragment() {
                         )
                     }
                 }
-                AccountStore.setCrawlTreeUri(ctx, uri.toString())
+                CrawlSettings.setCrawlTreeUri(ctx, uri.toString())
                 renderDir()
                 refreshGalleryCount(force = true)
                 toastShort(getString(R.string.crawl_dir_saved))
@@ -140,14 +140,14 @@ class GalleryFragment : Fragment() {
         val switchMode = view.findViewById<MaterialSwitch>(R.id.switchCrawlMode)
         val modeLabel = view.findViewById<TextView>(R.id.tvCrawlMode)
         // 先渲染初值再挂监听：否则 `isChecked = ...` 会立刻回调一次，把默认值写回存储
-        switchMode.isChecked = AccountStore.crawlMode(requireContext()) == AccountStore.MODE_ALBUM
+        switchMode.isChecked = CrawlSettings.crawlMode(requireContext()) == CrawlSettings.MODE_ALBUM
         modeLabel.text = getString(
             if (switchMode.isChecked) R.string.crawl_mode_album else R.string.crawl_mode_timeline
         )
         switchMode.setOnCheckedChangeListener { _, checked ->
-            AccountStore.setCrawlMode(
+            CrawlSettings.setCrawlMode(
                 requireContext(),
-                if (checked) AccountStore.MODE_ALBUM else AccountStore.MODE_TIMELINE,
+                if (checked) CrawlSettings.MODE_ALBUM else CrawlSettings.MODE_TIMELINE,
             )
             modeLabel.text = getString(
                 if (checked) R.string.crawl_mode_album else R.string.crawl_mode_timeline
@@ -156,9 +156,9 @@ class GalleryFragment : Fragment() {
         view.findViewById<View>(R.id.rowCrawlMode).setOnClickListener { switchMode.toggle() }
 
         val switchAuto = view.findViewById<MaterialSwitch>(R.id.switchCrawlAuto)
-        switchAuto.isChecked = AccountStore.crawlAuto(requireContext())
+        switchAuto.isChecked = CrawlSettings.crawlAuto(requireContext())
         switchAuto.setOnCheckedChangeListener { _, checked ->
-            AccountStore.setCrawlAuto(requireContext(), checked)
+            CrawlSettings.setCrawlAuto(requireContext(), checked)
         }
         // 整行可点切换开关（点标题也算点开关，不必精确点到那个小滑块）
         view.findViewById<View>(R.id.rowCrawlAuto).setOnClickListener { switchAuto.toggle() }
@@ -219,7 +219,7 @@ class GalleryFragment : Fragment() {
         // 先取 view：本方法会从 onHiddenChanged / 授权回调里调用，页面可能已在销毁中。
         val host = view ?: return
         val ctx = host.context
-        val raw = AccountStore.crawlTreeUri(ctx)
+        val raw = CrawlSettings.crawlTreeUri(ctx)
         val display = if (raw.isEmpty()) getString(R.string.crawl_dir_empty) else try {
             val segments = raw.toUri().pathSegments
             segments.lastOrNull { it.contains(':') }?.substringAfter(':')
@@ -335,7 +335,7 @@ class GalleryFragment : Fragment() {
         // 那时用户可能已经退出页面，requireContext() 会抛 IllegalStateException。
         val host = view ?: return
         val ctx = host.context
-        val raw = AccountStore.crawlTreeUri(ctx)
+        val raw = CrawlSettings.crawlTreeUri(ctx)
         val row = host.findViewById<View>(R.id.crawlRetryRow) ?: return
         if (raw.isEmpty()) {
             row.visibility = View.GONE
@@ -370,7 +370,7 @@ class GalleryFragment : Fragment() {
     /** 失败清单：列出「哪条帖子、缺几张」，底部一键只跑重试阶段。 */
     private fun showRetryDialog() {
         val ctx = requireContext()
-        val raw = AccountStore.crawlTreeUri(ctx)
+        val raw = CrawlSettings.crawlTreeUri(ctx)
         if (raw.isEmpty()) {
             toast(getString(R.string.crawl_need_dir))
             return
@@ -436,7 +436,7 @@ class GalleryFragment : Fragment() {
 
     private fun openGallery() {
         val ctx = requireContext()
-        val raw = AccountStore.crawlTreeUri(ctx)
+        val raw = CrawlSettings.crawlTreeUri(ctx)
         if (raw.isEmpty()) {
             toast(getString(R.string.gallery_need_dir))
             return
@@ -453,7 +453,7 @@ class GalleryFragment : Fragment() {
         // 与 refreshRetryCount 同理：这是收尾块里会调用的函数，页面可能已经销毁。
         val host = view ?: return
         val ctx = host.context
-        val raw = AccountStore.crawlTreeUri(ctx)
+        val raw = CrawlSettings.crawlTreeUri(ctx)
         val tv = host.findViewById<TextView>(R.id.tvGalleryCount) ?: return
         if (raw.isEmpty()) {
             tv.text = getString(R.string.gallery_count_none)
@@ -488,7 +488,7 @@ class GalleryFragment : Fragment() {
         val ctx = requireContext()
         val container = view?.findViewById<ViewGroup>(R.id.crawlTargetList) ?: return
         container.removeAllViews()
-        val targets = AccountStore.crawlTargets(ctx)
+        val targets = CrawlSettings.crawlTargets(ctx)
         // 标题带数量：不用点进去就知道配了几个目标
         view?.findViewById<TextView>(R.id.tvTargetsTitle)?.text =
             if (targets.isEmpty()) {
@@ -501,8 +501,8 @@ class GalleryFragment : Fragment() {
             return
         }
         val inflater = LayoutInflater.from(ctx)
-        val treeTag = CrawlIndex.treeTagOf(AccountStore.crawlTreeUri(ctx))
-        val cursors = AccountStore.allCursors(ctx, treeTag)
+        val treeTag = CrawlIndex.treeTagOf(CrawlSettings.crawlTreeUri(ctx))
+        val cursors = CrawlSettings.allCursors(ctx, treeTag)
         targets.forEach { t ->
             val row = inflater.inflate(R.layout.item_crawl_target, container, false)
             row.findViewById<TextView>(R.id.tvTargetName).text =
@@ -526,7 +526,7 @@ class GalleryFragment : Fragment() {
      * 目标行溢出菜单：单博主增量 / 单博主全量 / 起始日期 / 移除。
      * 原来这些入口以文字按钮常驻在行尾，一行 3 个点击目标极易误触。
      */
-    private fun showTargetMenu(anchor: View, target: AccountStore.CrawlTarget) {
+    private fun showTargetMenu(anchor: View, target: CrawlTarget) {
         val ctx = requireContext()
         val popup = PopupMenu(ctx, anchor)
         popup.menuInflater.inflate(R.menu.item_crawl_target_actions, popup.menu)
@@ -550,7 +550,7 @@ class GalleryFragment : Fragment() {
                         .setMessage(getString(R.string.crawl_remove_msg))
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton(android.R.string.ok) { _, _ ->
-                            AccountStore.removeCrawlTarget(ctx, target.uid)
+                            CrawlSettings.removeCrawlTarget(ctx, target.uid)
                             renderTargets()
                         }
                         .show()
@@ -565,7 +565,7 @@ class GalleryFragment : Fragment() {
     /** 进度行：已覆盖区间 + 起始日期 + 是否到底，让用户看得出「抓到哪天」。 */
     private fun describeProgress(
         ctx: android.content.Context,
-        target: AccountStore.CrawlTarget,
+        target: CrawlTarget,
         cursor: CrawlCursor?,
         treeTag: String = "",
     ): String {
@@ -574,8 +574,8 @@ class GalleryFragment : Fragment() {
         val cov = cursor?.takeIf { it.oldestCoveredAt > 0L && it.newestAt > 0L }
         // 相册模式不走覆盖区间（它按相册墙游标推进），进度就看「上次抓到最后一条」：
         // 这条记忆就是下一轮补新的起点，写在行里用户不必翻日志（v0.9.17）
-        val albumYm = if (treeTag.isNotEmpty() && AccountStore.crawlMode(ctx) == AccountStore.MODE_ALBUM) {
-            AlbumMemo.ymOf(AccountStore.albumLastPost(ctx, treeTag, target.uid))
+        val albumYm = if (treeTag.isNotEmpty() && CrawlSettings.crawlMode(ctx) == CrawlSettings.MODE_ALBUM) {
+            AlbumMemo.ymOf(CrawlSettings.albumLastPost(ctx, treeTag, target.uid))
         } else {
             ""
         }
@@ -596,7 +596,7 @@ class GalleryFragment : Fragment() {
         } else {
             sb.append(getString(R.string.crawl_progress_none))
         }
-        val since = AccountStore.crawlSince(ctx, target.uid)
+        val since = CrawlSettings.crawlSince(ctx, target.uid)
         if (since.isNotEmpty()) sb.append(" · ").append(getString(R.string.crawl_progress_from, since))
         // 全量扫描有独立的页码断点：不显示的话用户会以为「全量没反应」
         if (cursor?.fullScanInProgress == true) {
@@ -607,11 +607,11 @@ class GalleryFragment : Fragment() {
     }
 
     /** 选择「从哪天开始向新方向抓」。 */
-    private fun pickSince(target: AccountStore.CrawlTarget) {
+    private fun pickSince(target: CrawlTarget) {
         val ctx = requireContext()
-        val treeTag = CrawlIndex.treeTagOf(AccountStore.crawlTreeUri(ctx))
-        val cursor = AccountStore.crawlCursor(ctx, treeTag, target.uid)
-        val current = AccountStore.crawlSince(ctx, target.uid)
+        val treeTag = CrawlIndex.treeTagOf(CrawlSettings.crawlTreeUri(ctx))
+        val cursor = CrawlSettings.crawlCursor(ctx, treeTag, target.uid)
+        val current = CrawlSettings.crawlSince(ctx, target.uid)
 
         val constraints = CalendarConstraints.Builder()
             .setValidator(DateValidatorPointBackward.now())   // 不允许未来
@@ -625,8 +625,8 @@ class GalleryFragment : Fragment() {
         val picker = builder.build()
         picker.addOnPositiveButtonClickListener { millis ->
             val picked = CrawlDate.fromPickerMillis(millis)
-            AccountStore.setCrawlSince(ctx, target.uid, picked)
-            AccountStore.saveCrawlCursor(ctx, treeTag, CursorLogic.onSinceDateChanged(cursor, picked))
+            CrawlSettings.setCrawlSince(ctx, target.uid, picked)
+            CrawlSettings.saveCrawlCursor(ctx, treeTag, CursorLogic.onSinceDateChanged(cursor, picked))
             renderTargets()
             log(getString(R.string.crawl_since_saved, picked))
         }
@@ -653,7 +653,7 @@ class GalleryFragment : Fragment() {
                     val accounts = AccountStore.load(ctx)
                     val cookie = if (accounts.isEmpty()) null else CrawlEngine.pickCrawlCookie(requireContext(), accounts, ::log)
                     val name = WeiboAuthApi.fetchUserName(cookie, uid)
-                    AccountStore.addCrawlTarget(ctx, AccountStore.CrawlTarget(uid, name))
+                    CrawlSettings.addCrawlTarget(ctx, CrawlTarget(uid, name))
                     withContext(Dispatchers.Main) { renderTargets() }
                     log("✓ 已添加：${name.ifEmpty { uid }}（$uid）")
                 }
@@ -710,7 +710,7 @@ class GalleryFragment : Fragment() {
         val name = if (uids.isEmpty()) {
             getString(R.string.crawl_all_targets)
         } else {
-            AccountStore.crawlTargets(ctx).firstOrNull { it.uid in uids }
+            CrawlSettings.crawlTargets(ctx).firstOrNull { it.uid in uids }
                 ?.name?.ifEmpty { null } ?: uids.first()
         }
         MaterialAlertDialogBuilder(ctx)
@@ -735,13 +735,13 @@ class GalleryFragment : Fragment() {
             return
         }
         val ctx = requireContext()
-        val targets = AccountStore.selectTargets(AccountStore.crawlTargets(ctx), uids)
+        val targets = CrawlSettings.selectTargets(CrawlSettings.crawlTargets(ctx), uids)
         if (targets.isEmpty()) {
             // 单博主入口点完后目标被删了：给一句准确的提示，而不是笼统的「请先添加目标」
             toast(getString(if (uids.isEmpty()) R.string.crawl_need_target else R.string.crawl_target_gone))
             return
         }
-        if (AccountStore.crawlTreeUri(ctx).isEmpty()) {
+        if (CrawlSettings.crawlTreeUri(ctx).isEmpty()) {
             toast(getString(R.string.crawl_need_dir))
             return
         }
@@ -750,14 +750,14 @@ class GalleryFragment : Fragment() {
         setLogExpanded(true)            // 运行时自动展开日志
         crawlJob = AppScope.launch {
             try {
-                val modeName = if (AccountStore.crawlMode(ctx) == AccountStore.MODE_ALBUM) "相册" else "时间线"
+                val modeName = if (CrawlSettings.crawlMode(ctx) == CrawlSettings.MODE_ALBUM) "相册" else "时间线"
                 val scope = when {
                     full && uids.isNotEmpty() -> "全量 · 单博主"
                     full -> "全量 · 全部目标"
                     uids.isNotEmpty() -> "增量 · 单博主"
                     else -> "增量"
                 }
-                log("==== 抓取开始（$scope · $modeName · Live→${if (AccountStore.crawlGif(ctx)) "GIF" else "MOV"}） ====")
+                log("==== 抓取开始（$scope · $modeName · Live→${if (CrawlSettings.crawlGif(ctx)) "GIF" else "MOV"}） ====")
                 if (uids.isNotEmpty()) {
                     log(getString(R.string.crawl_scope_single, targets.joinToString("、") { it.name.ifEmpty { it.uid } }))
                 }
@@ -792,7 +792,7 @@ class GalleryFragment : Fragment() {
     /** 浏览博主抓图（v0.9.11）：带第一个抓取目标跳转，无目标时留空输入框。 */
     private fun openBrowsing() {
         val ctx = requireContext()
-        val first = AccountStore.crawlTargets(ctx).firstOrNull()?.uid ?: ""
+        val first = CrawlSettings.crawlTargets(ctx).firstOrNull()?.uid ?: ""
         BrowsingActivity.start(ctx, first)
     }
 

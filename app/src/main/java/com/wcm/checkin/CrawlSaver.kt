@@ -209,7 +209,7 @@ object CrawlSaver {
         isExtra: Boolean,
         ctx: Context,
     ): String? {
-        val gifOn = AccountStore.crawlGif(ctx)
+        val gifOn = CrawlSettings.crawlGif(ctx)
         val a = if (isExtra) AssetName.extraLiveName(prefix, seq - 1, gifOn)
         else AssetName.pairedLiveName(prefix, seq, gifOn)
         val b = if (isExtra) AssetName.extraLiveName(prefix, seq - 1, !gifOn)
@@ -290,9 +290,9 @@ object CrawlSaver {
         log: (String) -> Unit,
     ): LiveResult {
         val kind = when {
-            isExtra && AccountStore.crawlGif(ctx) -> CrawlIndex.Kind.LIVE_EXTRA_GIF
+            isExtra && CrawlSettings.crawlGif(ctx) -> CrawlIndex.Kind.LIVE_EXTRA_GIF
             isExtra -> CrawlIndex.Kind.LIVE_EXTRA_MOV
-            AccountStore.crawlGif(ctx) -> CrawlIndex.Kind.LIVE_PAIRED_GIF
+            CrawlSettings.crawlGif(ctx) -> CrawlIndex.Kind.LIVE_PAIRED_GIF
             else -> CrawlIndex.Kind.LIVE_PAIRED_MOV
         }
         val movName = if (isExtra) AssetName.extraLiveName(prefix, index1 - 1, false)
@@ -304,7 +304,7 @@ object CrawlSaver {
         }
         val gifName = if (isExtra) AssetName.extraLiveName(prefix, index1 - 1, true)
         else AssetName.pairedLiveName(prefix, index1, true)
-        if (AccountStore.crawlGif(ctx)) {
+        if (CrawlSettings.crawlGif(ctx)) {
             val gif = LivePhotoConverter.movBytesToGif(ctx, mov)
             if (gif != null && store.save(gifName, "image/gif", gif)) {
                 index.onFileSaved(postId, slot, kind, picId, Hashing.sha256Hex128(gif), gif.size.toLong(), gifName)

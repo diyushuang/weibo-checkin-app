@@ -87,8 +87,8 @@ object AccountMaintenanceService {
         acc: AccountStore.Account,
         name: String = "",
     ): SyncResult {
-        val url = AccountStore.panelUrl(ctx)
-        val token = AccountStore.panelToken(ctx)
+        val url = PanelSettings.panelUrl(ctx)
+        val token = PanelSettings.panelToken(ctx)
         if (url.isEmpty() || token.isEmpty()) return SyncResult(false, "未配置面板")
         val displayName = name.ifEmpty { acc.name }
         return try {

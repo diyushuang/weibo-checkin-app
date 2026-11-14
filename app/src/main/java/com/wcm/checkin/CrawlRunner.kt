@@ -45,7 +45,7 @@ object CrawlRunner {
     /**
      * 全量增量抓取（签到后自动 / 图库页手动共用）。
      *
-     * 按 [AccountStore.crawlMode] 分派：
+     * 按 [CrawlSettings.crawlMode] 分派：
      * - `album`（默认）：游客身份走相册墙，只抓有图微博；拿不到游客身份时
      *   **自动回退**到时间线模式，用户不会因为风控/接口变化而「点了没反应」。
      * - `timeline`：原实现。
@@ -61,7 +61,7 @@ object CrawlRunner {
         onlyUids: Set<String> = emptySet(),
         full: Boolean = false,
     ): RunResult {
-        val album = AccountStore.crawlMode(ctx) == AccountStore.MODE_ALBUM
+        val album = CrawlSettings.crawlMode(ctx) == CrawlSettings.MODE_ALBUM
         val what = when {
             full && album -> "相册全量"
             full -> "全量抓取"
