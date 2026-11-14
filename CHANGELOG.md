@@ -15,7 +15,7 @@
   `:data`（微博/面板网络、SharedPreferences、NDJSON 索引、SAF、Keystore）、
   `:core`（模型与纯算法、应用级协程）。依赖方向 `app -> domain -> data -> core`。
 - **拆分大文件**：`WeiboApi`（1114 行）→ Http/Auth/Topic/Post/ImageUrl；
-  `Crawler`（1681 行）→ CrawlEngine/CrawlSaver/PostAssets/Crawler（768 行）；
+  `Crawler`（1681 行）→ CrawlEngine/CrawlSaver/PostAssets/AlbumCrawler/TimelineCrawler；
   `AccountStore`（933 行）→ 账号表 + PanelSettings + CrawlSettings。
 - **前后台共用服务**：签到编排从 HomeFragment 抽到 `CheckinService`；
   探活/补昵称/面板同步从 HomeFragment 与 Worker 收敛到 `AccountMaintenanceService`。

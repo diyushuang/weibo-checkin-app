@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | `:core` | `AssetName`、`Hashing`、`CrawlCursor`/`Budget`/`Phase`/`StopReason`、`ReloginPolicy`、`AccountStatusHead`、`AppScope` | Android UI、SharedPreferences、OkHttp 业务 |
 | `:data` | `WeiboHttp/Auth/Topic/Post/ImageUrl`、`PanelApi`、`GuestSession`、`WeiboPasswordLogin`、`AccountStore`、`PanelSettings`、`CrawlSettings`、`CrawlIndex`、`SafTreeStore`、`GalleryFiles`、`TopicStore`、`CredentialVault`、`GifEncoder`、`LivePhotoConverter` | View/Fragment、签到/抓取编排 |
-| `:domain` | `CheckinService`、`AccountMaintenanceService`、`CrawlEngine`、`Crawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`CrawlRunner`、`PostAssets`、`AutoRelogin` | Android UI、资源 `R.*` |
+| `:domain` | `CheckinService`、`AccountMaintenanceService`、`CrawlEngine`、`AlbumCrawler`、`TimelineCrawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`CrawlRunner`、`PostAssets`、`AutoRelogin` | Android UI、资源 `R.*` |
 | `:app` | `MainActivity`、四个 Fragment、浏览/选图/预览 Activity、`RemoteThumb`、`ThumbLoader`、`ZoomableImageView`、`LogPanel`、`CheckInWorker`、`WcmApp`、Compose 设置页 | 业务规则、网络/存储实现 |
 
 ## 3. 状态与并发
@@ -84,7 +84,8 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 已完成：
 
 - `WeiboApi` 1114 行 → `WeiboHttp/Auth/Topic/Post/ImageUrl`
-- `Crawler` 1681 行 → `CrawlEngine` + `CrawlSaver` + `Crawler`（768 行）+ `PostAssets`
+- `Crawler` 1681 行 → `CrawlEngine` + `CrawlSaver` + `AlbumCrawler`（428 行）+
+  `TimelineCrawler`（307 行）+ `PostAssets`
 - `AccountStore` 933 行 → `AccountStore`（643 行）+ `PanelSettings` + `CrawlSettings`
 - 签到编排/保活/重登从 UI 与 Worker 收敛到 `:domain` 服务
 - 4 模块 + Hilt + R8；所有改动行为保持，数据格式零迁移
@@ -94,8 +95,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 
 待办（按建议顺序）：
 
-1. `Crawler` 的相册/时间线编排再拆成 `AlbumCrawler`/`TimelineCrawler`，
-   `CrawlRunner` 收敛为可构造注入的 `CrawlService`。
+1. `CrawlRunner` 收敛为可构造注入的 `CrawlService` 类（Hilt `@Singleton`）。
 2. 首页 MVVM：`HomeViewModel` 订阅 `CheckinService`/`CrawlRunner`，
    删除 companion object 的进程级 UI 状态；随后迁移首页 Compose。
 3. 超话/图库/浏览/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
