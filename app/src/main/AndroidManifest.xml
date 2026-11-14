@@ -24,7 +24,19 @@
         tools:targetApi="n">
         <!-- networkSecurityConfig 是 API 24 才被系统读取的属性。minSdk 是 23，
              在 6.0 上它被忽略——不影响安全口径：所有出站 URL 都在
-             WeiboApi.weiboUrl() 里强制 https 并做域名白名单，明文本来就走不出去。 -->
+             WeiboHttp.weiboUrl() 里强制 https 并做域名白名单，明文本来就走不出去。 -->
+
+        <!-- HiltWorkerFactory：关闭 WorkManager 的默认初始化，改由 WcmApp 注入 -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
 
         <activity
             android:name=".MainActivity"

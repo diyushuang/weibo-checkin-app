@@ -1,10 +1,23 @@
 package com.wcm.checkin
 
 import android.app.Application
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import com.google.android.material.color.DynamicColors
+import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 
 /** Android 12+ 自动跟随系统壁纸取色（Material You），低版本回退品牌色。 */
-class WcmApp : Application() {
+@HiltAndroidApp
+class WcmApp : Application(), Configuration.Provider {
+
+    @Inject lateinit var workerFactory: HiltWorkerFactory
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
+
     override fun onCreate() {
         super.onCreate()
         DynamicColors.applyToActivitiesIfAvailable(this)
