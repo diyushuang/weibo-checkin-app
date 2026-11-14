@@ -1,7 +1,5 @@
 package com.wcm.checkin
 
-import com.wcm.checkin.databinding.FragmentTopicBinding
-import com.wcm.checkin.databinding.ItemTopicBinding
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -12,25 +10,23 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageButton
-import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.progressindicator.LinearProgressIndicator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -57,8 +53,8 @@ class TopicFragment : Fragment() {
 
     /** "" = 全部账号；否则为某个账号的 uid。 */
     private var currentUid = ""
-    private var filter = Filter.ALL
-    private var sort = Sort.PENDING_FIRST
+    private var filter = TopicFilter.ALL
+    private var sort = TopicSort.PENDING_FIRST
     private var loading = false
 
     /**
@@ -78,18 +74,14 @@ class TopicFragment : Fragment() {
 
     private var lastAutoRefreshAt = 0L
 
-    /** 「全部账号」且账号数 > 1：列表副行需要标出这条属于哪个账号（bind 时不重复读 prefs）。 */
+    /** 「全部账号」且账号数 > 1：列表副行需要标出这条属于哪个账号（不重复读 prefs）。 */
     private var multiAccountMode = false
 
-    private lateinit var adapter: TopicAdapter
-    private var _binding: FragmentTopicBinding? = null
-    private val binding get() = _binding!!
-    private lateinit var list: RecyclerView
-    private lateinit var emptyBox: View
-    private lateinit var errorBox: View
-    private lateinit var progress: LinearProgressIndicator
-    private lateinit var pillsRow: LinearLayout
-    private lateinit var filtersRow: LinearLayout
+    /** Compose 整屏状态；[render] 是唯一写入点。 */
+    private val uiState = MutableStateFlow(TopicUiState())
+
+    /** 当前屏幕上的行，回调按 `uid + \u0000 + key` 找回原始数据。 */
+    private var rowsByKey: Map<String, TopicRow> = emptyMap()
 
     private val timeFmt = SimpleDateFormat("HH:mm", Locale.CHINA)
 
@@ -98,9 +90,6 @@ class TopicFragment : Fragment() {
 
     /** 当前打开的只读弹窗（原始 JSON / 字段说明），视图销毁时手动关掉。 */
     private var textDialog: androidx.appcompat.app.AlertDialog? = null
-
-    private enum class Filter { ALL, PENDING, DONE, LEVEL7 }
-    private enum class Sort { PENDING_FIRST, LEVEL_DESC, NAME }
 
     /** 列表行：带上账号，全部账号模式下签到才知道该用谁的 cookie。 */
     data class TopicRow(
@@ -119,31 +108,48 @@ class TopicFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View {
-        _binding = FragmentTopicBinding.inflate(inflater, container, false)
-        return binding.root
+        val view = ComposeView(requireContext())
+        view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        view.setContent {
+            val state by uiState.collectAsState()
+            WcmTheme {
+                TopicScreen(
+                    state = state,
+                    onRefresh = { refresh(manual = true) },
+                    onOverflowField = {
+                        showTextDialog(
+                            getString(R.string.topic_field_title),
+                            getString(R.string.topic_field_body),
+                        )
+                    },
+                    onOverflowRefresh = { refresh(manual = true) },
+                    onSelectAccount = {
+                        currentUid = it
+                        render()
+                    },
+                    onFilter = {
+                        filter = it
+                        render()
+                    },
+                    onSort = {
+                        sort = it
+                        render()
+                    },
+                    onRowClick = { ui -> rowFor(ui)?.let { toggleDetail(it) } },
+                    onRowCheckin = { ui -> rowFor(ui)?.let { checkin(it) } },
+                    onRowCopy = { ui -> rowFor(ui)?.let { copySignLink(it) } },
+                    onRowOpen = { ui -> rowFor(ui)?.let { openInWeibo(it) } },
+                    onRowJson = { ui -> rowFor(ui)?.let { showRawJson(it) } },
+                    onEmptyAction = { (activity as? MainActivity)?.selectHomeTab() },
+                    onRetry = { refresh(manual = true) },
+                )
+            }
+        }
+        return view
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        list = binding.topicList
-        emptyBox = binding.topicEmpty
-        errorBox = binding.topicError
-        progress = binding.prTopic
-        pillsRow = binding.topicAccountPills
-        filtersRow = binding.topicFilters
-
-        adapter = TopicAdapter()
-        list.layoutManager = LinearLayoutManager(requireContext())
-        list.adapter = adapter
-
-        binding.btnTopicRefresh.setOnClickListener { refresh(manual = true) }
-        binding.btnTopicEmptyAction.setOnClickListener {
-            (activity as? MainActivity)?.selectHomeTab()
-        }
-        binding.btnTopicRetry.setOnClickListener { refresh(manual = true) }
-        binding.btnTopicSort.setOnClickListener { showSortMenu(it) }
-        binding.btnTopicMore.setOnClickListener { showOverflow(it) }
-
         TopicStore.ensureLoaded(requireContext())
         pendingUid?.let {
             currentUid = it
@@ -165,7 +171,6 @@ class TopicFragment : Fragment() {
         // 视图没了就把自建弹窗关掉，否则窗口挂着已 detach 的 Activity → WindowLeaked
         textDialog?.dismiss()
         textDialog = null
-        _binding = null
         super.onDestroyView()
     }
 
@@ -179,6 +184,8 @@ class TopicFragment : Fragment() {
         currentUid = uid
         if (view != null) render() else pendingUid = uid
     }
+
+    private fun rowFor(ui: TopicRowUi): TopicRow? = rowsByKey[rowKey(ui.uid, ui.key)]
 
     // ========================= 刷新 =========================
 
@@ -218,7 +225,6 @@ class TopicFragment : Fragment() {
         }
         loading = true
         lastAutoRefreshAt = System.currentTimeMillis()
-        setRefreshing(true)
         render()
 
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
@@ -231,7 +237,6 @@ class TopicFragment : Fragment() {
                 withContext(Dispatchers.Main + NonCancellable) {
                     if (isAdded) {
                         loading = false
-                        setRefreshing(false)
                         render()
                     } else {
                         loading = false
@@ -272,19 +277,6 @@ class TopicFragment : Fragment() {
     }
 
     /**
-     * 刷新中的视觉反馈。
-     *
-     * **不置灰刷新按钮**：禁用的按钮连点击事件都不派发，用户点下去既没有 toast
-     * 也看不到任何变化（首页「立即签到」就踩过这个坑）。重入由 [refresh] 里的
-     * `loading` 闸门 + toast「正在运行中…」兜住。
-     */
-    private fun setRefreshing(on: Boolean) {
-        // 与 render() 里 `progress.visibility = if (loading) …` 保持同一口径：
-        // 两处都按「是否正在刷新」决定可见性，谁先跑都不会留下一条卡住的进度条。
-        progress.visibility = if (on) View.VISIBLE else View.GONE
-    }
-
-    /**
      * 状态时间标签：今天只给 `HH:mm`，跨天补日期。
      *
      * 签到状态是按天的，只显示时分会让「昨天 20:15」和「今天 20:15」看起来一样，
@@ -300,7 +292,6 @@ class TopicFragment : Fragment() {
 
     private fun render() {
         if (!isAdded) return
-        val host = _binding ?: return
         val ctx = requireContext()
         val accounts = AccountStore.load(ctx)
         val snaps = TopicStore.all(ctx)
@@ -309,13 +300,9 @@ class TopicFragment : Fragment() {
         if (currentUid.isNotEmpty() && accounts.none { it.uid == currentUid }) currentUid = ""
         multiAccountMode = currentUid.isEmpty() && accounts.size > 1
 
-        renderAccountPills(accounts)
-        renderFilters()
-
         val rows = buildRows(accounts, snaps)
         val shown = applySort(rows.filter { matchFilter(it.topic) })
-
-        adapter.submit(shown)
+        rowsByKey = shown.associateBy { rowKey(it.uid, it.topic.key) }
 
         // 概览永远统计「全部已加载的超话」，不受筛选影响 —— 筛选是看的方式，不是事实。
         // 但「今日已签 / 待签」是按天的结论：快照跨天时这里必须显示占位符，
@@ -332,24 +319,16 @@ class TopicFragment : Fragment() {
         val total = rows.size
         val done = rows.count { it.topic.done }
         val dash = getString(R.string.topic_metric_empty)
-        host.tvMetricTotal.text =
-            if (total > 0) total.toString() else dash
-        host.tvMetricDone.text =
-            if (staleDay || total == 0) dash else done.toString()
-        host.tvMetricPending.text =
-            if (staleDay || total == 0) dash else (total - done).toString()
-        progress.setProgressCompat(if (total > 0 && !staleDay) done * 100 / total else 0, true)
-        progress.visibility = if (loading) View.VISIBLE else View.GONE
 
         // 副标题：加载中 > 错误 > 跨天失效 > 更新时间
-        host.tvTopicSubtitle.text = when {
+        val subtitle = when {
             loading -> getString(R.string.topic_subtitle_loading)
             error.isNotEmpty() -> getString(R.string.topic_subtitle_failed, error)
             staleDay -> getString(R.string.topic_subtitle_stale, atLabel)
             at > 0L -> getString(R.string.topic_subtitle_updated, atLabel)
             else -> getString(R.string.topic_subtitle_idle)
         }
-        host.tvTopicStatus.text = when {
+        val status = when {
             accounts.isEmpty() -> getString(R.string.topic_empty_no_account)
             error.isNotEmpty() -> getString(R.string.topic_subtitle_failed, error)
             staleDay -> getString(R.string.topic_subtitle_stale, atLabel)
@@ -360,22 +339,120 @@ class TopicFragment : Fragment() {
         // 空态 / 错误态：错误优先（否则会把"失败"伪装成"没有超话"）
         //
         // 判空必须按**筛选后**的 shown，不能按 rows：筛选命中 0 条时 rows 非空，
-        // 于是既不显示空态、list 又显示空表 —— 整屏一片空白，而且
+        // 于是既不显示空态、列表又显示空表 —— 整屏一片空白，而且
         // topic_empty_filter 那段文案永远走不到。
         val showError = shown.isEmpty() && error.isNotEmpty() && !loading
         val showEmpty = shown.isEmpty() && !showError && !loading
-        errorBox.visibility = if (showError) View.VISIBLE else View.GONE
-        host.tvTopicError.text =
-            getString(R.string.topic_subtitle_failed, error)
-        emptyBox.visibility = if (showEmpty) View.VISIBLE else View.GONE
-        host.tvTopicEmpty.text = when {
+        val emptyText = when {
             accounts.isEmpty() -> getString(R.string.topic_empty_no_account)
             rows.isEmpty() -> getString(R.string.topic_empty_no_topic)
             else -> getString(R.string.topic_empty_filter)
         }
-        host.btnTopicEmptyAction.visibility =
-            if (accounts.isEmpty()) View.VISIBLE else View.GONE
-        list.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
+
+        val pills = if (accounts.size >= 2) {
+            buildList {
+                add(TopicPillUi("", getString(R.string.topic_account_all), currentUid.isEmpty()))
+                accounts.forEach {
+                    add(TopicPillUi(it.uid, it.name.ifEmpty { it.uid }, it.uid == currentUid))
+                }
+            }
+        } else {
+            emptyList()
+        }
+        val filters = listOf(
+            TopicFilter.ALL to R.string.topic_filter_all,
+            TopicFilter.PENDING to R.string.topic_filter_pending,
+            TopicFilter.DONE to R.string.topic_filter_done,
+            TopicFilter.LEVEL7 to R.string.topic_filter_level,
+        ).map { (value, labelRes) ->
+            TopicFilterUi(value, getString(labelRes), value == filter)
+        }
+
+        uiState.value = TopicUiState(
+            pills = pills,
+            filters = filters,
+            sort = sort,
+            metricTotal = if (total > 0) total.toString() else dash,
+            metricDone = if (staleDay || total == 0) dash else done.toString(),
+            metricPending = if (staleDay || total == 0) dash else (total - done).toString(),
+            progress = if (total > 0 && !staleDay) done.toFloat() / total else 0f,
+            loading = loading,
+            subtitle = subtitle,
+            status = status,
+            rows = shown.map { buildRowUi(it, ctx) },
+            showError = showError,
+            errorText = getString(R.string.topic_subtitle_failed, error),
+            showEmpty = showEmpty,
+            emptyText = emptyText,
+            emptyActionVisible = accounts.isEmpty(),
+        )
+    }
+
+    private fun buildRowUi(row: TopicRow, ctx: Context): TopicRowUi {
+        val topic = row.topic
+        val stateKey = rowKey(row.uid, topic.key)
+        val tail = when {
+            topic.desc2.isNotEmpty() -> topic.desc2
+            topic.topicId.isNotEmpty() -> getString(R.string.topic_meta_hint)
+            else -> getString(R.string.topic_detail_none)
+        }
+        val isExpanded = expanded.contains(stateKey)
+        var intro = ""
+        var stats = ""
+        var hint = ""
+        var detailLoading = false
+        if (isExpanded) {
+            val detail = if (topic.topicId.isEmpty()) null else TopicStore.detail(ctx, topic.topicId)
+            when {
+                detailBusy.contains(stateKey) -> {
+                    detailLoading = true
+                    hint = getString(R.string.topic_detail_loading)
+                }
+                detail != null -> {
+                    intro = detail.intro
+                    stats = detail.stats.take(3).joinToString(" · ")
+                    hint = buildString {
+                        if (topic.topicId.isNotEmpty()) {
+                            append(getString(R.string.topic_id_fmt, topic.topicId))
+                            if (detail.fetchedAt > 0) append(" · ")
+                        }
+                        if (detail.fetchedAt > 0) {
+                            append(
+                                getString(
+                                    R.string.topic_detail_fetched,
+                                    timeFmt.format(Date(detail.fetchedAt)),
+                                )
+                            )
+                        }
+                        if (detail.portraitText.isNotEmpty()) {
+                            append(" · ").append(detail.portraitText)
+                        }
+                    }
+                }
+                else -> {
+                    hint = when {
+                        detailErrors[stateKey] != null -> getString(R.string.topic_detail_failed)
+                        topic.topicId.isEmpty() -> getString(R.string.topic_detail_none)
+                        else -> getString(R.string.topic_detail_failed)
+                    }
+                }
+            }
+        }
+
+        return TopicRowUi(
+            uid = row.uid,
+            key = topic.key,
+            name = topic.name,
+            levelLabel = topic.levelLabel,
+            levelTier = WeiboTopicApi.topicLevelTier(topic.level),
+            meta = if (multiAccountMode) "${row.accountName} · $tail" else tail,
+            done = topic.done,
+            expanded = isExpanded,
+            intro = intro,
+            stats = stats,
+            detailHint = hint,
+            detailLoading = detailLoading,
+        )
     }
 
     private fun errorOf(snaps: Map<String, TopicStore.Snapshot>): String =
@@ -422,7 +499,7 @@ class TopicFragment : Fragment() {
         // 按「账号 + 超话」去重，而不是只按超话去重：
         // 同一个超话被两个账号关注时，只留先遍历到的那条会**拿错账号的签到状态**
         // （A 已签、B 未签 → 列表只有一条「已签」，B 根本看不到该签的），
-        // 行上的 uid 也决定了点签到用谁的 cookie。适配器的身份判定同样是 (uid, key)。
+        // 行上的 uid 也决定了点签到用谁的 cookie。行的身份判定同样是 (uid, key)。
         val merged = LinkedHashMap<String, TopicRow>()
         accounts.forEach { acc ->
             val snap = snaps[acc.uid] ?: return@forEach
@@ -437,62 +514,19 @@ class TopicFragment : Fragment() {
     }
 
     private fun matchFilter(topic: WeiboTopicApi.Topic): Boolean = when (filter) {
-        Filter.ALL -> true
-        Filter.PENDING -> !topic.done
-        Filter.DONE -> topic.done
-        Filter.LEVEL7 -> topic.level >= 7
+        TopicFilter.ALL -> true
+        TopicFilter.PENDING -> !topic.done
+        TopicFilter.DONE -> topic.done
+        TopicFilter.LEVEL7 -> topic.level >= 7
     }
 
     private fun applySort(rows: List<TopicRow>): List<TopicRow> = when (sort) {
-        Sort.PENDING_FIRST -> rows.sortedWith(
+        TopicSort.PENDING_FIRST -> rows.sortedWith(
             compareBy<TopicRow> { it.topic.done }.thenByDescending { it.topic.level }
         )
-        Sort.LEVEL_DESC -> rows.sortedByDescending { it.topic.level }
-        Sort.NAME -> rows.sortedBy { it.topic.name }
+        TopicSort.LEVEL_DESC -> rows.sortedByDescending { it.topic.level }
+        TopicSort.NAME -> rows.sortedBy { it.topic.name }
     }
-
-    private fun renderAccountPills(accounts: List<AccountStore.Account>) {
-        pillsRow.removeAllViews()
-        if (accounts.size < 2) return   // 只有一个账号时选择器没有意义
-        val inflater = LayoutInflater.from(requireContext())
-        val items = buildList {
-            add("" to getString(R.string.topic_account_all))
-            accounts.forEach { add(it.uid to (it.name.ifEmpty { it.uid })) }
-        }
-        items.forEach { (uid, label) ->
-            val chip = inflater.inflate(R.layout.item_chip, pillsRow, false) as TextView
-            chip.text = label
-            paintChip(chip, uid == currentUid)
-            chip.setOnClickListener {
-                currentUid = uid
-                render()
-            }
-            pillsRow.addView(chip)
-        }
-    }
-
-    private fun renderFilters() {
-        filtersRow.removeAllViews()
-        val inflater = LayoutInflater.from(requireContext())
-        val entries = listOf(
-            Filter.ALL to getString(R.string.topic_filter_all),
-            Filter.PENDING to getString(R.string.topic_filter_pending),
-            Filter.DONE to getString(R.string.topic_filter_done),
-            Filter.LEVEL7 to getString(R.string.topic_filter_level),
-        )
-        entries.forEach { (value, label) ->
-            val chip = inflater.inflate(R.layout.item_chip, filtersRow, false) as TextView
-            chip.text = label
-            paintChip(chip, value == filter)
-            chip.setOnClickListener {
-                filter = value
-                render()
-            }
-            filtersRow.addView(chip)
-        }
-    }
-
-    private fun paintChip(chip: TextView, selected: Boolean) = chip.applyChipStyle(selected)
 
     // ========================= 展开详情 =========================
 
@@ -501,11 +535,11 @@ class TopicFragment : Fragment() {
         val stateKey = rowKey(row.uid, key)
         if (expanded.contains(stateKey)) {
             expanded.remove(stateKey)
-            adapter.notifyKeyChanged(row.uid, key)
+            render()
             return
         }
         expanded.add(stateKey)
-        adapter.notifyKeyChanged(row.uid, key)
+        render()
         val topicId = row.topic.topicId
         if (topicId.isEmpty()) return
 
@@ -520,7 +554,7 @@ class TopicFragment : Fragment() {
         val stateKey = rowKey(uid, key)
         if (!detailBusy.add(stateKey)) return
         detailErrors.remove(stateKey)
-        adapter.notifyKeyChanged(uid, key)
+        render()
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             var error = ""
             try {
@@ -544,28 +578,12 @@ class TopicFragment : Fragment() {
             withContext(Dispatchers.Main + NonCancellable) {
                 detailBusy.remove(stateKey)
                 if (error.isNotEmpty()) detailErrors[stateKey] = error
-                if (isAdded) adapter.notifyKeyChanged(uid, key)
+                if (isAdded) render()
             }
         }
     }
 
     // ========================= 签到 / 行操作 =========================
-
-    private fun showRowMenu(anchor: View, row: TopicRow) {
-        val popup = PopupMenu(requireContext(), anchor)
-        popup.menuInflater.inflate(R.menu.item_topic_actions, popup.menu)
-        popup.menu.findItem(R.id.action_topic_checkin).isEnabled = !row.topic.done
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_topic_checkin -> { checkin(row); true }
-                R.id.action_topic_copy -> { copySignLink(row); true }
-                R.id.action_topic_open -> { openInWeibo(row); true }
-                R.id.action_topic_json -> { showRawJson(row); true }
-                else -> false
-            }
-        }
-        popup.show()
-    }
 
     private fun copySignLink(row: TopicRow) {
         val scheme = row.topic.scheme
@@ -703,46 +721,7 @@ class TopicFragment : Fragment() {
         )
     }
 
-    // ========================= 菜单 / 弹窗 =========================
-
-    private fun showSortMenu(anchor: View) {
-        val popup = PopupMenu(requireContext(), anchor)
-        popup.menu.add(0, 1, 0, getString(R.string.topic_sort_default))
-        popup.menu.add(0, 2, 1, getString(R.string.topic_sort_level))
-        popup.menu.add(0, 3, 2, getString(R.string.topic_sort_name))
-        popup.setOnMenuItemClickListener { item ->
-            sort = when (item.itemId) {
-                2 -> Sort.LEVEL_DESC
-                3 -> Sort.NAME
-                else -> Sort.PENDING_FIRST
-            }
-            render()
-            true
-        }
-        popup.show()
-    }
-
-    private fun showOverflow(anchor: View) {
-        val popup = PopupMenu(requireContext(), anchor)
-        popup.menuInflater.inflate(R.menu.topic_overflow, popup.menu)
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_topic_field -> {
-                    showTextDialog(
-                        getString(R.string.topic_field_title),
-                        getString(R.string.topic_field_body),
-                    )
-                    true
-                }
-                R.id.action_topic_refresh_all -> {
-                    refresh(manual = true)
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
-    }
+    // ========================= 弹窗 =========================
 
     /** 等宽只读弹窗：原始 JSON 与字段说明共用。 */
     private fun showTextDialog(title: String, body: String) {
@@ -782,181 +761,5 @@ class TopicFragment : Fragment() {
 
     private fun toast(text: String) {
         if (isAdded) Toast.makeText(requireContext(), text, Toast.LENGTH_SHORT).show()
-    }
-
-    // ========================= 适配器 =========================
-
-    private inner class TopicAdapter : RecyclerView.Adapter<TopicAdapter.Holder>() {
-
-        private val items = ArrayList<TopicRow>()
-
-        /**
-         * 提交列表。
-         *
-         * 换账号 / 换筛选 / 换排序都会重建整份列表，但绝大多数行其实没变。
-         * 原先 `clear + addAll + notifyDataSetChanged()` 会让整屏重绑：展开的详情块要重画、
-         * 列表滚动位置被推回顶部。DiffUtil 只通知真正变化的位置（O(n) 比较，n 是超话条数）。
-         */
-        fun submit(rows: List<TopicRow>) {
-            val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
-                override fun getOldListSize(): Int = items.size
-                override fun getNewListSize(): Int = rows.size
-                override fun areItemsTheSame(oldPos: Int, newPos: Int): Boolean {
-                    val a = items[oldPos]
-                    val b = rows[newPos]
-                    return a.uid == b.uid && a.topic.key == b.topic.key
-                }
-                override fun areContentsTheSame(oldPos: Int, newPos: Int): Boolean =
-                    items[oldPos] == rows[newPos]
-            })
-            items.clear()
-            items.addAll(rows)
-            diff.dispatchUpdatesTo(this)
-        }
-
-        /** 按 key 定位后局部刷新（展开/收起、详情回填都只动一行）。 */
-        fun notifyKeyChanged(uid: String, key: String) {
-            val index = items.indexOfFirst { it.uid == uid && it.topic.key == key }
-            if (index >= 0) notifyItemChanged(index)
-        }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-            val binding = ItemTopicBinding.inflate(
-                LayoutInflater.from(parent.context), parent, false,
-            )
-            return Holder(binding)
-        }
-
-        override fun getItemCount(): Int = items.size
-
-        override fun onBindViewHolder(holder: Holder, position: Int) {
-            holder.bind(items[position])
-        }
-
-        inner class Holder(private val binding: ItemTopicBinding) :
-            RecyclerView.ViewHolder(binding.root) {
-            private val card = itemView
-            private val badge = binding.tvLevelBadge
-            private val name = binding.tvTopicName
-            private val meta = binding.tvTopicMeta
-            private val state = binding.tvTopicState
-            private val more = binding.btnTopicMore
-            private val detailBox = binding.topicDetailBox
-            private val intro = binding.tvTopicIntro
-            private val stats = binding.tvTopicStats
-            private val detailHint = binding.tvTopicDetailHint
-
-            fun bind(row: TopicRow) {
-                val ctx = itemView.context
-                val topic = row.topic
-                val key = topic.key
-
-                name.text = topic.name
-                bindBadge(ctx, topic)
-                bindState(ctx, topic.done)
-
-                val multiAccount = multiAccountMode
-                val tail = when {
-                    topic.desc2.isNotEmpty() -> topic.desc2
-                    topic.topicId.isNotEmpty() -> getString(R.string.topic_meta_hint)
-                    else -> getString(R.string.topic_detail_none)
-                }
-                meta.text = if (multiAccount) "${row.accountName} · $tail" else tail
-
-                card.setOnClickListener { toggleDetail(row) }
-                more.setOnClickListener { showRowMenu(it, row) }
-
-                val stateKey = rowKey(row.uid, key)
-                val isExpanded = expanded.contains(stateKey)
-                detailBox.visibility = if (isExpanded) View.VISIBLE else View.GONE
-                // 整卡一句话播报：名称 + 等级 + 状态 + 可执行动作，
-                // 比让读屏把 4 个 TextView 逐条念一遍更容易理解
-                card.contentDescription = buildString {
-                    append(topic.name)
-                    if (topic.level > 0) append(" · ").append(topic.levelLabel)
-                    append(" · ")
-                    append(getString(if (topic.done) R.string.topic_state_done else R.string.topic_state_pending))
-                    append(" · ")
-                    append(getString(if (isExpanded) R.string.cd_topic_collapse else R.string.cd_topic_expand))
-                }
-                if (!isExpanded) return
-
-                val detail = if (topic.topicId.isEmpty()) null else TopicStore.detail(ctx, topic.topicId)
-                val busy = detailBusy.contains(stateKey)
-                when {
-                    busy -> {
-                        intro.visibility = View.GONE
-                        stats.visibility = View.GONE
-                        detailHint.visibility = View.VISIBLE
-                        detailHint.text = getString(R.string.topic_detail_loading)
-                    }
-                    detail != null -> {
-                        intro.visibility = if (detail.intro.isEmpty()) View.GONE else View.VISIBLE
-                        intro.text = detail.intro
-                        stats.visibility = if (detail.stats.isEmpty()) View.GONE else View.VISIBLE
-                        stats.text = detail.stats.take(3).joinToString(" · ")
-                        detailHint.visibility = View.VISIBLE
-                        detailHint.text = buildString {
-                            if (topic.topicId.isNotEmpty()) {
-                                append(getString(R.string.topic_id_fmt, topic.topicId))
-                                if (detail.fetchedAt > 0) append(" · ")
-                            }
-                            if (detail.fetchedAt > 0) {
-                                append(
-                                    getString(
-                                        R.string.topic_detail_fetched,
-                                        timeFmt.format(Date(detail.fetchedAt)),
-                                    )
-                                )
-                            }
-                            if (detail.portraitText.isNotEmpty()) append(" · ").append(detail.portraitText)
-                        }
-                    }
-                    else -> {
-                        intro.visibility = View.GONE
-                        stats.visibility = View.GONE
-                        detailHint.visibility = View.VISIBLE
-                        detailHint.text = when {
-                            detailErrors[stateKey] != null -> getString(R.string.topic_detail_failed)
-                            topic.topicId.isEmpty() -> getString(R.string.topic_detail_none)
-                            else -> getString(R.string.topic_detail_failed)
-                        }
-                    }
-                }
-            }
-
-            private fun bindBadge(ctx: Context, topic: WeiboTopicApi.Topic) {
-                val tier = WeiboTopicApi.topicLevelTier(topic.level)
-                if (tier == 0) {
-                    badge.visibility = View.GONE
-                    return
-                }
-                badge.visibility = View.VISIBLE
-                badge.text = topic.levelLabel
-                val (bg, fg) = when (tier) {
-                    1 -> R.color.level_neutral_bg to R.color.level_neutral_fg
-                    2 -> R.color.level_blue_bg to R.color.level_blue_fg
-                    3 -> R.color.level_purple_bg to R.color.level_purple_fg
-                    else -> R.color.level_gold_bg to R.color.level_gold_fg
-                }
-                badge.setBackgroundResource(R.drawable.bg_topic_badge)
-                badge.backgroundTintList =
-                    android.content.res.ColorStateList.valueOf(ContextCompat.getColor(ctx, bg))
-                badge.setTextColor(ContextCompat.getColor(ctx, fg))
-                badge.contentDescription = getString(R.string.cd_level_badge, topic.level)
-            }
-
-            private fun bindState(ctx: Context, done: Boolean) {
-                if (done) {
-                    state.setText(R.string.topic_state_done)
-                    state.setBackgroundResource(R.drawable.bg_pill_ok)
-                    state.setTextColor(ContextCompat.getColor(ctx, R.color.ok_text))
-                } else {
-                    state.setText(R.string.topic_state_pending)
-                    state.setBackgroundResource(R.drawable.bg_pill_warn)
-                    state.setTextColor(ContextCompat.getColor(ctx, R.color.warn_text))
-                }
-            }
-        }
     }
 }
