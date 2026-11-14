@@ -1,7 +1,5 @@
 package com.wcm.checkin
 
-import com.wcm.checkin.databinding.ActivityPostPickBinding
-import com.wcm.checkin.databinding.ItemPickPicBinding
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.content.Context
@@ -9,11 +7,9 @@ import android.content.Intent
 import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -21,16 +17,16 @@ import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.GridLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -66,18 +62,12 @@ class PostPickActivity : AppCompatActivity() {
 
     private val items = ArrayList<PicItem>()
     private val selected = LinkedHashSet<String>()
-    private val adapter = GridAdapter()
 
     private lateinit var bid: String
-    private lateinit var recycler: RecyclerView
-    private lateinit var tvEmpty: TextView
-    private lateinit var loading: ProgressBar
-    private lateinit var btnDownload: MaterialButton
-    private lateinit var toolbar: MaterialToolbar
-    private lateinit var binding: ActivityPostPickBinding
-
-    /** 单元格边长（px）：按可用宽度对半算，首次测量后覆写。 */
-    private var cellPx = 0
+    private val uiState = MutableStateFlow(PickUiState())
+    private var loadingNow = false
+    private var emptyText = ""
+    private var lastVisibleIndex = 0
 
     private var loaded = false
     private var submitting = false
@@ -89,8 +79,6 @@ class PostPickActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        binding = ActivityPostPickBinding.inflate(layoutInflater)
-        setContentView(binding.root)
 
         bid = intent.getStringExtra(EXTRA_BID) ?: ""
         if (bid.isEmpty()) {
@@ -102,42 +90,32 @@ class PostPickActivity : AppCompatActivity() {
                 savedInstanceState.getStringArrayList(KEY_SELECTED)?.toSet() ?: emptySet()
             pendingScroll = savedInstanceState.getInt(KEY_SCROLL, -1)
         }
-        toolbar = binding.pickToolbar
-        recycler = binding.pickGrid
-        tvEmpty = binding.tvPickEmpty
-        loading = binding.pickLoading
-        btnDownload = binding.btnPickDownload
+        emptyText = getString(R.string.pick_no_pics)
 
-        toolbar.setNavigationOnClickListener { finish() }
-        toolbar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_pick_toggle_all) {
-                toggleAll()
-                true
-            } else {
-                false
-            }
-        }
-        recycler.layoutManager = GridLayoutManager(this, 2)
-        recycler.adapter = adapter
-
-        binding.pickRoot.let { root ->
-            ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-                val bars = insets.getInsets(
-                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+        val composeView = ComposeView(this)
+        composeView.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        composeView.setContent {
+            val state by uiState.collectAsState()
+            WcmTheme {
+                PostPickScreen(
+                    state = state,
+                    onBack = { finish() },
+                    onToggleAll = { toggleAll() },
+                    onItemClick = { picId ->
+                        if (!selected.remove(picId)) selected.add(picId)
+                        render()
+                    },
+                    onItemLongClick = { index -> showFullPreview(index) },
+                    onDownload = { submit(selected.toSet()) },
+                    onVisibleIndex = { lastVisibleIndex = it },
                 )
-                root.updatePadding(top = bars.top, bottom = bars.bottom)
-                WindowInsetsCompat.CONSUMED
             }
         }
-        // 列宽测量：网格单元 = (可用宽 - 列间隙) / 2，保证正方形。
-        recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            measureCells()
-        }
-        btnDownload.setOnClickListener { submit(selected.toSet()) }
+        setContentView(composeView)
 
         // 「哪些图已经在相册里」的快照（v0.9.18）：读完刷一遍格子，挑图时不用凭记忆
         CrawlMarks.ensure(this) {
-            if (!isFinishing && !isDestroyed && loaded) adapter.notifyDataSetChanged()
+            if (!isFinishing && !isDestroyed && loaded) render()
         }
 
         loadDetail()
@@ -146,28 +124,14 @@ class PostPickActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putStringArrayList(KEY_SELECTED, ArrayList(selected))
-        outState.putInt(
-            KEY_SCROLL,
-            (recycler.layoutManager as? GridLayoutManager)?.findFirstVisibleItemPosition() ?: 0,
-        )
-    }
-
-    private fun measureCells() {
-        val w = recycler.width
-        if (w <= 0) return
-        val gutter = resources.getDimensionPixelSize(R.dimen.gallery_gutter)
-        val side = (w - resources.getDimensionPixelSize(R.dimen.page_padding_horizontal) * 2 - gutter) / 2
-        if (side > 0 && side != cellPx) {
-            cellPx = side
-            if (loaded) adapter.notifyDataSetChanged()
-        }
+        outState.putInt(KEY_SCROLL, lastVisibleIndex)
     }
 
     // ---------- 数据 ----------
 
     private fun loadDetail() {
-        loading.visibility = View.VISIBLE
-        tvEmpty.visibility = View.GONE
+        loadingNow = true
+        render()
         val ctx = applicationContext
         lifecycleScope.launch(Dispatchers.IO) {
             val result = runCatching {
@@ -177,7 +141,7 @@ class PostPickActivity : AppCompatActivity() {
             }
             withContext(Dispatchers.Main) {
                 if (isFinishing || isDestroyed) return@withContext
-                loading.visibility = View.GONE
+                loadingNow = false
                 result.fold(
                     onSuccess = { detail ->
                         loaded = true
@@ -188,16 +152,12 @@ class PostPickActivity : AppCompatActivity() {
                             selected.addAll(items.map { it.picId }.filter { it in keep })
                             pendingSelected = emptySet()
                         }
-                        measureCells()
+                        emptyText = if (items.isEmpty()) getString(R.string.pick_no_pics) else ""
                         render()
-                        if (pendingScroll > 0) {
-                            recycler.scrollToPosition(pendingScroll)
-                            pendingScroll = -1
-                        }
                     },
                     onFailure = { e ->
-                        tvEmpty.text = getString(R.string.pick_load_fail, e.message ?: "")
-                        tvEmpty.visibility = View.VISIBLE
+                        emptyText = getString(R.string.pick_load_fail, e.message ?: "")
+                        render()
                     },
                 )
             }
@@ -260,18 +220,29 @@ class PostPickActivity : AppCompatActivity() {
     // ---------- 渲染 ----------
 
     private fun render() {
-        tvEmpty.visibility = if (loaded && items.isEmpty()) View.VISIBLE else View.GONE
-        btnDownload.isEnabled = selected.isNotEmpty() && !submitting
-        btnDownload.text = when {
-            submitting -> getString(R.string.pick_downloading)
-            selected.isEmpty() -> getString(R.string.pick_download_zero)
-            else -> getString(R.string.pick_download_fmt, selected.size)
+        if (isFinishing || isDestroyed) return
+        val itemsUi = items.map { item ->
+            PickItemUi(
+                picId = item.picId,
+                thumbUrl = item.thumbUrl,
+                isLive = item.isLive,
+                isGif = item.isGif,
+                done = CrawlMarks.hasPic(item.picId),
+                selected = item.picId in selected,
+            )
         }
-        toolbar.menu.findItem(R.id.action_pick_toggle_all)?.setTitle(
-            if (items.isNotEmpty() && selected.size == items.size) R.string.pick_deselect_all
-            else R.string.pick_all,
+        val initial = if (pendingScroll > 0) pendingScroll else 0
+        pendingScroll = -1
+        uiState.value = PickUiState(
+            items = itemsUi,
+            loading = loadingNow,
+            emptyVisible = !loadingNow && items.isEmpty(),
+            emptyText = emptyText.ifEmpty { getString(R.string.pick_no_pics) },
+            selectedCount = selected.size,
+            allSelected = items.isNotEmpty() && selected.size == items.size,
+            submitting = submitting,
+            initialScrollIndex = initial,
         )
-        adapter.notifyDataSetChanged()
     }
 
     private fun toggleAll() {
@@ -325,7 +296,7 @@ class PostPickActivity : AppCompatActivity() {
                 // 刚落了新文件：索引变了，重读一次快照，让「已抓取」小勾立刻出现
                 if ((summary?.saved ?: 0) > 0) {
                     CrawlMarks.invalidate()
-                    CrawlMarks.ensure(this@PostPickActivity) { adapter.notifyDataSetChanged() }
+                    CrawlMarks.ensure(this@PostPickActivity) { render() }
                 }
                 render()
             }
@@ -428,120 +399,6 @@ class PostPickActivity : AppCompatActivity() {
 
     private fun toast(text: String) =
         Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
-
-    // ---------- 网格 ----------
-
-    private inner class GridAdapter : RecyclerView.Adapter<GridAdapter.Holder>() {
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-            val binding = ItemPickPicBinding.inflate(
-                LayoutInflater.from(parent.context), parent, false,
-            )
-            if (cellPx > 0) {
-                binding.root.layoutParams = RecyclerView.LayoutParams(cellPx, cellPx)
-            }
-            return Holder(binding)
-        }
-
-        override fun getItemCount(): Int = items.size
-
-        override fun onBindViewHolder(holder: Holder, position: Int) {
-            holder.bind(items[position], position)
-        }
-
-        override fun onViewRecycled(holder: Holder) {
-            // 不复用前先掐掉还没回来的缩略图请求：单帖最多 18 格，翻来翻去会堆一串 Job
-            holder.stopLoad()
-            super.onViewRecycled(holder)
-        }
-
-        /** 格子进入可见区才发起请求（与浏览页同一口径：先滚到的先加载）。 */
-        override fun onViewAttachedToWindow(holder: Holder) {
-            super.onViewAttachedToWindow(holder)
-            holder.startLoad()
-        }
-
-        override fun onViewDetachedFromWindow(holder: Holder) {
-            holder.stopLoad()
-            super.onViewDetachedFromWindow(holder)
-        }
-
-        inner class Holder(private val binding: ItemPickPicBinding) :
-            RecyclerView.ViewHolder(binding.root) {
-            private val image = binding.pickImage
-            private val badge = binding.pickBadge
-            private val done = binding.pickDone
-            private val scrim = binding.pickScrim
-            private val check = binding.pickCheck
-
-            /** 当前格的缩略图请求；换绑/回收时取消，避免 Job 堆积与错位回填。 */
-            private var thumbJob: Job? = null
-
-            /** 本格要加载的 URL（[startLoad] 用，避免重复从 tag 里取）。 */
-            private var pendingUrl: String = ""
-
-            private var attached = false
-
-            fun stopLoad() {
-                attached = false
-                thumbJob?.cancel()
-                thumbJob = null
-            }
-
-            /** 进入可见区后开工；同一格已经在跑就不重复发。 */
-            fun startLoad() {
-                attached = true
-                if (thumbJob?.isActive == true) return
-                val url = pendingUrl
-                if (url.isEmpty()) return
-                thumbJob = lifecycleScope.launch(Dispatchers.IO) {
-                    val bmp = RemoteThumb.load(url) ?: return@launch
-                    withContext(Dispatchers.Main) {
-                        if (image.tag == url) {
-                            @Suppress("UseKtx")
-                            image.setImageDrawable(BitmapDrawable(null, bmp))
-                        }
-                    }
-                }
-            }
-
-            fun bind(item: PicItem, position: Int) {
-                image.contentDescription = getString(R.string.pick_pic_desc_fmt, position + 1)
-                badge.visibility = if (item.isLive || item.isGif) View.VISIBLE else View.GONE
-                badge.text = getString(if (item.isLive) R.string.pick_live_badge else R.string.pick_gif_badge)
-                // 这张已经在相册里了：右下角打勾，挑图时不用凭记忆（v0.9.18）
-                done.visibility = if (CrawlMarks.hasPic(item.picId)) View.VISIBLE else View.GONE
-                val checked = item.picId in selected
-                scrim.visibility = if (checked) View.VISIBLE else View.GONE
-                check.visibility = if (checked) View.VISIBLE else View.GONE
-
-                // 远程缩略图：tag 防错位（快速滚动时旧请求回来不能盖到新格子）。
-                // 勾选一次会整表重绑，所以 URL 没变时**不清图、不重发** —— 否则每点一次
-                // 勾选，屏上已经显示好的图会被清空再排队重下。
-                val key = item.thumbUrl
-                if (image.tag != key) {
-                    image.tag = key
-                    image.setImageDrawable(null)
-                    pendingUrl = key
-                    thumbJob?.cancel()
-                    thumbJob = null
-                    if (attached) startLoad()
-                }
-
-                itemView.setOnClickListener {
-                    if (selected.contains(item.picId)) selected.remove(item.picId) else selected.add(item.picId)
-                    render()
-                }
-                itemView.setOnLongClickListener {
-                    // 用实时位置而不是闭包里捕获的 position：整表重绑（勾选态刷新）
-                    // 之后旧闭包的 position 会指到别的图，大图页打开错那张。
-                    val at = bindingAdapterPosition
-                    if (at != RecyclerView.NO_POSITION) showFullPreview(at)
-                    true
-                }
-            }
-        }
-    }
 
     companion object {
         const val EXTRA_BID = "bid"
