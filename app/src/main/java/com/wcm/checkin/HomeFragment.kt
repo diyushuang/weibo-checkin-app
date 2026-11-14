@@ -1202,6 +1202,7 @@ class HomeFragment : Fragment() {
                     ctx = ctx,
                     accounts = accounts,
                     log = ::log,
+                    cookieDeadText = getString(R.string.home_cookie_dead),
                     onTopics = { uid, topics ->
                         setTopicState(
                             uid,

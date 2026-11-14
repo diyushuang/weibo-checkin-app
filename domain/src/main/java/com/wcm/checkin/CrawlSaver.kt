@@ -30,7 +30,7 @@ object CrawlSaver {
     // ========================= 槽位选择（纯函数，JVM 单测） =========================
 
     /** picId 勾选 → 槽位集合。`null` = 不筛选（抓全部）；空集 = 一张都不抓。 */
-    internal fun slotsForPics(assets: PostAssets, picked: Set<String>?): Set<Int>? {
+    fun slotsForPics(assets: PostAssets, picked: Set<String>?): Set<Int>? {
         if (picked == null) return null
         if (picked.isEmpty()) return emptySet()
         val slots = LinkedHashSet<Int>()
@@ -45,7 +45,7 @@ object CrawlSaver {
         return slots
     }
 
-    internal fun notPickedSlots(
+    fun notPickedSlots(
         allSlots: Set<Int>,
         onlySlots: Set<Int>?,
         countNotPicked: Boolean,
@@ -59,7 +59,7 @@ object CrawlSaver {
      * 里拿走。留着它的后果是该帖永远「有失败」：停在 PARTIAL 到不了终态，每轮 RETRY
      * 都要白拉一次详情，还占着单轮 50 帖的重试预算。
      */
-    internal fun retainExistingSlots(failed: MutableSet<Int>, allSlots: Set<Int>) {
+    fun retainExistingSlots(failed: MutableSet<Int>, allSlots: Set<Int>) {
         failed.retainAll(allSlots)
     }
 

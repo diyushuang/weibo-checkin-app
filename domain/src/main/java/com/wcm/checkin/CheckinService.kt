@@ -36,7 +36,7 @@ object CheckinService {
     }
 
     /** 只写一行「上次结果」，不整表覆盖（整表写会把并发轮换的 cookie 顶掉）。 */
-    internal fun noteResult(ctx: Context, acc: AccountStore.Account, text: String) {
+    fun noteResult(ctx: Context, acc: AccountStore.Account, text: String) {
         val at = System.currentTimeMillis()
         acc.lastResult = text
         acc.lastResultAt = at
@@ -57,12 +57,13 @@ object CheckinService {
         log: (String) -> Unit,
         onTopics: (uid: String, topics: List<WeiboTopicApi.Topic>) -> Unit = { _, _ -> },
         onAccountDone: () -> Unit = {},
+        cookieDeadText: String = "Cookie 已失效，请删除后重新添加账号",
         pause: suspend (Long) -> Unit = { delay(it) },
     ): List<AccountOutcome> {
         val outcomes = ArrayList<AccountOutcome>(accounts.size)
         accounts.forEachIndexed { index, acc ->
             if (index > 0) pause(Random.nextLong(2000, 5000))
-            outcomes.add(runAccount(ctx, acc, log, onTopics, pause))
+            outcomes.add(runAccount(ctx, acc, log, onTopics, cookieDeadText, pause))
             onAccountDone()
         }
         return outcomes
@@ -80,6 +81,7 @@ object CheckinService {
         acc: AccountStore.Account,
         log: (String) -> Unit,
         onTopics: (uid: String, topics: List<WeiboTopicApi.Topic>) -> Unit = { _, _ -> },
+        cookieDeadText: String = "Cookie 已失效，请删除后重新添加账号",
         pause: suspend (Long) -> Unit = { delay(it) },
     ): AccountOutcome {
         val name = acc.name.ifEmpty { acc.uid }
@@ -92,7 +94,7 @@ object CheckinService {
             return AccountOutcome(acc.uid, error = "探活失败：${e.message}")
         }
         if (!verify.login) {
-            val text = ctx.getString(R.string.home_cookie_dead)
+            val text = cookieDeadText
             noteResult(ctx, acc, text)
             AccountStore.markDead(ctx, acc.uid)
             log("  ✗ $text")
