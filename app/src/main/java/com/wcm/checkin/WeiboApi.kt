@@ -1049,6 +1049,29 @@ private val NEGATIVE_WORDS = listOf(
         return "https://wx$host.sinaimg.cn/$size/$pid.jpg"
     }
 
+    /**
+     * 缩略图地址 → 同一张图的大图地址：把尺寸段换成 `large`。纯函数（不触网），JVM 可测。
+     *
+     * 浏览页的小图手里只有 `orj360` 这类缩略图 URL，点开要看大图就得换尺寸段。
+     * 不能写死 `replace("/orj360/", "/large/")` —— 卡片的 url 尺寸段并不总是 orj360
+     * （GIF 帖、老帖、活动页会出现 `mw690` / `bmiddle` / `thumbnail` 等），
+     * 所以按「`sinaimg.cn/<尺寸段>/<文件名>`」的结构整体替换，文件名与扩展名原样保留
+     * （`.gif` 换成 `.jpg` 会直接 404）。
+     *
+     * 不是 sinaimg 地址、或结构里没有尺寸段时返回空串，由调用方回落到原缩略图。
+     */
+    internal fun fullFromThumb(raw: String): String {
+        val url = sanitizeThumbUrl(raw) ?: return ""
+        val marker = "sinaimg.cn/"
+        val at = url.indexOf(marker)
+        if (at < 0) return ""
+        val head = url.substring(0, at + marker.length)
+        val rest = url.substring(at + marker.length)
+        val slash = rest.indexOf('/')
+        if (slash <= 0 || slash >= rest.length - 1) return ""
+        return head + "large/" + rest.substring(slash + 1)
+    }
+
     /** 从用户输入解析 UID：纯数字 / 含 /u/ 或 profile/ 的链接 / 个性域名（302 跳转）。 */
     fun resolveUid(input: String): String {
         val text = input.trim()

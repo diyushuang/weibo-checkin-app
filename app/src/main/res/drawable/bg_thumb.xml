@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  浏览页小图底托（v0.9.17）：浅灰占位 + 6dp 圆角。
+
+  小图用 FIT_CENTER 铺在这块底托上 —— 宽图 / 竖图都按比例缩到格子里，
+  整张画面都在（列表里看到的再也不是「一条被裁掉的长方形」）；
+  还没加载出来时，用户看到的是这块占位色而不是一块空白卡片。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/image_placeholder" />
+    <corners android:radius="@dimen/browse_thumb_radius" />
+</shape>

@@ -87,6 +87,7 @@ object AccountStore {
     private const val KEY_CRAWL_GIF = "crawl_gif"           // Live Photo 转 GIF（默认开）
     private const val KEY_CRAWL_MODE = "crawl_mode"         // album（默认）/ timeline
     private const val KEY_ALBUM_SINCE = "crawl_album_since" // {treeTag: {uid: since_id}}
+    private const val KEY_ALBUM_LAST = "crawl_album_last" // {treeTag: {uid: "mid|yyyy-MM"}}
 
     /** 相册抓图模式（游客身份，默认）。 */
     const val MODE_ALBUM = "album"
@@ -897,6 +898,36 @@ object AccountStore {
             val perTree = root.optJSONObject(treeTag) ?: JSONObject().also { root.put(treeTag, it) }
             perTree.put(uid, sinceId)
             prefs(ctx).edit { putString(KEY_ALBUM_SINCE, root.toString()) }
+        }
+    }
+
+    /**
+     * 相册模式「上次抓到哪条微博」的记忆（v0.9.17），值形如 `mid|yyyy-MM`。
+     *
+     * 按 (相册目录 treeTag, uid) 双键存：换目录后新 tag 天然没有记忆，
+     * 不会拿旧目录的进度去跳过新目录里的帖（与 [crawlCursor] 同一口径）。
+     * 空串 = 没有记忆（首次跑 / 清过数据），此时补新照旧从墙顶扫起。
+     */
+    fun albumLastPost(ctx: Context, treeTag: String, uid: String): String {
+        val raw = SafePrefs.string(prefs(ctx), KEY_ALBUM_LAST, "{}")
+        return try {
+            JSONObject(raw).optJSONObject(treeTag)?.optString(uid, "") ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    fun setAlbumLastPost(ctx: Context, treeTag: String, uid: String, value: String) {
+        synchronized(LOCK) {
+            val raw = SafePrefs.string(prefs(ctx), KEY_ALBUM_LAST, "{}")
+            val root = try {
+                JSONObject(raw)
+            } catch (e: Exception) {
+                JSONObject()
+            }
+            val perTree = root.optJSONObject(treeTag) ?: JSONObject().also { root.put(treeTag, it) }
+            perTree.put(uid, value)
+            prefs(ctx).edit { putString(KEY_ALBUM_LAST, root.toString()) }
         }
     }
 }

@@ -114,5 +114,13 @@
     <dimen name="gallery_select_bar_height">56dp</dimen>
     <dimen name="gallery_check_size">20dp</dimen>
 
+    <!-- ===== 浏览博主的小图（v0.9.17） =====
+         卡片里的九宫格从「撑满整行的大方格」改成「一排小图」：一格 56dp，
+         整张画面按比例缩进去（FIT_CENTER），一眼能看出拍的是什么；点开才是大图。
+         56dp 是「小得够安静、又认得出画面」的折中：360dp 屏一行正好 5 格
+         （5×56 + 4×4 = 296 ≤ 300 可用宽），320dp 屏自动降成 4 格。 -->
+    <dimen name="browse_thumb_size">56dp</dimen>
+    <dimen name="browse_thumb_radius">6dp</dimen>
+
     <!-- 列表分隔线缩进 -->
 </resources>

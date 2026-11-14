@@ -112,6 +112,10 @@
     <string name="crawl_full_confirm_ok">开始全量</string>
     <string name="crawl_full_running">全量抓取进行中（断点续跑，可随时停止）</string>
     <string name="crawl_progress_scan_fmt"> · 全量已扫到第 %1$d 页</string>
+    <!-- 相册模式的记忆（v0.9.17）：说出「上次抓到最后一条微博是哪个月」，
+         下一轮就从这个位置之后接着抓，不用翻日志也知道进度在哪 -->
+    <string name="crawl_progress_album_fmt"> · 上次抓到最后一条 %1$s</string>
+    <string name="crawl_progress_album_lead_fmt">上次抓到最后一条 %1$s</string>
     <string name="crawl_phase_scan">全量扫描</string>
     <string name="crawl_scope_single">范围：只抓 %1$s</string>
 
@@ -144,7 +148,7 @@
     <string name="browse_meta_no_pic">无图</string>
     <string name="browse_more_pics_fmt">+%1$d</string>
     <string name="browse_pic_desc_fmt">第 %1$d 张缩略图</string>
-    <string name="browse_select_hint">点卡片选图抓取 · 长按勾选整帖</string>
+    <string name="browse_select_hint">点小图看大图 · 点卡片选图抓取 · 长按勾选整帖</string>
     <string name="browse_select_mode_hint">多选：点按勾选整帖，取消请再点一次</string>
     <string name="browse_selected_fmt">已选 %1$d 帖</string>
     <string name="browse_download_selected">下载选中</string>
@@ -209,6 +213,9 @@
     <string name="preview_delete_fail">删除失败（文件可能正被占用）</string>
     <string name="preview_index_fmt">%1$d / %2$d</string>
     <string name="preview_load_fail">目录里没有图片</string>
+    <!-- 远程大图预览（v0.9.17）：浏览页点小图后进来，图还在 CDN 上 -->
+    <string name="preview_remote_desc">大图预览</string>
+    <string name="preview_remote_fail">大图加载失败（网络或风控），可退回列表再试</string>
 
     <!-- 超话状态 / 补签（v0.4.0） -->
     <string name="home_uid_fmt">UID %1$s</string>

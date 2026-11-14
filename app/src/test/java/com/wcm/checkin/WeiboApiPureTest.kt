@@ -313,4 +313,49 @@ class WeiboApiPureTest {
         val notUser = org.json.JSONObject("""{"data":{"name":"签到"}}""")
         assertEquals("", WeiboApi.extractProfile(notUser).name)
     }
+
+    // ---------- 缩略图 → 大图（v0.9.17） ----------
+
+    @Test
+    fun fullFromThumb_swapsSizeSegment() {
+        assertEquals(
+            "https://wx1.sinaimg.cn/large/0060jpg.jpg",
+            WeiboApi.fullFromThumb("https://wx1.sinaimg.cn/orj360/0060jpg.jpg"),
+        )
+        // 尺寸段不总是 orj360：老帖/活动页是 mw690，按结构替换才不会漏
+        assertEquals(
+            "https://wx3.sinaimg.cn/large/abc.gif",
+            WeiboApi.fullFromThumb("https://wx3.sinaimg.cn/mw690/abc.gif"),
+        )
+        // 已经是 large 的再换一次还是原样（幂等）
+        assertEquals(
+            "https://wx2.sinaimg.cn/large/abc.jpg",
+            WeiboApi.fullFromThumb("https://wx2.sinaimg.cn/large/abc.jpg"),
+        )
+    }
+
+    @Test
+    fun fullFromThumb_upgradesHttp() {
+        assertEquals(
+            "https://wx2.sinaimg.cn/large/abc.jpg",
+            WeiboApi.fullFromThumb("http://wx2.sinaimg.cn/thumbnail/abc.jpg"),
+        )
+    }
+
+    @Test
+    fun fullFromThumb_rejectsForeignOrMalformed() {
+        assertEquals("", WeiboApi.fullFromThumb("https://example.com/orj360/abc.jpg"))
+        assertEquals("", WeiboApi.fullFromThumb("https://wx1.sinaimg.cn/abc.jpg"))
+        assertEquals("", WeiboApi.fullFromThumb("https://wx1.sinaimg.cn/orj360/"))
+        assertEquals("", WeiboApi.fullFromThumb(""))
+    }
+
+    /** 查询串（`?from=...`）必须原样保留：去掉它 CDN 会给 403。 */
+    @Test
+    fun fullFromThumb_keepsQuery() {
+        assertEquals(
+            "https://wx1.sinaimg.cn/large/abc.jpg?from=timeline",
+            WeiboApi.fullFromThumb("https://wx1.sinaimg.cn/orj360/abc.jpg?from=timeline"),
+        )
+    }
 }

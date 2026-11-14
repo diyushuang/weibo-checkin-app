@@ -52,6 +52,13 @@ object WebAjax {
         val nextSinceId: String = "",
         /** 本页最早一条的「年-月」，用于和起始日期做粗粒度比较。 */
         val oldestYm: String = "",
+        /**
+         * 每条 mid 自己的「年-月」（v0.9.17）。
+         *
+         * 抓到哪条就记住那天的年月，下次的日志才能说「从 2025-11 的那条之后接着抓」——
+         * [oldestYm] 只是整页最早的一条，拿它当某一条的日期会提前好几天。
+         */
+        val ymByMid: Map<String, String> = emptyMap(),
     )
 
     /**
@@ -73,6 +80,7 @@ object WebAjax {
         val data = payload.optJSONObject("data") ?: JSONObject()
         val list = data.optJSONArray("list") ?: return WallPage(emptyList(), "")
         val mids = LinkedHashMap<String, WallItem>()
+        val ymByMid = HashMap<String, String>()
         var oldestYm = ""
         for (i in 0 until list.length()) {
             val item = list.optJSONObject(i) ?: continue
@@ -81,11 +89,15 @@ object WebAjax {
             val year = item.optString("timeline_year", "")
             val month = item.optString("timeline_month", "")
             val ym = if (year.isNotEmpty() && month.isNotEmpty()) "$year-${month.padStart(2, '0')}" else ""
-            if (ym.isNotEmpty() && (oldestYm.isEmpty() || ym < oldestYm)) oldestYm = ym
+            if (ym.isNotEmpty()) {
+                if (oldestYm.isEmpty() || ym < oldestYm) oldestYm = ym
+                // 不用 putIfAbsent：那是 API 24 才有的 HashMap 方法，本工程 minSdk 23
+                if (!ymByMid.containsKey(mid)) ymByMid[mid] = ym
+            }
             if (!mids.containsKey(mid)) mids[mid] = WallItem(mid, year, month)
         }
         val next = data.optString("since_id", "").trim().let { if (it == "0") "" else it }
-        return WallPage(mids.keys.toList().take(WALL_SAFETY_MAX), next, oldestYm)
+        return WallPage(mids.keys.toList().take(WALL_SAFETY_MAX), next, oldestYm, ymByMid)
     }
 
     /**

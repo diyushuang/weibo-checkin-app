@@ -221,3 +221,34 @@ object CursorLogic {
         historyParked = c.historyParked || parked,
     )
 }
+
+/**
+ * 相册模式的「上次抓到哪条」记忆（v0.9.17）：值形如 `mid|yyyy-MM`。
+ *
+ * 为什么需要它：相册模式的「补新」每轮都从墙顶开始翻（`ALBUM_NEW_PAGES` 页），
+ * 逐条查索引判断是否抓过 —— 没新帖时也一样，等于每轮都把已经抓过的几条
+ * 重新枚举一遍、重新查一遍索引。记住上一轮走到的那条微博后，翻墙时一碰到它
+ * 就可以停：「它前面都抓过，后面还没（下一轮的活）」。
+ *
+ * 只存 mid 不够、还要带上「年-月」：日志里要能说出「从哪天的那条之后接着抓」，
+ * 而 mid 是一串数字，用户认不出来。
+ *
+ * 纯字符串编解码，JVM 单测覆盖（见 `CrawlCursorTest`）。
+ */
+object AlbumMemo {
+
+    /** `(mid, ym)` → 记忆值。mid 为空时返回空串（= 没有记忆）。 */
+    fun encode(mid: String, ym: String): String {
+        val m = mid.trim()
+        if (m.isEmpty()) return ""
+        val y = ym.trim()
+        return if (y.isEmpty()) m else "$m|$y"
+    }
+
+    /** 记忆值 → mid；兼容只存了 mid 的旧值。 */
+    fun midOf(value: String): String = value.substringBefore('|').trim()
+
+    /** 记忆值 → `yyyy-MM`；没有这一段时返回空串。 */
+    fun ymOf(value: String): String =
+        if (value.contains('|')) value.substringAfter('|').trim() else ""
+}

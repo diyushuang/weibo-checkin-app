@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  浏览列表卡片（v0.9.11）：元信息行 + 正文摘要 + 九宫格缩略图。
+  浏览列表卡片（v0.9.11，v0.9.17 改小图）：元信息行 + 正文摘要 + 一排小图。
 
-  九宫格由 BrowsingActivity 按缩略图数量动态填充 ImageView（3 列，正方形格），
-  这里只放容器；超出 9 张不在此展开（列表数据本来就截断到 9），进选图页看全量。
+  v0.9.17：图从「撑满整行 / 三等分正方形 / CENTER_CROP」改成 56dp 小图、
+  FIT_CENTER 整张缩进去。原因：卡片只有一屏宽，三等分的正方形逼着图片裁切，
+  宽图在列表里只剩一条色带，用户根本看不出画面。现在小图负责「看得出是什么」，
+  点开 [RemotePreviewActivity] 才看大图；点卡片仍是进选图页。
+
+  小图由 BrowsingActivity 按数量动态填充 ImageView（列数按可用宽度算，
+  手机 5 列、平板更多），这里只放容器；超出 9 张显示「+n」格，进选图页看全量。
 
   多选态：整卡左侧品牌竖条 + 半透明遮罩由代码在 card 上叠 scrim 实现 ——
   勾选语义是「整帖全抓」，视觉上用遮罩 + 计数即可，不再逐格打勾。
@@ -35,13 +40,13 @@
                 android:maxLines="4"
                 android:ellipsize="end" />
 
-            <!-- 九宫格容器：3 列，代码填充 -->
+            <!-- 小图容器：列数由代码按可用宽度设置（手机 5 列），代码填充 -->
             <GridLayout
                 android:id="@+id/browsePics"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/sp_2"
-                android:columnCount="3" />
+                android:columnCount="5" />
         </LinearLayout>
 
         <!-- 选中遮罩：多选模式下盖整卡（必须在外层 FrameLayout，

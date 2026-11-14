@@ -199,4 +199,37 @@ class CrawlCursorTest {
         assertEquals(9, afterScan.anchorPageHint)
         assertEquals(13, afterScan.fullScanPageHint)
     }
+
+    // ---------- 相册模式「上次抓到哪条」的记忆（v0.9.17） ----------
+
+    @Test
+    fun albumMemo_roundTrips() {
+        val v = AlbumMemo.encode("4990000000000000", "2025-11")
+        assertEquals("4990000000000000|2025-11", v)
+        assertEquals("4990000000000000", AlbumMemo.midOf(v))
+        assertEquals("2025-11", AlbumMemo.ymOf(v))
+    }
+
+    @Test
+    fun albumMemo_emptyMidMeansNoMemory() {
+        assertEquals("", AlbumMemo.encode("", "2025-11"))
+        assertEquals("", AlbumMemo.encode("  ", ""))
+        assertEquals("", AlbumMemo.midOf(""))
+        assertEquals("", AlbumMemo.ymOf(""))
+    }
+
+    /** 只存了 mid 的老值（或墙上拿不到年月）也要能用：mid 认得出、年月为空。 */
+    @Test
+    fun albumMemo_toleratesMissingYm() {
+        assertEquals("123", AlbumMemo.midOf("123"))
+        assertEquals("", AlbumMemo.ymOf("123"))
+        assertEquals("123", AlbumMemo.encode("123", ""))
+    }
+
+    /** mid 里不会出现 `|`；真出现了也只按第一个分隔符切，不能把整串当年月。 */
+    @Test
+    fun albumMemo_splitsOnFirstSeparator() {
+        assertEquals("123", AlbumMemo.midOf("123|2025-11|extra"))
+        assertEquals("2025-11|extra", AlbumMemo.ymOf("123|2025-11|extra"))
+    }
 }

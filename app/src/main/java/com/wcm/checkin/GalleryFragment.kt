@@ -509,7 +509,7 @@ class GalleryFragment : Fragment() {
                 t.name.ifEmpty { "UID ${t.uid}" }
             row.findViewById<TextView>(R.id.tvTargetUid).text = t.uid
             row.findViewById<TextView>(R.id.tvTargetProgress).text =
-                describeProgress(ctx, t, cursors[t.uid])
+                describeProgress(ctx, t, cursors[t.uid], treeTag)
             val more = row.findViewById<View>(R.id.btnTargetMore)
             more.setOnClickListener { showTargetMenu(it, t) }
             // 整行也可点：样式里有 ripple，若不接监听就会变成"有反馈但没反应"的假可点，
@@ -567,16 +567,32 @@ class GalleryFragment : Fragment() {
         ctx: android.content.Context,
         target: AccountStore.CrawlTarget,
         cursor: CrawlCursor?,
+        treeTag: String = "",
     ): String {
         val sb = StringBuilder()
-        if (cursor != null && cursor.oldestCoveredAt > 0L && cursor.newestAt > 0L) {
+        // 取非空的一份：`covers` 这种布尔中间量不会让 Kotlin 对 cursor 做智能转换
+        val cov = cursor?.takeIf { it.oldestCoveredAt > 0L && it.newestAt > 0L }
+        // 相册模式不走覆盖区间（它按相册墙游标推进），进度就看「上次抓到最后一条」：
+        // 这条记忆就是下一轮补新的起点，写在行里用户不必翻日志（v0.9.17）
+        val albumYm = if (treeTag.isNotEmpty() && AccountStore.crawlMode(ctx) == AccountStore.MODE_ALBUM) {
+            AlbumMemo.ymOf(AccountStore.albumLastPost(ctx, treeTag, target.uid))
+        } else {
+            ""
+        }
+        if (cov != null) {
             sb.append(
                 getString(
                     R.string.crawl_progress_fmt,
-                    CrawlDate.dateOf(cursor.oldestCoveredAt),
-                    CrawlDate.dateOf(cursor.newestAt),
+                    CrawlDate.dateOf(cov.oldestCoveredAt),
+                    CrawlDate.dateOf(cov.newestAt),
                 )
             )
+            if (albumYm.isNotEmpty()) {
+                sb.append(getString(R.string.crawl_progress_album_fmt, albumYm))
+            }
+        } else if (albumYm.isNotEmpty()) {
+            // 相册模式没有覆盖区间这条事实，别写「尚未抓取」—— 那会和「上次抓到…」自相矛盾
+            sb.append(getString(R.string.crawl_progress_album_lead_fmt, albumYm))
         } else {
             sb.append(getString(R.string.crawl_progress_none))
         }

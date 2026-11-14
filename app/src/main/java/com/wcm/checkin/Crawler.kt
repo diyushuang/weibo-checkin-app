@@ -563,12 +563,27 @@ object Crawler {
     /** 单轮时间上限：一帖最多 18 张图，没有时间墙的话自动抓图会跑很久。 */
     private const val ALBUM_MAX_MILLIS = 20 * 60 * 1000L
 
-    /** 相册墙一轮的结果。 */
+    /**
+     * 相册墙一轮的结果。
+     *
+     * [lastMid] / [lastYm] 是「本轮走到的最深一条」（v0.9.17 的记忆用）：
+     * 补新时把它存下来，下一轮翻墙碰到它就停，不再把前面已抓过的帖重新枚举一遍
+     * （每轮重新扫是用户实际抱怨的点：没新帖时也照样重算一遍）。
+     *
+     * 本轮**没走完一整页**时 [lastMid] 留空 —— 页里还有没处理的 mid，
+     * 那时把记忆推到中途某条，下一轮就会从它开始停住、把同页剩下的帖永久漏掉。
+     */
     private class AlbumPass(
         val enumerated: Boolean,
         val saved: Int,
         val nextCursor: String,
         val reachedBottom: Boolean,
+        val lastMid: String = "",
+        val lastYm: String = "",
+        /** 命中「上次抓到的那条」而提前收工（记忆本身不动）。 */
+        val hitWatermark: Boolean = false,
+        /** 本轮跳过的「索引里已抓过」条数（日志用，证明没白扫）。 */
+        val skipped: Int = 0,
     )
 
     /**
@@ -683,6 +698,16 @@ object Crawler {
         // 全量只是「每轮走得更深」，不需要新的断点字段：相册墙游标本身就是位置
         val historyPages = if (full) ALBUM_FULL_PAGES else ALBUM_HISTORY_PAGES
 
+        // 「上次抓到哪条微博」的记忆（v0.9.17）。全量刻意不用它：全量的语义就是
+        // 从头重新枚举一遍，拿记忆去提前收工会把它变成「增量」。
+        val memoRaw = if (full) "" else AccountStore.albumLastPost(ctx, state.treeTag, uid)
+        val memoMid = AlbumMemo.midOf(memoRaw)
+        val memoYm = AlbumMemo.ymOf(memoRaw)
+        if (memoMid.isNotEmpty()) {
+            val whenStr = if (memoYm.isNotEmpty()) "（$memoYm）" else ""
+            log("  记得上次抓到最后一条$whenStr，本轮从它之后接着抓，前面的不再重扫")
+        }
+
         // 账号只在需要回退时解析一次（探活有成本，不能每帖都做）
         var accountResolved = false
         var accountCookie: String? = null
@@ -699,12 +724,17 @@ object Crawler {
             startCursor: String,
             maxPages: Int,
             maxPosts: Int,
+            stopAtMid: String = "",
         ): AlbumPass {
             var cursor = startCursor
             var pages = 0
             var handled = 0
             var enumerated = false
             var saved = 0
+            var skipped = 0
+            // 本轮走到的最深一条（记忆用；中断在本页时不会被采用）
+            var deepestMid = ""
+            var deepestYm = ""
             val seen = HashSet<String>()
             val floorYm = if (sinceDate.length >= 7) sinceDate.substring(0, 7) else ""
 
@@ -732,12 +762,13 @@ object Crawler {
             while (pages < maxPages && handled < maxPosts && !isStopped() &&
                 System.currentTimeMillis() - startedAt < ALBUM_MAX_MILLIS
             ) {
-                val page = wall(cursor) ?: return AlbumPass(enumerated, saved, cursor, false)
+                val page = wall(cursor)
+                    ?: return AlbumPass(enumerated, saved, cursor, false, deepestMid, deepestYm, skipped = skipped)
                 enumerated = true
                 // 墙上只有「年-月」，只能做粗粒度下界判定
                 if (floorYm.isNotEmpty() && page.oldestYm.isNotEmpty() && page.oldestYm < floorYm) {
                     log("  已到起始日期（$sinceDate）之前，停止翻页")
-                    return AlbumPass(enumerated, saved, "", true)
+                    return AlbumPass(enumerated, saved, "", true, deepestMid, deepestYm, skipped = skipped)
                 }
                 var pageDone = true
                 for (mid in page.mids) {
@@ -747,7 +778,22 @@ object Crawler {
                         pageDone = false
                         break
                     }
-                    if (state.index.isTerminal(mid) && state.index.failedSlots(mid).isEmpty()) continue
+                    // 回到上次抓到的那条：它更新、更旧的都处理过了，本轮到此为止。
+                    // 这就是「增量从上次那条之后接着抓」—— 前面已抓过的帖不再逐条重查。
+                    if (stopAtMid.isNotEmpty() && mid == stopAtMid) {
+                        log("  · 已回到上次抓到的那条，本轮到此为止（跳过 $skipped 条已抓过的）")
+                        return AlbumPass(
+                            enumerated, saved, cursor, false,
+                            stopAtMid, page.ymByMid[stopAtMid].orEmpty(),
+                            hitWatermark = true, skipped = skipped,
+                        )
+                    }
+                    deepestMid = mid
+                    deepestYm = page.ymByMid[mid].orEmpty()
+                    if (state.index.isTerminal(mid) && state.index.failedSlots(mid).isEmpty()) {
+                        skipped++
+                        continue
+                    }
                     handled++
                     saved += processAlbumPost(ctx, uid, mid, target, state, log, onEvent, guest) { account() }
                 }
@@ -757,26 +803,40 @@ object Crawler {
                 // 而它们既不在 failed 槽位里、也不会进 RETRY —— 那些图永久缺失。
                 if (!pageDone) {
                     log("  · 本轮在第 $pages 页中断（未处理完），游标留在页首，下轮从这条继续")
-                    return AlbumPass(enumerated, saved, cursor, false)
+                    // 记忆同样不推进：本页还有没处理的 mid，记住中途某条会让下一轮
+                    // 从它开始停住，同页剩下的帖就永久漏了
+                    return AlbumPass(enumerated, saved, cursor, false, skipped = skipped)
                 }
                 if (page.nextSinceId.isEmpty() || !seen.add(page.nextSinceId)) {
-                    return AlbumPass(enumerated, saved, "", true)
+                    return AlbumPass(enumerated, saved, "", true, deepestMid, deepestYm, skipped = skipped)
                 }
                 cursor = page.nextSinceId
             }
-            return AlbumPass(enumerated, saved, cursor, false)
+            return AlbumPass(enumerated, saved, cursor, false, deepestMid, deepestYm, skipped = skipped)
         }
 
-        // 1) 补新：固定从第一页扫，保证刚发的图能进来（不依赖历史游标走到哪）
-        val newPass = pass("", ALBUM_NEW_PAGES, ALBUM_MAX_POSTS)
+        // 1) 补新：从第一页扫，保证刚发的图能进来（不依赖历史游标走到哪）；
+        //    碰到上次记下的那条就停，不再把它前面的帖重新枚举一遍
+        val newPass = pass("", ALBUM_NEW_PAGES, ALBUM_MAX_POSTS, stopAtMid = memoMid)
         if (!newPass.enumerated) return AlbumTargetResult(false, 0)
 
+        // 记忆推进：命中旧记忆（说明本轮没往下走）或本轮中断在页中（lastMid 为空）都不动
+        if (!newPass.hitWatermark && newPass.lastMid.isNotEmpty() && newPass.lastMid != memoMid) {
+            AccountStore.setAlbumLastPost(
+                ctx, state.treeTag, uid, AlbumMemo.encode(newPass.lastMid, newPass.lastYm),
+            )
+        }
+
         var saved = newPass.saved
-        var nextCursor = newPass.nextCursor
+        // 历史游标从「上次存下的位置」起算：补新只有真的翻到了更深处才覆盖它。
+        // 命中记忆时补新停在页首（游标是空串，因为它从墙顶开始），那不是历史进度，
+        // 直接拿它覆盖会把「已补到很旧的历史」整段抹掉，下一轮从墙顶重来。
+        var nextCursor = if (newPass.nextCursor.isNotEmpty()) newPass.nextCursor else savedCursor
         var reachedBottom = newPass.reachedBottom
 
-        // 2) 补历史：从存档游标继续。游标为空说明「补新」已经覆盖了开头，不必重复。
-        if (newPass.nextCursor.isNotEmpty() && savedCursor.isNotEmpty()) {
+        // 2) 补历史：从存档游标继续。判据只看「这一轮有没有走到墙底」——
+        //    补新停在记忆那一页不代表历史已经走完，墙下面还有没走过的部分。
+        if (!newPass.reachedBottom && savedCursor.isNotEmpty()) {
             val historyPass = pass(savedCursor, historyPages, ALBUM_MAX_POSTS)
             saved += historyPass.saved
             nextCursor = historyPass.nextCursor

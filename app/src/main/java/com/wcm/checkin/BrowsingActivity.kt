@@ -38,7 +38,10 @@ import kotlinx.coroutines.withContext
  * 浏览博主页（v0.9.11）：博主微博预览 + 单图 / 批量勾选抓取。
  *
  * - **列表**：`fetchUserPosts`（m 站 107603，必须账号身份）翻页加载，
- *   请求走 [WeiboThrottle]；卡片展示正文摘要 + 九宫格 orj360 缩略图；
+ *   请求走 [WeiboThrottle]；卡片展示正文摘要 + 一排小图（56dp、整张缩进去）；
+ * - **小图 → 大图**（v0.9.17）：点小图进 [RemotePreviewActivity] 全屏看大图，
+ *   点卡片才是进选图页 —— 旧版把九宫格撑满整行并 CENTER_CROP 裁切，
+ *   宽图只剩一条色带，完全看不出画面（用户实际反馈）；
  * - **筛选**：「只看原创」（滤掉 `retweeted_status`）与「只看有图」两个独立开关，
  *   默认全开 —— 对齐「批量勾选博主原创微博中的多张图」的需求口径；
  * - **多选**：长按卡片进入，点按勾选整帖；提交时 picIds 传 null = 整帖全抓，
@@ -95,9 +98,20 @@ class BrowsingActivity : AppCompatActivity() {
     private var filterPic = true
     private var selectMode = false
 
-    /** 九宫格格子边长（px），按列表可用宽度 / 3 计算。0 = 未测量。 */
-    private var cellPx = 0
-    private var cellGap = 0
+    /**
+     * 小图一格的边长 / 间距 / 列数（px）。
+     *
+     * v0.9.17：卡片里的图从「撑满整行的正方形、CENTER_CROP 裁一刀」改成
+     * 「56dp 小图、整张缩进去」。用户反馈原来的图是一条被裁掉的长方形，
+     * 压根看不出拍的是什么 —— 裁切是为了填满格子，而格子只有屏幕三分之一宽，
+     * 宽图必被拦腰裁断。现在格子小、图片按比例缩放（FIT_CENTER），
+     * 整张画面都在，细节靠点开大图看（[RemotePreviewActivity]）。
+     *
+     * 列数按可用宽度算（360dp 屏 5 列、窄屏 4 列、平板更多），见 [measureThumbs]。
+     */
+    private var thumbPx = 0
+    private var thumbGap = 0
+    private var thumbCols = 5
 
     private val backCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
@@ -138,7 +152,7 @@ class BrowsingActivity : AppCompatActivity() {
                 if (lm.findLastVisibleItemPosition() >= visible.size - 3) loadMore()
             }
         })
-        recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> measureCells() }
+        recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> measureThumbs() }
 
         findViewById<View>(R.id.browseRoot)?.let { root ->
             ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
@@ -176,6 +190,10 @@ class BrowsingActivity : AppCompatActivity() {
         chipPic.isSelected = filterPic
         chipOriginal.applyChipStyle(filterOriginal)
         chipPic.applyChipStyle(filterPic)
+
+        // 先给上令牌值：第一帧的 fillPics 不能因为「还没测量」而整块跳过
+        thumbPx = resources.getDimensionPixelSize(R.dimen.browse_thumb_size)
+        thumbGap = resources.getDimensionPixelSize(R.dimen.gallery_gutter)
 
         renderTargets()
         if (savedInstanceState == null) {
@@ -252,15 +270,36 @@ class BrowsingActivity : AppCompatActivity() {
         }
     }
 
-    private fun measureCells() {
-        val w = recycler.width
-        if (w <= 0) return
-        cellGap = resources.getDimensionPixelSize(R.dimen.gallery_gutter)
-        val side = (w - resources.getDimensionPixelSize(R.dimen.page_padding_horizontal) * 2 - cellGap * 2) / 3
-        if (side > 0 && side != cellPx) {
-            cellPx = side
+    /**
+     * 量一次小图的列数。格子边长是固定令牌（56dp），只有列数随可用宽度变：
+     * 卡片内宽 = 列表宽 - 页面左右留白 - 卡片左右内边距。
+     *
+     * 列数变了才重绑整表 —— 首次布局（recycler 宽度还是 0 时用屏幕宽兜底）
+     * 算出的值与初始值相同时什么也不做，避免开屏就白刷一遍列表。
+     */
+    private fun measureThumbs() {
+        val listW = if (recycler.width > 0) recycler.width else resources.displayMetrics.widthPixels
+        val side = resources.getDimensionPixelSize(R.dimen.page_padding_horizontal)
+        val cardPad = resources.getDimensionPixelSize(R.dimen.card_padding)
+        val content = listW - side * 2 - cardPad * 2
+        if (content <= 0 || thumbPx <= 0 || thumbGap < 0) return
+        val cols = ((content + thumbGap) / (thumbPx + thumbGap)).coerceIn(3, 9)
+        if (cols != thumbCols) {
+            thumbCols = cols
             if (posts.isNotEmpty()) adapter.notifyDataSetChanged()
         }
+    }
+
+    /**
+     * 点小图 → 全屏看大图（v0.9.17）。
+     *
+     * 传的是同一帖的小图清单，翻页就能在整帖里来回看；尺寸段由预览页自己换成
+     * `large`（这里的小图是 orj360，直接放大会糊）。
+     */
+    private fun openPreview(post: WeiboApi.RawPost, at: Int) {
+        val urls = post.thumbs.take(MAX_TILES)
+        if (urls.isEmpty()) return
+        RemotePreviewActivity.start(this, urls, at)
     }
 
     // ---------- 载入 ----------
@@ -429,8 +468,8 @@ class BrowsingActivity : AppCompatActivity() {
         targetsScroll.visibility = View.VISIBLE
         val padH = resources.getDimensionPixelSize(R.dimen.pill_padding_horizontal) * 2
         val padV = resources.getDimensionPixelSize(R.dimen.space_xs)
-        // 不能用 cellGap：它在 measureCells() 里才被赋值，而 renderTargets() 在 onCreate
-        // 就跑完了，于是间距恒为 0（且之后再没人调 renderTargets）。
+        // 间距直接取令牌：thumbGap 直到 onCreate 末尾才赋值，而 renderTargets() 在
+        // 更早就跑完了（之后再没人调它），读字段会恒为 0。
         val gap = resources.getDimensionPixelSize(R.dimen.gallery_gutter)
         targets.forEachIndexed { idx, t ->
             val chip = TextView(this).apply {
@@ -668,7 +707,12 @@ class BrowsingActivity : AppCompatActivity() {
             }
 
             /**
-             * 九宫格：每次 bind 重建（不搞视图复用），tag 防旧请求盖图。
+             * 小图行：每次 bind 重建（不搞视图复用），tag 防旧请求盖图。
+             *
+             * v0.9.17 起这里摆的是**整张缩进去的小图**（56dp、FIT_CENTER），
+             * 不再是撑满整行的正方形裁切图：裁切必然把宽图拦腰截断，列表里看到的
+             * 只是一条色带。小图点开才是大图（[RemotePreviewActivity]），
+             * 多选态下点小图等同于点卡片（勾选整帖）。
              *
              * **这里只摆格子、登记待加载清单，不发起请求** —— 真正的下载由
              * [startThumbs] 在卡片进入可见区后按顺序一格一格来。
@@ -676,27 +720,34 @@ class BrowsingActivity : AppCompatActivity() {
             private fun fillPics(post: WeiboApi.RawPost) {
                 pics.removeAllViews()
                 val thumbs = post.thumbs
-                if (thumbs.isEmpty() || cellPx <= 0) {
+                if (thumbs.isEmpty() || thumbPx <= 0) {
                     pendingThumbs = emptyList()
                     nextThumb = 0
-                    pics.visibility = if (thumbs.isEmpty()) View.GONE else View.VISIBLE
+                    pics.visibility = View.GONE
                     return
                 }
                 pics.visibility = View.VISIBLE
+                // 列数写在容器上：子 view 不指定行列，GridLayout 按列数自动换行
+                pics.columnCount = thumbCols
                 val ctx = pics.context
-                val jobs = ArrayList<Pair<ImageView, String>>(9)
-                thumbs.take(9).forEachIndexed { i, url ->
+                val tiles = thumbs.take(MAX_TILES)
+                val jobs = ArrayList<Pair<ImageView, String>>(tiles.size)
+                tiles.forEachIndexed { i, url ->
                     val iv = ImageView(ctx).apply {
                         layoutParams = GridLayout.LayoutParams().apply {
-                            width = cellPx
-                            height = cellPx
-                            if (i % 3 != 2) marginEnd = cellGap
-                            if (i < 6) bottomMargin = cellGap
-                            rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-                            columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                            width = thumbPx
+                            height = thumbPx
+                            marginEnd = if (i % thumbCols == thumbCols - 1) 0 else thumbGap
+                            if (i >= thumbCols) topMargin = thumbGap
                         }
-                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        setBackgroundResource(R.drawable.bg_thumb)
+                        clipToOutline = true
                         contentDescription = getString(R.string.browse_pic_desc_fmt, i + 1)
+                        setOnClickListener {
+                            // 多选态：点图就是点卡片（勾选/取消整帖），不能跳去大图
+                            if (selectMode) itemView.performClick() else openPreview(post, i)
+                        }
                     }
                     iv.tag = url
                     pics.addView(iv)
@@ -704,17 +755,22 @@ class BrowsingActivity : AppCompatActivity() {
                 }
                 pendingThumbs = jobs
                 nextThumb = 0
-                if (thumbs.size > 9 || post.picNum > 9) {
+                val total = maxOf(thumbs.size, post.picNum)
+                if (total > tiles.size) {
+                    val at = tiles.size
                     val more = TextView(ctx).apply {
-                        text = getString(R.string.browse_more_pics_fmt, maxOf(thumbs.size, post.picNum) - 9)
+                        text = getString(R.string.browse_more_pics_fmt, total - tiles.size)
                         setTextAppearance(R.style.TextAppearance_Wcm_Xs)
                         setTextColor(getColor(R.color.ink_3))
                         gravity = Gravity.CENTER
+                        setBackgroundResource(R.drawable.bg_thumb)
                         layoutParams = GridLayout.LayoutParams().apply {
-                            width = GridLayout.LayoutParams.WRAP_CONTENT
-                            height = GridLayout.LayoutParams.WRAP_CONTENT
-                            columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 3f)
+                            width = thumbPx
+                            height = thumbPx
+                            marginEnd = if (at % thumbCols == thumbCols - 1) 0 else thumbGap
+                            if (at >= thumbCols) topMargin = thumbGap
                         }
+                        setOnClickListener { PostPickActivity.start(this@BrowsingActivity, post.bid) }
                     }
                     pics.addView(more)
                 }
@@ -744,6 +800,9 @@ class BrowsingActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_UID = "uid"
         private const val KEY_BROWSE_PAGE = "browse-page"
+
+        /** 卡片里最多摆几张小图（与微博九宫格一致，再多的用「+n」表示，进选图页看全量）。 */
+        private const val MAX_TILES = 9
 
         // ---- 旋转 / 深浅色切换的恢复现场 ----
         //

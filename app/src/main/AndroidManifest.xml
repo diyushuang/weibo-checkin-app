@@ -61,5 +61,11 @@
         <activity
             android:name=".PostPickActivity"
             android:exported="false" />
+
+        <!-- 远程大图预览（v0.9.17）：浏览页点小图进来，只读 CDN 上的大图 -->
+        <activity
+            android:name=".RemotePreviewActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Wcm.Preview" />
     </application>
 </manifest>
