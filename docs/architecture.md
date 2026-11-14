@@ -88,7 +88,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 - `assembleDebug` / `assembleRelease` 通过
 - release APK ≈ 3.63MB（R8 开启前 6.55MB）
 - `lint` 在本机 Windows 环境会长时间卡在 `lintAnalyzeDebug`；CI 的 `build-apk.yml`
-  只跑单测 + assembleDebug，不依赖 lint
+  只跑单测 + assembleDebug，不依赖 lint；`build-apk.yml` 的 paths 已覆盖 `core/`、`data/`、`domain/`
 
 ## 6. 迁移状态与待办
 
