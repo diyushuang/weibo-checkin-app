@@ -614,14 +614,12 @@ class HomeFragment : Fragment() {
             var fixed = 0
             pending.forEach { acc ->
                 try {
-                    val verify = WeiboAuthApi.verify(acc.cookie)
+                    val verify = AccountMaintenanceService.probeAndPersist(ctx, acc)
                     if (!verify.login) return@forEach
-                    val name = WeiboAuthApi.fetchProfile(verify.cookie, acc.uid).first
+                    val name = AccountMaintenanceService.resolveNameIfNeeded(acc, verify.cookie)
                     if (name.isEmpty()) return@forEach
-                    AccountStore.markVerified(
-                        ctx, acc.uid, verify.cookie, name = name,
-                        serverExpiresAt = verify.serverExpiresAt,
-                        loginAt = verify.loginAt,
+                    AccountMaintenanceService.persistVerified(
+                        ctx, acc, verify.cookie, name = name,
                     )
                     fixed++
                 } catch (e: Exception) {
@@ -1054,7 +1052,7 @@ class HomeFragment : Fragment() {
         if (topicsAutoHandled) return
         topicsAutoHandled = true
         if (AccountStore.load(requireContext()).isEmpty()) return
-        // 有任务在跑就不必再刷：签到会顺带把超话列表拉一遍（见 runAccount）
+        // 有任务在跑就不必再刷：签到会顺带把超话列表拉一遍（见 CheckinService.runAccount）
         if (busy || topicBusy) return
         refreshTopics(manual = false)
     }
@@ -1167,13 +1165,9 @@ class HomeFragment : Fragment() {
      * 「load 一份旧表 → 改 → save 覆盖」的旧写法会把刚轮换的 cookie 又写回去。
      */
     private fun updateCookieAndName(ctx: Context, uid: String, cookie: String) {
-        var name = ""
         val current = AccountStore.load(ctx).firstOrNull { it.uid == uid } ?: return
-        if (AccountStore.needsNameResolve(current)) {
-            // 传 uid 进去：Web 端资料接口直接按 uid 查，不再依赖 /api/config 回昵称
-            name = WeiboAuthApi.fetchProfile(cookie, uid).first
-        }
-        AccountStore.markVerified(ctx, uid, cookie, name = name)
+        val name = AccountMaintenanceService.resolveNameIfNeeded(current, cookie)
+        AccountMaintenanceService.persistVerified(ctx, current, cookie, name = name)
     }
 
     // ========================= 签到 / 同步 =========================
@@ -1204,10 +1198,19 @@ class HomeFragment : Fragment() {
         taskJob = AppScope.launch {
             try {
                 log("==== ${if (auto) "打开自动" else "手动"}签到 · ${now()} ====")
-                accounts.forEachIndexed { index, acc ->
-                    if (index > 0) delay(Random.nextLong(2000, 5000))
-                    runAccount(ctx, acc)
-                }
+                CheckinService.runAll(
+                    ctx = ctx,
+                    accounts = accounts,
+                    log = ::log,
+                    onTopics = { uid, topics ->
+                        setTopicState(
+                            uid,
+                            TopicState(topics = topics, atMs = System.currentTimeMillis()),
+                        )
+                        postRender()
+                    },
+                    onAccountDone = { postRender() },
+                )
                 log("==== 全部完成 · ${now()} ====")
                 if (AccountStore.crawlAuto(ctx)) {
                     try {
@@ -1249,73 +1252,6 @@ class HomeFragment : Fragment() {
     }
 
     /**
-     * 跑一个账号的完整签到。
-     *
-     * [ctx] 由调用方在启动协程前取好（`requireContext()`）：签约一轮要几分钟，
-     * 期间用户完全可能退出页面，届时 `requireContext()` 会抛
-     * IllegalStateException，把整轮签到（乃至进程）带崩。
-     */
-    private suspend fun runAccount(ctx: Context, acc: AccountStore.Account) {
-        val name = acc.name.ifEmpty { acc.uid }
-        log("── $name ──")
-        val verify = try {
-            WeiboAuthApi.verify(acc.cookie)
-        } catch (e: Exception) {
-            noteResult(ctx, acc, "探活失败：${e.message}")
-            log("  ✗ 探活失败：${e.message}")
-            return
-        }
-        if (!verify.login) {
-            noteResult(ctx, acc, ctx.getString(R.string.home_cookie_dead))
-            AccountStore.markDead(ctx, acc.uid)
-            log("  ✗ ${ctx.getString(R.string.home_cookie_dead)}")
-            return
-        }
-        acc.cookie = verify.cookie
-        // 签到前的探活同样是一次「确认登录有效」：新鲜 cookie 顺手落盘，
-        // Cookie 卡上的到期时间才不会停留在几天前的估算上
-        AccountStore.markVerified(
-            ctx, acc.uid, verify.cookie,
-            serverExpiresAt = verify.serverExpiresAt,
-            loginAt = verify.loginAt,
-        )
-        try {
-            val topics = WeiboTopicApi.listTopics(acc.cookie)
-            val pending = topics.filter { !it.done }
-            log("  ${topics.size} 个超话，${topics.size - pending.size} 已签，待签 ${pending.size}")
-            setTopicState(acc.uid, TopicState(topics = topics, atMs = System.currentTimeMillis()))
-            TopicStore.save(ctx, acc.uid, topics)
-            postRender()
-            var ok = 0
-            var fail = 0
-            for (topic in pending) {
-                delay(Random.nextLong(3000, 8000))
-                try {
-                    if (WeiboTopicApi.sign(acc.cookie, topic.scheme ?: "", verify.st)) {
-                        ok++; log("  ✓ ${topic.name}")
-                    } else {
-                        fail++; log("  ✗ ${topic.name}")
-                    }
-                } catch (e: Exception) {
-                    fail++; log("  ✗ ${topic.name}：${e.message}")
-                }
-            }
-            noteResult(
-                ctx, acc,
-                "签到 $ok/${pending.size}" +
-                    (if (fail > 0) "（失败 $fail）" else "") + " · ${now()}",
-            )
-            log("  小结：${acc.lastResult}")
-        } catch (e: Exception) {
-            noteResult(ctx, acc, "超话列表失败：${e.message}")
-            log("  ✗ ${e.message}")
-        }
-        // 签到**不再顺带同步面板**：两件事各有各的开关与失败语义，混在一起会让
-        // 「签到成功但面板 5xx」看起来像签到失败。需要推送时点「Cookie 同步」，
-        // 后台保活（CheckInWorker）也会按自己的节奏同步。
-    }
-
-    /**
      * 把一个账号的 cookie 推送到面板（由「Cookie 同步」与后台保活触发）。
      *
      * 成功后记一笔 [AccountStore.markSynced]：面板端每次同步都会把 cookie 的生命周期
@@ -1325,26 +1261,17 @@ class HomeFragment : Fragment() {
      * @return 是否同步成功
      */
     private suspend fun syncToPanel(ctx: Context, acc: AccountStore.Account): Boolean {
-        val url = AccountStore.panelUrl(ctx)
-        val token = AccountStore.panelToken(ctx)
-        if (url.isEmpty() || token.isEmpty()) {
+        val r = AccountMaintenanceService.syncToPanel(ctx, acc)
+        if (r.ok) {
+            log("  📲 已同步面板：${r.detail}")
+            return true
+        }
+        if (r.detail == "未配置面板") {
             log("  （未配置面板，跳过同步）")
-            return false
+        } else {
+            log("  📲 面板拒绝同步：${r.detail}")
         }
-        return try {
-            val r = PanelApi.sync(url, token, acc.cookie, acc.uid, acc.name)
-            if (r.ok) {
-                log("  📲 已同步面板：${if (r.updated) "覆盖" else "新建"} ${r.name}")
-                AccountStore.markSynced(ctx, acc.uid)
-                true
-            } else {
-                log("  📲 面板拒绝同步：${r.detail}")
-                false
-            }
-        } catch (e: Exception) {
-            log("  📲 同步面板失败：${e.message}")
-            false
-        }
+        return false
     }
 
     // ========================= 超话清单（完整展示 + 逐条状态） =========================
@@ -1494,15 +1421,10 @@ class HomeFragment : Fragment() {
                 var cookie = acc.cookie
                 var freshSt = st
                 try {
-                    val v = WeiboAuthApi.verify(cookie)
+                    val v = AccountMaintenanceService.probeAndPersist(ctx, acc)
                     if (v.login) {
                         cookie = v.cookie
                         if (!v.st.isNullOrEmpty()) freshSt = v.st
-                        AccountStore.markVerified(
-                            ctx, uid, v.cookie, acc.name,
-                            serverExpiresAt = v.serverExpiresAt,
-                            loginAt = v.loginAt,
-                        )
                     } else {
                         log("  ✗ 登录状态已失效，请到超话页重新登录后再补签")
                         return@launch
@@ -1552,22 +1474,6 @@ class HomeFragment : Fragment() {
         AccountStore.setLastResult(ctx, uid, result)
     }
 
-    /**
-     * 记一次签到小结：先更新本轮内存快照，再**当场落盘**。
-     *
-     * 不能只等收尾的 [AccountStore.mergeSave]：签到途中 [AccountStore.markVerified]
-     * 已经把库里的 cookie 锚点（`seenAt`）推到了本轮快照之后，而合并规则是
-     * 「锚点新的那一份胜出」—— 快照里这条刚算出来的小结会被库里那份旧值顶掉，
-     * 首页账号行于是停在「尚未签到」，与同一次签到刷绿的「已签 N」chip 自相矛盾。
-     */
-    private fun noteResult(ctx: Context, acc: AccountStore.Account, text: String) {
-        val at = System.currentTimeMillis()
-        acc.lastResult = text
-        // 时间戳同步落到快照与库里：界面靠它判断这条小结能不能当「今天」的结论
-        acc.lastResultAt = at
-        AccountStore.setLastResult(ctx, acc.uid, text, at)
-    }
-
     private fun syncOnly() {
         if (busy) {
             if (taskJob?.isActive == true) {
@@ -1594,21 +1500,17 @@ class HomeFragment : Fragment() {
                 for (acc in accounts) {
                     log("── ${acc.name.ifEmpty { acc.uid }} ──")
                     try {
-                        val verify = WeiboAuthApi.verify(acc.cookie)
+                        val verify = AccountMaintenanceService.probeAndPersist(ctx, acc)
                         if (!verify.login) {
-                            noteResult(ctx, acc, ctx.getString(R.string.home_cookie_dead))
+                            CheckinService.noteResult(
+                                ctx, acc, ctx.getString(R.string.home_cookie_dead),
+                            )
                             AccountStore.markDead(ctx, acc.uid)
                             log("  ✗ ${ctx.getString(R.string.home_cookie_dead)}")
                             continue
                         }
-                        acc.cookie = verify.cookie
                         // 探活成功也走一次落盘：同步失败的账号至少把「最近有效」锚点更新掉，
                         // 否则它会一直停在过期的红字上，看起来像没点过同步
-                        AccountStore.markVerified(
-                            ctx, acc.uid, verify.cookie,
-                            serverExpiresAt = verify.serverExpiresAt,
-                            loginAt = verify.loginAt,
-                        )
                         if (syncToPanel(ctx, acc)) ok++
                     } catch (e: Exception) {
                         log("  ✗ ${e.message}")

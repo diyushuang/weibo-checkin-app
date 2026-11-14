@@ -26,8 +26,6 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
     override suspend fun doWork(): Result {
         val ctx = applicationContext
         val accounts = AccountStore.load(ctx)
-        val panelUrl = AccountStore.panelUrl(ctx)
-        val panelToken = AccountStore.panelToken(ctx)
         var alive = 0
         // 明确判未登录的账号数：全部失效说明再重试也没用，不该让 WorkManager 反复拉起
         var dead = 0
@@ -45,51 +43,18 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
                 loginAt: Long,
                 serverExpiresAt: Long,
             ) {
-                val at = System.currentTimeMillis()
-                // 同步更新内存快照，避免整轮结束的 mergeSave 用旧 cookie 覆盖新结果
-                account.cookie = cookie
-                account.cookieSeenAt = at
-                account.cookieLastCheckAt = at
-                account.cookieDead = false
-                account.cookieLastError = ""
-                if (loginAt > 0L) account.cookieLoginAt = loginAt
-                if (serverExpiresAt > 0L) account.cookieServerExpiresAt = serverExpiresAt
-                // 昵称兜底：登录时资料接口没回名字的账号，在这里顺手补上
-                // （后台跑，用户下次打开 App 就不再看到「（未获取到昵称）」）
-                val name = if (AccountStore.needsNameResolve(account)) {
-                    try {
-                        WeiboAuthApi.fetchProfile(cookie, account.uid).first
-                    } catch (e: Exception) {
-                        ""
-                    }
-                } else {
-                    ""
-                }
-                // 探活成功立即落盘时间锚点 / 昵称：整轮跑完再落会有几分钟窗口，
-                // 期间首页那张 Cookie 卡显示的仍是旧值
-                AccountStore.markVerified(
-                    ctx, account.uid, cookie,
-                    name = name,
-                    at = at,
-                    serverExpiresAt = serverExpiresAt,
+                // 昵称兜底 + 探活成功立即落盘时间锚点：
+                // 整轮跑完再落会有几分钟窗口，期间首页那张 Cookie 卡显示的仍是旧值。
+                val name = AccountMaintenanceService.resolveNameIfNeeded(account, cookie)
+                AccountMaintenanceService.persistVerified(
+                    ctx, account, cookie,
                     loginAt = loginAt,
+                    serverExpiresAt = serverExpiresAt,
+                    name = name,
                 )
                 alive++
-                if (panelUrl.isNotEmpty() && panelToken.isNotEmpty()) {
-                    try {
-                        val r = PanelApi.sync(
-                            panelUrl, panelToken, cookie, account.uid,
-                            name.ifEmpty { account.name },
-                        )
-                        if (r.ok) {
-                            // 同步只影响面板侧计时；本机寿命仍以真实登录/换发为准
-                            AccountStore.markSynced(ctx, account.uid)
-                            account.cookieSyncedAt = System.currentTimeMillis()
-                        }
-                    } catch (e: Exception) {
-                        // 面板同步失败不影响本地保活
-                    }
-                }
+                // 面板同步失败不影响本地保活；未配置面板时内部直接返回 false。
+                AccountMaintenanceService.syncToPanel(ctx, account, name)
             }
 
             for (acc in accounts) {
