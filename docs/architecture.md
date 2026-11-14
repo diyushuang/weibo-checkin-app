@@ -137,7 +137,11 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
   整条链路跑通；浏览博主 → 选图/远程预览已切路由（无有效 cookie/网络时只验证空态）。
 - **抓取/图库端到端（游客态）**：release APK 全新安装，添加公开目标「人民日报」，
   相册模式增量抓取下载 29 张，图库显示 36 张、按日期分组 28 张，预览 1/55 正常；
-  `CheckInWorker` 强制触发返回 SUCCESS。
+  继续增量后图库 106 张；`CheckInWorker` 强制触发返回 SUCCESS。
+- **同签名覆盖安装**：release APK `install -r` 后目录授权、抓取目标、图库 106 张全部保留；
+  release 冷启动 864ms。
+- UI→data：Compose 页不再直接读 `CrawlSettings`，目标选择文案由 ViewModel 生成；
+  仍通过 `GalleryFiles`/`WeiboTopicApi` 模型类型传参（后续随模型下沉 `:core` 收口）。
 - 未覆盖：签到/自动重登/浏览博主需要真实登录账号（当前无可用的授权凭据），
   只验证了假账号与游客态链路。
 
