@@ -28,8 +28,9 @@
   实例化并返回 SUCCESS。
 - **ViewBinding 全量落地**：首页/超话/图库/浏览/选图/预览/登录等界面去掉手写
   `findViewById`（`LogPanel` 的通用 host 除外），Fragment 在 `onDestroyView` 清理 binding。
-- **首页 Hero Compose**：进度环/待签数/pill/一句话结论改为 `HomeHeroCard`，
-  `fragment_home` 的 Hero 卡换成 ComposeView；其余区块仍为 XML，逐块迁移。
+- **首页 Hero Compose**：进度环/待签数/pill/一句话结论改为 `HomeHeroCard`。
+- **首页账号列表 Compose**：账号行、头像 tone、状态 chip、⋮ 菜单与空态迁到 Compose；
+  `WcmTheme` 补齐 M3 容器色，菜单/卡片不再被品牌色 tint。
 - **release 开启 R8/资源收缩**：APK 6.55MB → 3.55MB（含 Compose 运行时）。
 - **数据零迁移**：SharedPreferences 仍是 `wcm`，索引/游标/keystore/签名格式不变。
 - 验证：312 个 JVM 单测 / 0 failures；`assembleDebug` / `assembleRelease` 通过。
