@@ -1,6 +1,7 @@
 # 架构说明（架构现代化进行中）
 
-> 状态：2026-11 架构现代化 **Phase 0–2 已完成**；Phase 3（Compose/MVVM）起为后续增量。
+> 状态：2026-11 架构现代化 **Phase 0–4 已完成**，Phase 5（超话/图库/图库浏览）
+> 已 Compose 化；浏览/选图/预览与导航壳为后续增量。
 > 本文描述当前真实结构，不描述最终目标态的想象结构。
 
 ## 1. Gradle 模块与依赖方向
@@ -84,7 +85,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 
 - 315 个 JVM 单测，0 failures
 - `assembleDebug` / `assembleRelease` 通过
-- release APK ≈ 3.56MB（R8 开启前 6.55MB；Compose 迁移中）
+- release APK ≈ 3.65MB（R8 开启前 6.55MB；Compose 迁移中）
 - `lint` 在本机 Windows 环境会长时间卡在 `lintAnalyzeDebug`；CI 的 `build-apk.yml`
   只跑单测 + assembleDebug，不依赖 lint
 
@@ -115,8 +116,14 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 - 首页删除确认：Compose AlertDialog 正常（假账号，未实际删除）。
 - 超话清单 Compose 对话框：编译通过；需要有效微博账号才能触发运行时验证。
 - 重登凭证 Compose 对话框：状态/账号/密码/说明/保存/删除渲染正常（未实际保存凭证）。
-- 未覆盖：真实签到/抓取（需要微博账号）、选图/预览（需要图片数据）、
-  `PostPickActivity`/`ImagePreviewActivity`/`RemotePreviewActivity`。
+- 超话页 Compose：用假账号 + 本地快照验证 3 条超话的指标/筛选/排序/展开详情/
+  行菜单/原始 JSON/字段说明；展开详情在假 cookie 下正确落到「加载失败，点按重试」。
+- 图库抓取页 Compose：目录选择（SAF 授权 wcmtest）后计数 6 张、模式开关落盘、
+  日志卡展开终端、空目标态正常。
+- 图库浏览 Compose：`LazyVerticalGrid` 3 列正方形格子 + 分组头「更早 · 6 张」；
+  长按进入多选（已选 1/分享/删除/取消）、排序菜单 5 项、筛选 chip 正常。
+- 未覆盖：真实签到/抓取（需要微博账号）、选图/预览、
+  `PostPickActivity`/`ImagePreviewActivity`/`RemotePreviewActivity` 仍为 XML。
 
 已完成：
 
@@ -139,11 +146,18 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 - **首页日志卡 Compose**：`LogCard` 负责收起摘要/展开终端窗口/贴底跟随
 - **首页全量 Compose**：Hero/账号列表/Cookie 卡/日志卡/账号菜单/删除确认/超话清单/
   重登凭证对话框均已 Compose；`HomeFragment` 只保留编排与状态构建
+- **超话页 Compose**：`TopicScreen` + `TopicUiState`（LazyColumn，账号 pills/筛选/排序/
+  懒加载详情/行菜单）；`TopicFragment` 只保留刷新/签到/详情编排
+- **图库抓取页 Compose**：`GalleryScreen` + `GalleryUiState`（目标行菜单/进度/重试/
+  日志）；目录授权与抓取编排仍在 Fragment
+- **图库浏览 Compose**：`GalleryBrowseScreen` + `GalleryBrowseUiState`
+  （LazyVerticalGrid、分组头跨行、多选遮罩、搜索防抖、排序/分组菜单）；
+  缩略图复用 `ThumbLoader` 的采样与 LruCache
 - ViewBinding：全部界面已替换（LogPanel 的通用 host 仍按 id 查找；Gallery 两个对话框输入框保留 dialogView 查找）
 
 待办（按建议顺序）：
 
-1. 超话/图库/浏览/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
+1. 浏览/选图/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
 2. 导航壳与登录页收尾；删除已迁移的旧 XML。
 3. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
    `:feature` 模块（需先把 `R.*` 资源迁移到 feature）。
