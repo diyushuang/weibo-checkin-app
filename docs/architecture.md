@@ -109,7 +109,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 ### 运行时验证（2026-11-14，Android 14 模拟器 `see-audit`）
 
 - 冷启动、首页/超话/图库/设置四 Tab 渲染正常，无 `FATAL EXCEPTION`。
-- 设置页 Compose：浅色/深色都正常；品牌玫红与 XML 页面一致；
+- 设置页 Compose：浅色/深色都正常（深色标题已修正为 onBackground）；品牌玫红与 XML 页面一致；
   开关切换后 `shared_prefs/wcm.xml` 即时落盘（`auto_on_open=false/true`）；
   公网 `http://` 面板地址被拒绝并显示红色错误文案。
 - 登录页打开微博官方登录 WebView；浏览博主页打开空态页。
