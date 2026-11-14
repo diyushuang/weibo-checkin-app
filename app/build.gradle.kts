@@ -85,6 +85,7 @@ android {
         // 索引读一份只含 picId 与终态帖 id 的快照，按需加载、按 mtime 失效。
         versionCode = 32
         versionName = "0.9.18"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -181,4 +182,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // 本地单测跑在 JVM，android.jar 里的 org.json 是抛 Stub! 的桩，换真实实现
     testImplementation("org.json:json:20240303")
+
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 }
