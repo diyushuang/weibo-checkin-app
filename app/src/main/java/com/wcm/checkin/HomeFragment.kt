@@ -1,6 +1,7 @@
 package com.wcm.checkin
 
 import com.wcm.checkin.databinding.FragmentHomeBinding
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -8,7 +9,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.fragment.app.viewModels
 import com.wcm.checkin.databinding.ItemAccountBinding
 import com.wcm.checkin.databinding.DialogReloginCredentialsBinding
-import com.wcm.checkin.databinding.DialogTopicListBinding
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.app.AlertDialog
@@ -25,7 +25,6 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CancellationException
@@ -100,6 +99,9 @@ class HomeFragment : Fragment() {
 
     /** 日志卡（Compose）的渲染状态；每次 render / 追加日志时重建。 */
     private val logState = MutableStateFlow(LogCardUi())
+
+    /** 超话清单弹窗状态（Compose AlertDialog）。 */
+    private val topicsDialogState = MutableStateFlow<TopicsDialogUi?>(null)
 
     /**
      * 时间格式化：`SimpleDateFormat` **不是线程安全的**。
@@ -191,20 +193,41 @@ class HomeFragment : Fragment() {
         )
         binding.accountCompose.setContent {
             val rows by accountState.collectAsState()
+            val topicsDialog by topicsDialogState.collectAsState()
             WcmTheme {
-                AccountList(
-                    rows = rows,
-                    onRowClick = ::showTopics,
-                    onViewTopics = ::showTopics,
-                    onRelogin = { uid ->
-                        AccountStore.load(requireContext()).firstOrNull { it.uid == uid }
-                            ?.let { showReloginDialog(it) }
-                    },
-                    onDelete = { uid ->
-                        AccountStore.load(requireContext()).firstOrNull { it.uid == uid }
-                            ?.let { confirmDeleteAccount(it) }
-                    },
-                )
+                Box {
+                    AccountList(
+                        rows = rows,
+                        onRowClick = ::showTopics,
+                        onViewTopics = ::showTopics,
+                        onRelogin = { uid ->
+                            AccountStore.load(requireContext()).firstOrNull { it.uid == uid }
+                                ?.let { showReloginDialog(it) }
+                        },
+                        onDelete = { uid ->
+                            AccountStore.load(requireContext()).firstOrNull { it.uid == uid }
+                                ?.let { deleteAccount(it) }
+                        },
+                    )
+                    topicsDialog?.let { dlg ->
+                        TopicsDialog(
+                            state = dlg,
+                            onDismiss = { topicsDialogState.value = null },
+                            onResign = { picked ->
+                                topicsDialogState.value = null
+                                if (picked.isEmpty()) {
+                                    toast(getString(R.string.home_topic_none_selected))
+                                } else {
+                                    resignTopics(dlg.uid, dlg.st, picked)
+                                }
+                            },
+                            onViewAll = {
+                                topicsDialogState.value = null
+                                jumpToTopics(dlg.uid)
+                            },
+                        )
+                    }
+                }
             }
         }
         binding.cookieCompose.setViewCompositionStrategy(
@@ -624,20 +647,13 @@ class HomeFragment : Fragment() {
         return String(Character.toChars(first))
     }
 
-    /** 删除账号确认：与改造前完全一致（只删本机登录态，不影响面板）。 */
-    private fun confirmDeleteAccount(acc: AccountStore.Account) {
+    /** 删除账号（确认已由 Compose 账号行完成；只删本机登录态，不影响面板）。 */
+    private fun deleteAccount(acc: AccountStore.Account) {
         val ctx = requireContext()
-        MaterialAlertDialogBuilder(ctx)
-            .setTitle(getString(R.string.home_delete_title, displayName(acc)))
-            .setMessage(getString(R.string.home_delete_msg))
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                AccountStore.remove(ctx, acc.uid)
-                removeTopicState(acc.uid)
-                TopicStore.clear(ctx, acc.uid)
-                render()
-            }
-            .show()
+        AccountStore.remove(ctx, acc.uid)
+        removeTopicState(acc.uid)
+        TopicStore.clear(ctx, acc.uid)
+        render()
     }
 
     /** 昵称优先；拿不到真实昵称时明确提示，而不是把 UID 当名字显示。 */
@@ -1223,61 +1239,10 @@ class HomeFragment : Fragment() {
      * 已签项勾选且不可再选（防重复签到），待签项可勾选后一次性补签。
      */
     private fun presentTopics(uid: String, st: String?, topics: List<WeiboTopicApi.Topic>) {
-        if (!isAdded || topics.isEmpty()) {
-            if (isAdded && topics.isEmpty()) {
-                MaterialAlertDialogBuilder(requireContext())
-                    .setTitle(getString(R.string.home_topic_title, uid))
-                    .setMessage(R.string.home_topic_none)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show()
-            }
-            return
-        }
-        val ctx = requireContext()
-        val name = AccountStore.load(ctx).firstOrNull { it.uid == uid }?.let { displayName(it) } ?: uid
-        val done = topics.count { it.done }
-
-        val dialogBinding = DialogTopicListBinding.inflate(LayoutInflater.from(ctx))
-        val container = dialogBinding.topicContainer
-        dialogBinding.tvTopicSummary.text = getString(
-            R.string.home_topic_list_summary, topics.size, done, topics.size - done,
-        )
-
-        val pendingBoxes = ArrayList<Pair<WeiboTopicApi.Topic, MaterialCheckBox>>()
-        topics.forEach { topic ->
-            val box = MaterialCheckBox(ctx)
-            if (topic.done) {
-                box.text = getString(R.string.home_topic_item_done, topic.name)
-                box.isChecked = true
-                box.isEnabled = false          // 已签不可再选
-            } else {
-                box.text = getString(R.string.home_topic_item_pending, topic.name)
-                box.isChecked = false
-                pendingBoxes.add(topic to box)
-            }
-            container.addView(box)
-        }
-
-        val builder = MaterialAlertDialogBuilder(ctx)
-            .setTitle(getString(R.string.home_topic_title, name))
-            .setView(dialogBinding.root)
-            .setNegativeButton(android.R.string.cancel, null)
-            // 弹窗只做「快速补签」；想看等级/详情/全部字段，跳到超话页
-            .setNeutralButton(R.string.topic_view_all) { _, _ -> jumpToTopics(uid) }
-
-        if (pendingBoxes.isEmpty()) {
-            builder.setPositiveButton(android.R.string.ok, null)
-        } else {
-            builder.setPositiveButton(R.string.home_topic_resign) { _, _ ->
-                val picked = pendingBoxes.filter { it.second.isChecked }.map { it.first }
-                if (picked.isEmpty()) {
-                    toast(getString(R.string.home_topic_none_selected))
-                } else {
-                    resignTopics(uid, st, picked)
-                }
-            }
-        }
-        builder.show()
+        if (!isAdded) return
+        val name = AccountStore.load(requireContext()).firstOrNull { it.uid == uid }
+            ?.let { displayName(it) } ?: uid
+        topicsDialogState.value = TopicsDialogUi(uid, st, name, topics)
     }
 
     /**
