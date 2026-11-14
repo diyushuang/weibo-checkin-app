@@ -147,7 +147,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
   相册模式增量抓取下载 29 张，图库显示 36 张、按日期分组 28 张，预览 1/55 正常（翻到 2/104 后旋转仍停在 2/104）；
   继续增量后图库 106 张；`CheckInWorker` 强制触发返回 SUCCESS。
 - **同签名覆盖安装**：release APK `install -r` 后目录授权、抓取目标、图库 106 张全部保留；
-  release 冷启动 864ms。
+  release 冷启动 864ms（热安装）/ 3195ms（全新安装）。
 - UI→data：Compose 页已无 `CrawlSettings`/`PanelUrl`/`GalleryFiles` 等 data 直接引用，
   浏览/超话清单均改为 UI 模型映射；仅登录 Activity 直接调认证与账号存储（刻意保留）。
 - 未覆盖：签到/自动重登/浏览博主/单条抓取需要真实登录账号（当前无可用的授权凭据）；
