@@ -242,7 +242,7 @@ object WeiboPasswordLogin {
      * 文案只用于「同码不同因」的兜底识别（例如二次验证有时复用通用错误码），
      * 返回的固定文案不会回显原文，避免把表单内容带进日志。
      */
-    internal fun classifyRetcode(retcode: String, text: String): String {
+    fun classifyRetcode(retcode: String, text: String): String {
         val rc = retcode.trim()
         if (rc in NEEDS_MANUAL_CODES) return ReloginPolicy.CODE_NEEDS_MANUAL
         if (rc in BAD_CREDENTIAL_CODES) return ReloginPolicy.CODE_BAD_CREDENTIALS
@@ -261,7 +261,7 @@ object WeiboPasswordLogin {
     }
 
     /** 从跨域回跳 JSON 里收集可访问的回调 URL（只放行微博 / 新浪域，http 升级 https）。 */
-    internal fun callbackUrls(payload: JSONObject): List<String> {
+    fun callbackUrls(payload: JSONObject): List<String> {
         val out = LinkedHashSet<String>()
 
         fun push(any: Any?) {
@@ -290,7 +290,7 @@ object WeiboPasswordLogin {
     }
 
     /** 解析 JSONP（`callback({...})`）或裸 JSON。 */
-    internal fun parseJsonObject(body: String): JSONObject? {
+    fun parseJsonObject(body: String): JSONObject? {
         val start = body.indexOf('{')
         val end = body.lastIndexOf('}')
         if (start < 0 || end <= start) return null
@@ -329,7 +329,7 @@ object WeiboPasswordLogin {
             .build()
 
     /** RSA/PKCS#1 v1.5 加密登录口令（新浪公钥为 1024 位，指数固定 65537）。 */
-    internal fun rsaEncrypt(
+    fun rsaEncrypt(
         pubkeyHex: String, servertime: String, nonce: String, password: String,
     ): String {
         val modulus = BigInteger(pubkeyHex.trim(), 16)

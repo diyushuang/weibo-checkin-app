@@ -111,7 +111,7 @@ object WeiboPostApi {
      * （真机见过 9/18 与 0/18 两种形态）。取三者最大值，只要任一处透出「有图」，
      * 抓取规划就不会把这条当纯文字帖跳过；真正的张数以详情里的 `pic_ids` 为准。
      */
-    internal fun cardPicNum(mblog: JSONObject): Int = maxOf(
+    fun cardPicNum(mblog: JSONObject): Int = maxOf(
         mblog.optInt("pic_num", 0),
         mblog.optJSONArray("pics")?.length() ?: 0,
         mblog.optJSONArray("pic_ids")?.length() ?: 0,

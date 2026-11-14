@@ -36,7 +36,7 @@ object WeiboImageUrl {
      * - http 的强制升级 https，域名不在白名单的整张丢弃 —— 宁可少显示一张，
      *   不让一张图把「明文流量」或「任意域」的口子撕开。
      */
-    internal fun parseThumbUrls(mblog: JSONObject): List<String> {
+    fun parseThumbUrls(mblog: JSONObject): List<String> {
         val out = ArrayList<String>()
         val arr = mblog.optJSONArray("pics") ?: return out
         for (i in 0 until arr.length()) {
@@ -52,7 +52,7 @@ object WeiboImageUrl {
      * 缩略图 URL 规范化（纯函数，JVM 可测）：
      * `http://` 升级 `https://`，过微博域名白名单；不合格返回 null（调用方丢弃）。
      */
-    internal fun sanitizeThumbUrl(raw: String): String? {
+    fun sanitizeThumbUrl(raw: String): String? {
         val t = raw.trim()
         if (t.isEmpty()) return null
         val https = if (t.startsWith("http://", ignoreCase = true)) {
@@ -75,7 +75,7 @@ object WeiboImageUrl {
      * 预览页只有 URL（列表卡片只给 url，不给 pid），靠这个反推才能回答「这张抓过没有」。
      * 先剥 query / fragment 再剥扩展名（与 [Crawler] 的 pidOf 同口径）。
      */
-    internal fun pidFromImageUrl(raw: String): String {
+    fun pidFromImageUrl(raw: String): String {
         val t = raw.trim()
         if (t.isEmpty()) return ""
         val path = t.substringBefore('?').substringBefore('#')
@@ -95,7 +95,7 @@ object WeiboImageUrl {
      *
      * 不是 sinaimg 地址、或结构里没有尺寸段时返回空串，由调用方回落到原缩略图。
      */
-    internal fun fullFromThumb(raw: String): String {
+    fun fullFromThumb(raw: String): String {
         val url = sanitizeThumbUrl(raw) ?: return ""
         val marker = "sinaimg.cn/"
         val at = url.indexOf(marker)

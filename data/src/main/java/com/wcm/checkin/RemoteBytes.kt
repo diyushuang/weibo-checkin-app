@@ -13,7 +13,7 @@ import java.io.InputStream
  * 超限选择 **整张失败** 而不是截断 —— 截断出来的半张 JPEG 解码结果是一张灰图，
  * 显示出来比占位色更像 bug。
  */
-internal object RemoteBytes {
+public object RemoteBytes {
 
     /** 分块大小：16KB 与 OkHttp 内部的 segment 对齐，读 2MB 图只有百来次循环。 */
     private const val CHUNK = 16 * 1024

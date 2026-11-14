@@ -288,7 +288,7 @@ object AccountStore {
         }
 
     /** 一份账号「最新」的时间锚点：比较新旧时只看这个。 */
-    internal fun newestAnchor(a: Account): Long =
+    fun newestAnchor(a: Account): Long =
         maxOf(
             a.cookieRotatedAt, a.cookieSeenAt, a.cookieSyncedAt,
             a.cookieIssuedAt, a.cookieLoginAt,
@@ -480,10 +480,10 @@ object AccountStore {
     // ---- 账号密码自动重登 ----
 
     /** 登录关键字段：只有这些值真的变化，才说明微博换发了一套新凭据。 */
-    internal val LOGIN_CRITICAL_KEYS = listOf("SUB", "SUBP", "SCF", "SSOLoginState", "ALF")
+    val LOGIN_CRITICAL_KEYS = listOf("SUB", "SUBP", "SCF", "SSOLoginState", "ALF")
 
     /** 比较新旧 cookie，返回真正变化的登录关键字段。 */
-    internal fun criticalChangedKeys(oldCookie: String, newCookie: String): List<String> {
+    fun criticalChangedKeys(oldCookie: String, newCookie: String): List<String> {
         val old = WeiboHttp.parseCookieString(oldCookie)
         val fresh = WeiboHttp.parseCookieString(newCookie)
         return LOGIN_CRITICAL_KEYS.filter { old[it] != fresh[it] }

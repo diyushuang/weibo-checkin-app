@@ -28,18 +28,18 @@ object WeiboHttp {
         val identitySuspect: Boolean = false,
     ) : Exception(message)
 
-    internal const val BASE = "https://m.weibo.cn"
+    const val BASE = "https://m.weibo.cn"
 
     /** Web 端（weibo.com 下的 ajax 接口族）的基址：游客身份只在这一侧成立。 */
-    internal const val WEB_BASE = "https://weibo.com"
+    const val WEB_BASE = "https://weibo.com"
 
     /** m 站 UA。GuestSession 复用同一份，保持两处请求口径一致。 */
-    internal const val UA =
+    const val UA =
         "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) " +
             "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
 
     /** Web 端 UA：ajax 接口按桌面浏览器口径下发数据，用移动 UA 会被当异常客户端。 */
-    internal const val WEB_UA =
+    const val WEB_UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 
@@ -179,13 +179,13 @@ object WeiboHttp {
     }
 
     /** 登录凭据相关的 cookie：只有它们的到期时间能代表「服务端到期」。 */
-    internal val LOGIN_EXPIRY_COOKIES = setOf("SUB", "SUBP", "SCF", "SSOLoginState", "ALF")
+    val LOGIN_EXPIRY_COOKIES = setOf("SUB", "SUBP", "SCF", "SSOLoginState", "ALF")
 
     /**
      * 从 Set-Cookie 的 Expires/Max-Age 里取服务端声明到期；没有再退回 cookie 的 ALF。
      * 取登录关键字段里**最早**的一个 —— 任何一个关键凭据先到期，登录态就撑不到更晚。
      */
-    internal fun serverExpiryFromHeaders(expiries: Map<String, Long>, mergedCookie: String): Long =
+    fun serverExpiryFromHeaders(expiries: Map<String, Long>, mergedCookie: String): Long =
         expiries.filterKeys { it in LOGIN_EXPIRY_COOKIES }.values.minOrNull()
             ?: CookieLife.serverExpiryOf(mergedCookie)
 }
