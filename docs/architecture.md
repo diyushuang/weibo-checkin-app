@@ -93,11 +93,11 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 - 设置页 Compose：浅色/深色都正常；品牌玫红与 XML 页面一致；
   开关切换后 `shared_prefs/wcm.xml` 即时落盘（`auto_on_open=false/true`）；
   公网 `http://` 面板地址被拒绝并显示红色错误文案。
-- 登录页打开微博官方登录 WebView；浏览博主页打开空态页；WorkManager 周期任务
-  已注册到 JobScheduler，无初始化错误。
+- 登录页打开微博官方登录 WebView；浏览博主页打开空态页。
+- WorkManager 周期任务已注册；`cmd jobscheduler run -f -n androidx.work.systemjobscheduler
+  com.wcm.checkin 1` 强制触发后，`CheckInWorker` 由 Hilt 实例化并返回 SUCCESS。
 - 未覆盖：真实签到/抓取（需要微博账号）、选图/预览（需要图片数据）、
-  `PostPickActivity`/`ImagePreviewActivity`/`RemotePreviewActivity`、
-  HiltWorker 的实际执行。
+  `PostPickActivity`/`ImagePreviewActivity`/`RemotePreviewActivity`。
 
 已完成：
 
