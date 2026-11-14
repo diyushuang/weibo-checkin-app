@@ -52,6 +52,8 @@ fun GalleryTab(
     var retryItems by remember { mutableStateOf<List<String>?>(null) }
     var postPicker by remember { mutableStateOf<List<WeiboPostApi.RawPost>?>(null) }
 
+    OnResume { viewModel.onShown() }
+
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {

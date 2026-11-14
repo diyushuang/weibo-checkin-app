@@ -67,6 +67,8 @@ fun HomeTab(
     val context = LocalContext.current
     var messageDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
 
+    OnResume { viewModel.onShown() }
+
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {

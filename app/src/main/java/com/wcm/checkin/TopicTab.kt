@@ -34,6 +34,8 @@ fun TopicTab(viewModel: TopicViewModel, onGoHome: () -> Unit) {
     val context = LocalContext.current
     var textDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
 
+    OnResume { viewModel.onShown() }
+
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
