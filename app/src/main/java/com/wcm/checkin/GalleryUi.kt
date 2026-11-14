@@ -6,6 +6,11 @@ data class GalleryTargetUi(
     val progress: String,
 )
 
+data class GalleryPostChoice(
+    val bid: String,
+    val label: String,
+)
+
 data class GalleryProgressUi(
     val ratio: Float,
     val step: String,

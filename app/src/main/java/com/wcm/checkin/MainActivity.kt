@@ -211,8 +211,7 @@ private fun AppShell(
                                     )
                                 }
                             }
-                            CrawlSettings.setCrawlTreeUri(context, uri.toString())
-                            galleryViewModel.onDirPicked()
+                            galleryViewModel.onDirPicked(uri.toString())
                         }
                     }
                     GalleryTab(

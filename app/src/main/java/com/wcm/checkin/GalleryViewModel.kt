@@ -26,7 +26,7 @@ import java.util.Locale
 
 sealed interface GalleryEvent {
     data class Toast(val text: String) : GalleryEvent
-    data class ShowPostPicker(val posts: List<WeiboPostApi.RawPost>) : GalleryEvent
+    data class ShowPostPicker(val posts: List<GalleryPostChoice>) : GalleryEvent
     data class ShowRetry(val items: List<String>) : GalleryEvent
 }
 
@@ -129,11 +129,17 @@ class GalleryViewModel @Inject constructor(
 
     // ========================= 目录 / 图库入口 =========================
 
-    fun onDirPicked() {
+    fun onDirPicked(uri: String) {
+        CrawlSettings.setCrawlTreeUri(ctx, uri)
         renderDir()
         refreshGalleryCount(force = true)
         toast(ctx.getString(R.string.crawl_dir_saved))
     }
+
+    fun treeUri(): String = CrawlSettings.crawlTreeUri(ctx)
+
+    fun firstTargetUid(): String =
+        CrawlSettings.crawlTargets(ctx).firstOrNull()?.uid.orEmpty()
 
     fun renderDir() {
         val raw = CrawlSettings.crawlTreeUri(ctx)
@@ -588,7 +594,15 @@ class GalleryViewModel @Inject constructor(
                 log("✗ 没有拉到微博（UID 是否正确？）")
                 return@launch
             }
-            withContext(Dispatchers.Main) { _events.tryEmit(GalleryEvent.ShowPostPicker(posts)) }
+            withContext(Dispatchers.Main) {
+                _events.tryEmit(
+                    GalleryEvent.ShowPostPicker(
+                        posts.map { p ->
+                            GalleryPostChoice(p.bid, postPickerLine(p))
+                        },
+                    ),
+                )
+            }
         }
     }
 
@@ -648,4 +662,20 @@ class GalleryViewModel @Inject constructor(
 
     fun targetOf(uid: String): CrawlTarget? =
         CrawlSettings.crawlTargets(ctx).firstOrNull { it.uid == uid }
+
+    private fun postPickerLine(post: WeiboPostApi.RawPost): String {
+        val t = WeiboPostApi.parseWeiboTime(post.createdAt)
+        val whenStr = if (t != null) {
+            "${t.first.substring(5)} ${t.second.substring(0, 5)}"
+        } else {
+            "未知时间"
+        }
+        val tags = buildString {
+            if (post.pinned) append(" · 置顶")
+            if (post.isRetweet) append(" · 转发")
+            else if (post.picNum > 0) append(" · ${post.picNum}图")
+            else append(" · 无图")
+        }
+        return "$whenStr$tags\n${post.text.ifEmpty { "（无文字）" }}"
+    }
 }

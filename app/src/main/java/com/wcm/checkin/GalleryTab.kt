@@ -52,7 +52,7 @@ fun GalleryTab(
     var deleteUid by remember { mutableStateOf<String?>(null) }
     var sinceUid by remember { mutableStateOf<String?>(null) }
     var retryItems by remember { mutableStateOf<List<String>?>(null) }
-    var postPicker by remember { mutableStateOf<List<WeiboPostApi.RawPost>?>(null) }
+    var postPicker by remember { mutableStateOf<List<GalleryPostChoice>?>(null) }
 
     OnResume { viewModel.onShown() }
 
@@ -75,7 +75,7 @@ fun GalleryTab(
             },
             onPickDir = onPickDir,
             onOpenGallery = {
-                val raw = CrawlSettings.crawlTreeUri(context)
+                val raw = viewModel.treeUri()
                 if (raw.isEmpty()) {
                     Toast.makeText(context, R.string.gallery_need_dir, Toast.LENGTH_SHORT).show()
                 } else {
@@ -89,8 +89,7 @@ fun GalleryTab(
             onStop = viewModel::stop,
             onRetryFailed = { viewModel.loadRetryItems() },
             onBrowse = {
-                val first = CrawlSettings.crawlTargets(context).firstOrNull()?.uid ?: ""
-                onBrowse(first)
+                onBrowse(viewModel.firstTargetUid())
             },
             onSinglePost = {
                 singleInput = ""
@@ -261,7 +260,7 @@ fun GalleryTab(
                 LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                     items(posts) { post ->
                         Text(
-                            text = postPickerLine(post),
+                            text = post.label,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -322,18 +321,3 @@ private fun SinceDatePicker(
     }
 }
 
-private fun postPickerLine(post: WeiboPostApi.RawPost): String {
-    val t = WeiboPostApi.parseWeiboTime(post.createdAt)
-    val whenStr = if (t != null) {
-        "${t.first.substring(5)} ${t.second.substring(0, 5)}"
-    } else {
-        "未知时间"
-    }
-    val tags = buildString {
-        if (post.pinned) append(" · 置顶")
-        if (post.isRetweet) append(" · 转发")
-        else if (post.picNum > 0) append(" · ${post.picNum}图")
-        else append(" · 无图")
-    }
-    return "$whenStr$tags\n${post.text.ifEmpty { "（无文字）" }}"
-}
