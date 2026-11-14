@@ -233,7 +233,7 @@ class PostPickActivity : AppCompatActivity() {
         }
     }
 
-    /** 从 large.url 反推 pid（与 Crawler.pidOf 同口径：Live 条目两处 pid 不总一致）。 */
+    /** 从 large.url 反推 pid（与抓取详情解析的 pid 反推同口径：Live 条目两处 pid 不总一致）。 */
     private fun pidOf(pic: org.json.JSONObject): String {
         val url = pic.optJSONObject("large")?.optString("url", "")
             ?: pic.optString("url", "")

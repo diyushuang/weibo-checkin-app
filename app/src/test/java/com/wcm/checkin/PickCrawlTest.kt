@@ -67,7 +67,7 @@ class PickCrawlTest {
 
     @Test
     fun `slot numbering matches incremental crawl`() {
-        // 槽位口径必须与增量抓取共用：still i*2、paired i*2+1（Crawler.kt 槽位编码注释）。
+        // 槽位口径必须与增量抓取共用：still i*2、paired i*2+1（PostAssets.kt 槽位编码注释）。
         val a = assets(listOf("a", "b", "c", "d"), liveIdx = setOf(2))
         assertEquals(AssetSlots.still(0), 0)
         assertEquals(AssetSlots.still(2), 4)

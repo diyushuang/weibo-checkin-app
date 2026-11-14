@@ -52,7 +52,7 @@ object CrawlRunner {
      *
      * @param onlyUids v0.9.12 单博主抓取：空集合 = 全部目标；非空只抓这些 UID
      *   （按目标列表顺序，不在列表里的 UID 静默忽略）。
-     * @param full 全量：连续下行、不信已有覆盖区间，用来补历史空洞；见 [Crawler.crawlFullScan]。
+     * @param full 全量：连续下行、不信已有覆盖区间，用来补历史空洞；见 TimelineCrawler.crawlFullScan。
      */
     suspend fun runAll(
         ctx: Context,
@@ -70,7 +70,7 @@ object CrawlRunner {
         }
         return guarded(what) { emit, stopped ->
             if (!album) {
-                Crawler.runIncremental(
+                TimelineCrawler.runIncremental(
                     ctx = ctx,
                     log = log,
                     autoMode = auto,
@@ -81,7 +81,7 @@ object CrawlRunner {
                 )
                 return@guarded
             }
-            val ok = Crawler.runAlbum(
+            val ok = AlbumCrawler.runAlbum(
                 ctx = ctx,
                 log = log,
                 autoMode = auto,
@@ -92,7 +92,7 @@ object CrawlRunner {
             )
             if (!ok) {
                 log("相册模式没跑起来（游客身份不可用或相册为空），回退到时间线模式")
-                Crawler.runIncremental(
+                TimelineCrawler.runIncremental(
                     ctx = ctx,
                     log = log,
                     autoMode = auto,
@@ -110,7 +110,7 @@ object CrawlRunner {
         ctx: Context,
         log: (String) -> Unit,
     ): RunResult = guarded("补抓失败") { emit, stopped ->
-        Crawler.runIncremental(
+        TimelineCrawler.runIncremental(
             ctx = ctx,
             log = log,
             retryOnly = true,
