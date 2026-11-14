@@ -8,15 +8,24 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import com.wcm.checkin.databinding.FragmentSettingsBinding
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 
 /** 设置页：面板同步配置、行为开关、关于。 */
+@AndroidEntryPoint
 class SettingsFragment : Fragment() {
 
-    private var _binding: FragmentSettingsBinding? = null
-    private val binding get() = _binding!!
+    private val viewModel: SettingsViewModel by viewModels()
 
     /**
      * Android 17（API 37）起，访问局域网默认被系统阻断，需要这个运行时权限
@@ -36,86 +45,49 @@ class SettingsFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View {
-        _binding = FragmentSettingsBinding.inflate(inflater, container, false)
-        return binding.root
+    ): View = ComposeView(requireContext()).apply {
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        setContent {
+            val state by viewModel.state.collectAsState()
+            WcmTheme {
+                SettingsScreen(
+                    state = state,
+                    onUrlChange = viewModel::updateUrl,
+                    onTokenChange = viewModel::updateToken,
+                    onSave = viewModel::save,
+                    onAutoOnOpenChange = viewModel::setAutoOnOpen,
+                    onCrawlGifChange = viewModel::setCrawlGif,
+                    onAutoReloginChange = viewModel::setAutoRelogin,
+                )
+            }
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        val ctx = requireContext()
-
-        val etUrl = binding.etPanelUrl
-        val etToken = binding.etPanelToken
-        etUrl.setText(PanelSettings.panelUrl(ctx))
-        etToken.setText(PanelSettings.panelToken(ctx))
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.events.collect { event ->
+                    when (event) {
+                        is SettingsEvent.Saved -> {
+                            Toast.makeText(
+                                requireContext(),
+                                R.string.settings_saved,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            event.parsed?.let { ensureLocalNetworkPermission(it) }
+                        }
+                    }
+                }
+            }
+        }
 
         // 已经配过面板就在进页面时申请一次：以前只在点「保存」时才申请，
         // 用户升级到 Android 17 后不重新保存就永远拿不到局域网权限，同步一直失败。
-        PanelSettings.panelUrl(ctx)
+        viewModel.state.value.panelUrl
             .takeIf { it.isNotEmpty() }
             ?.let { runCatching { PanelUrl.parse(it) }.getOrNull() }
             ?.let { ensureLocalNetworkPermission(it) }
-
-        binding.btnSavePanel.setOnClickListener {
-            val raw = etUrl.text?.toString()?.trim() ?: ""
-            // token 也要 trim：从剪贴板粘贴常带尾部换行，原样存进去每次同步都 401
-            val token = etToken.text?.toString()?.trim() ?: ""
-            if (raw.isEmpty()) {
-                // 留空 = 关闭面板同步
-                PanelSettings.savePanel(ctx, "", token)
-                Toast.makeText(ctx, R.string.settings_saved, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            val parsed = try {
-                PanelUrl.parse(raw)
-            } catch (e: Exception) {
-                // 公网明文、非法 scheme 等在这里就被挡下，不会等到同步时才失败
-                etUrl.error = e.message
-                return@setOnClickListener
-            }
-            PanelSettings.savePanel(ctx, parsed.base, token)
-            // 回填规范化后的值：用户输入 "https://host/" 会被解析成 base，
-            // 输入框里留着他写的那份，下次看一眼会以为存的不是这个
-            etUrl.setText(parsed.base)
-            etToken.setText(token)
-            Toast.makeText(ctx, R.string.settings_saved, Toast.LENGTH_SHORT).show()
-            ensureLocalNetworkPermission(parsed)
-        }
-
-        val switchAuto = binding.switchAutoOnOpen
-        switchAuto.isChecked = PanelSettings.autoOnOpen(ctx)
-        switchAuto.setOnCheckedChangeListener { _, checked ->
-            PanelSettings.setAutoOnOpen(ctx, checked)
-        }
-        // 整行可点：点标题/说明也能切换，不必精确点到那个小滑块
-        binding.rowAutoOnOpen.setOnClickListener { switchAuto.toggle() }
-
-        val switchGif = binding.switchCrawlGif
-        switchGif.isChecked = CrawlSettings.crawlGif(ctx)
-        switchGif.setOnCheckedChangeListener { _, checked ->
-            CrawlSettings.setCrawlGif(ctx, checked)
-        }
-        binding.rowCrawlGif.setOnClickListener { switchGif.toggle() }
-
-        val switchRelogin = binding.switchAutoRelogin
-        switchRelogin.isChecked = AccountStore.autoReloginEnabled(ctx)
-        switchRelogin.setOnCheckedChangeListener { _, checked ->
-            AccountStore.setAutoReloginEnabled(ctx, checked)
-        }
-        binding.rowAutoRelogin.setOnClickListener { switchRelogin.toggle() }
-
-        val version = try {
-            ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
-        } catch (e: Exception) {
-            "?"
-        }
-        binding.tvAbout.text = getString(R.string.settings_about_body, version)
-    }
-
-    override fun onDestroyView() {
-        _binding = null
-        super.onDestroyView()
     }
 
     /**

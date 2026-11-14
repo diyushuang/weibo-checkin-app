@@ -120,6 +120,11 @@ android {
         // 编译期生成 ViewBinding，后续逐屏替换手写 findViewById。
         viewBinding = true
         buildConfig = true
+        compose = true
+    }
+    composeOptions {
+        // Kotlin 1.9.24 对应的最后一个独立 Compose 编译器版本
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
     compileOptions {
         // java.time（LocalDate/Instant/ZoneOffset）在 API < 26 上由 desugar 提供
@@ -163,6 +168,11 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+
+    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
 
     implementation("com.google.dagger:hilt-android:2.51.1")
     ksp("com.google.dagger:hilt-compiler:2.51.1")

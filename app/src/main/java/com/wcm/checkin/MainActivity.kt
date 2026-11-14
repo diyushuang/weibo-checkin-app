@@ -13,6 +13,7 @@ import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.wcm.checkin.databinding.ActivityMainBinding
+import dagger.hilt.android.AndroidEntryPoint
 
 /**
  * 单 Activity 壳：底部导航（首页 / 图片 / 设置），Material 3。
@@ -28,6 +29,7 @@ import com.wcm.checkin.databinding.ActivityMainBinding
  *   横屏挖孔三种情况都不会压住内容；
  * - 键盘（IME）弹出时：底栏整块淡出，内容区底部垫到键盘顶，输入框不会被挡住。
  */
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
     private lateinit var home: HomeFragment
