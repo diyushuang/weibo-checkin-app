@@ -9,6 +9,9 @@ on:
     branches: [main]
     paths:
       - 'app/**'
+      - 'core/**'
+      - 'data/**'
+      - 'domain/**'
       - 'gradle/**'
       - '*.kts'
       - 'gradle.properties'
