@@ -10,7 +10,7 @@ import org.junit.Test
 class TopicStoreTest {
 
     private val topics = listOf(
-        WeiboApi.Topic(
+        WeiboTopicApi.Topic(
             name = "王一博",
             scheme = null,
             done = true,
@@ -18,7 +18,7 @@ class TopicStoreTest {
             level = 7,
             desc2 = "本周热度上升",
         ),
-        WeiboApi.Topic(name = "无 ID 超话", scheme = null, done = false, topicId = "", level = 0),
+        WeiboTopicApi.Topic(name = "无 ID 超话", scheme = null, done = false, topicId = "", level = 0),
     )
 
     @Test
@@ -32,7 +32,7 @@ class TopicStoreTest {
     fun snapshot_dropsSchemeButKeepsRest() {
         // 即使调用方传了 scheme，落盘再读回也必须是 null（签到链接会过期）
         val withScheme = listOf(
-            WeiboApi.Topic(name = "A", scheme = "/sign?a=1", done = false, topicId = "x", level = 3)
+            WeiboTopicApi.Topic(name = "A", scheme = "/sign?a=1", done = false, topicId = "x", level = 3)
         )
         val raw = TopicStore.serializeSnapshot(TopicStore.Snapshot("u", 1L, withScheme))
         val restored = TopicStore.deserializeSnapshot("u", raw)!!
@@ -70,7 +70,7 @@ class TopicStoreTest {
 
     @Test
     fun detail_roundtrip() {
-        val d = WeiboApi.TopicDetail(
+        val d = WeiboTopicApi.TopicDetail(
             topicId = "aaa111",
             title = "王一博",
             intro = "这里是简介",

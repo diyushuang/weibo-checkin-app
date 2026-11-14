@@ -75,7 +75,7 @@ object CookieLife {
     fun loginTimeOf(cookie: String): Long = parseCookieStamp(cookie, "SSOLoginState")
 
     private fun parseCookieStamp(cookie: String, key: String): Long {
-        val raw = WeiboApi.parseCookieString(cookie)[key]?.trim().orEmpty()
+        val raw = WeiboHttp.parseCookieString(cookie)[key]?.trim().orEmpty()
         if (raw.isEmpty() || !raw.all { it.isDigit() }) return 0L
         var value = raw.toLongOrNull() ?: return 0L
         if (value > 10_000_000_000L) value /= 1000        // 毫秒时间戳

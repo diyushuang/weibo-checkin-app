@@ -13,7 +13,7 @@ import org.junit.Test
  *
  * 1. [Crawler.slotsForPics]：picId → 槽位映射。槽位编号是「勾选抓取」与增量抓取
  *    在同一文件名上相遇的前提，编错号 = 同一张图落两份文件。
- * 2. [WeiboApi.sanitizeThumbUrl] / [WeiboApi.parseThumbUrls]：浏览页缩略图的
+ * 2. [WeiboImageUrl.sanitizeThumbUrl] / [WeiboImageUrl.parseThumbUrls]：浏览页缩略图的
  *    安全口径（https 强制 + 域名白名单）。
  */
 class PickCrawlTest {
@@ -135,26 +135,26 @@ class PickCrawlTest {
     fun `http thumb url is upgraded to https`() {
         assertEquals(
             "https://wx1.sinaimg.cn/orj360/abc.jpg",
-            WeiboApi.sanitizeThumbUrl("http://wx1.sinaimg.cn/orj360/abc.jpg"),
+            WeiboImageUrl.sanitizeThumbUrl("http://wx1.sinaimg.cn/orj360/abc.jpg"),
         )
     }
 
     @Test
     fun `https sinaimg url passes through`() {
         val u = "https://wx2.sinaimg.cn/orj360/abc.gif"
-        assertEquals(u, WeiboApi.sanitizeThumbUrl(u))
+        assertEquals(u, WeiboImageUrl.sanitizeThumbUrl(u))
     }
 
     @Test
     fun `foreign host is rejected`() {
-        assertNull(WeiboApi.sanitizeThumbUrl("https://evil.example.com/orj360/abc.jpg"))
+        assertNull(WeiboImageUrl.sanitizeThumbUrl("https://evil.example.com/orj360/abc.jpg"))
     }
 
     @Test
     fun `empty and garbage are rejected`() {
-        assertNull(WeiboApi.sanitizeThumbUrl(""))
-        assertNull(WeiboApi.sanitizeThumbUrl("   "))
-        assertNull(WeiboApi.sanitizeThumbUrl("not a url"))
+        assertNull(WeiboImageUrl.sanitizeThumbUrl(""))
+        assertNull(WeiboImageUrl.sanitizeThumbUrl("   "))
+        assertNull(WeiboImageUrl.sanitizeThumbUrl("not a url"))
     }
 
     // ---------- parseThumbUrls ----------
@@ -173,7 +173,7 @@ class PickCrawlTest {
                 "https://wx1.sinaimg.cn/orj360/p1.jpg",
                 "https://wx1.sinaimg.cn/orj360/p2.jpg",
             ),
-            WeiboApi.parseThumbUrls(mb),
+            WeiboImageUrl.parseThumbUrls(mb),
         )
     }
 
@@ -183,7 +183,7 @@ class PickCrawlTest {
             "pics",
             JSONArray().put(JSONObject().put("pid", "abc")),
         )
-        val thumbs = WeiboApi.parseThumbUrls(mb)
+        val thumbs = WeiboImageUrl.parseThumbUrls(mb)
         assertEquals(1, thumbs.size)
         assertTrue(thumbs[0].endsWith("/orj360/abc.jpg"))
         assertTrue(thumbs[0].startsWith("https://wx"))
@@ -197,12 +197,12 @@ class PickCrawlTest {
                 .put(JSONObject().put("url", "https://evil.example.com/x.jpg"))
                 .put(JSONObject().put("url", "https://wx1.sinaimg.cn/orj360/ok.jpg")),
         )
-        assertEquals(listOf("https://wx1.sinaimg.cn/orj360/ok.jpg"), WeiboApi.parseThumbUrls(mb))
+        assertEquals(listOf("https://wx1.sinaimg.cn/orj360/ok.jpg"), WeiboImageUrl.parseThumbUrls(mb))
     }
 
     @Test
     fun `missing pics yields empty list`() {
-        assertTrue(WeiboApi.parseThumbUrls(JSONObject()).isEmpty())
-        assertFalse(WeiboApi.parseThumbUrls(JSONObject().put("pics", "not-an-array")).contains("x"))
+        assertTrue(WeiboImageUrl.parseThumbUrls(JSONObject()).isEmpty())
+        assertFalse(WeiboImageUrl.parseThumbUrls(JSONObject().put("pics", "not-an-array")).contains("x"))
     }
 }

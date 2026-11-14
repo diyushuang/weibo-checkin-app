@@ -156,13 +156,13 @@ class LoginWebViewActivity : AppCompatActivity() {
      *
      * 注意：`passport.sina.cn` / `login.sina.com.cn` 这类新浪护照域是登录链路的
      * 必经一跳（跨域分发会话），拦掉它就等于拦掉登录态写回 `.weibo.cn` 的最后一步
-     * （完整白名单口径见 [WeiboApi.isLoginHost]）。
+     * （完整白名单口径见 [WeiboHttp.isLoginHost]）。
      * 顺带把少量仍指向 http 的 302 升级到 https，而不是直接判死。
      */
     private fun blockNavigation(view: WebView, uri: Uri): Boolean {
         val scheme = uri.scheme?.lowercase().orEmpty()
         val host = uri.host?.lowercase().orEmpty()
-        if (host.isNotEmpty() && WeiboApi.isLoginHost(host)) {
+        if (host.isNotEmpty() && WeiboHttp.isLoginHost(host)) {
             if (scheme == "https") return false
             if (scheme == "http") {
                 view.loadUrl(uri.buildUpon().scheme("https").build().toString())
@@ -240,12 +240,12 @@ class LoginWebViewActivity : AppCompatActivity() {
         // 下标固定：0=passport 1=weibo.com 2=m.weibo.cn，后面的顺序只是为了显式表达优先级
         val byDomain = listOf(
             "https://passport.weibo.com", "https://weibo.com", "https://m.weibo.cn"
-        ).map { url -> WeiboApi.parseCookieString(cm.getCookie(url).orEmpty()) }
+        ).map { url -> WeiboHttp.parseCookieString(cm.getCookie(url).orEmpty()) }
 
         fun merge(order: List<Int>): String {
             val merged = LinkedHashMap<String, String>()
             order.forEach { idx -> byDomain[idx].forEach { (k, v) -> merged[k] = v } }
-            return WeiboApi.cookieToString(merged)
+            return WeiboHttp.cookieToString(merged)
         }
 
         return listOf(
@@ -274,7 +274,7 @@ class LoginWebViewActivity : AppCompatActivity() {
     private fun pollLogin() {
         if (finished || busy || isFinishing || isDestroyed) return
 
-        val candidates = cookieVariants().filter { looksLoggedIn(WeiboApi.parseCookieString(it)) }
+        val candidates = cookieVariants().filter { looksLoggedIn(WeiboHttp.parseCookieString(it)) }
         if (candidates.isEmpty()) {
             // 还没登录（或只是访客态）：保持静默轮询
             handler.postDelayed(::pollLogin, POLL_MS)
@@ -298,13 +298,13 @@ class LoginWebViewActivity : AppCompatActivity() {
         // 25 秒」的裸 Thread；回调也不再依赖 runOnUiThread。
         lifecycleScope.launch {
             val (verified, reason) = withContext(Dispatchers.IO) {
-                var ok: WeiboApi.Verify? = null
+                var ok: WeiboAuthApi.Verify? = null
                 var why: String? = null
                 for (cookie in candidates) {
                     try {
                         // 登录轮询必须看实时状态：verify 有 90s 结果缓存，
                         // 进登录页前刚做过探活时会直接命中旧结果，判出「假登录」
-                        val v = WeiboApi.verify(cookie, force = true)
+                        val v = WeiboAuthApi.verify(cookie, force = true)
                         if (v.login) {
                             ok = v
                             break
@@ -323,7 +323,7 @@ class LoginWebViewActivity : AppCompatActivity() {
         }
     }
 
-    private fun onVerified(verify: WeiboApi.Verify) {
+    private fun onVerified(verify: WeiboAuthApi.Verify) {
         if (finished) return
         busy = true
         setStatus(getString(R.string.login_found_verifying))
@@ -335,7 +335,7 @@ class LoginWebViewActivity : AppCompatActivity() {
             // 把探活已经拿到的 uid 传进去：即使 /api/config 这次没回 uid，也能靠它去
             // Web 端把昵称取回来（旧实现只读 data.screen_name，常年是空串）
             val profile = withContext(Dispatchers.IO) {
-                WeiboApi.fetchProfile(verify.cookie, verify.uid)
+                WeiboAuthApi.fetchProfile(verify.cookie, verify.uid)
             }
             val uid = profile.second.ifEmpty { verify.uid }
             busy = false

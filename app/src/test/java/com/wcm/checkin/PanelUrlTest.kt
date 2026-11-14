@@ -19,7 +19,7 @@ class PanelUrlTest {
     @Test
     fun publicHttp_isRejected() {
         val e = runCatching { PanelUrl.parse("http://panel.example.com") }.exceptionOrNull()
-        assertTrue(e is WeiboApi.WeiboException)
+        assertTrue(e is WeiboHttp.WeiboException)
         assertTrue(e!!.message!!.contains("https"))
     }
 
@@ -59,7 +59,7 @@ class PanelUrlTest {
     fun invalidInputs_areRejectedWithReadableMessage() {
         listOf("", "   ", "panel.example.com", "ftp://a.example.com", "https://").forEach { raw ->
             val e = runCatching { PanelUrl.parse(raw) }.exceptionOrNull()
-            assertTrue("应拒绝：[$raw]", e is WeiboApi.WeiboException)
+            assertTrue("应拒绝：[$raw]", e is WeiboHttp.WeiboException)
             assertTrue("消息不应为空：[$raw]", !e!!.message.isNullOrBlank())
         }
     }

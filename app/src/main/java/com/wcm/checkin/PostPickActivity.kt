@@ -164,7 +164,7 @@ class PostPickActivity : AppCompatActivity() {
             val result = runCatching {
                 val cookie = Crawler.pickCrawlCookie(this@PostPickActivity, AccountStore.load(ctx), {})
                     ?: throw IllegalStateException(ctx.getString(R.string.browse_need_cookie))
-                WeiboApi.fetchPostDetail(cookie, bid)
+                WeiboPostApi.fetchPostDetail(cookie, bid)
             }
             withContext(Dispatchers.Main) {
                 if (isFinishing || isDestroyed) return@withContext
@@ -216,11 +216,11 @@ class PostPickActivity : AppCompatActivity() {
         picIds.forEach { pid ->
             val p = infos[pid]
             val type = p?.optString("type", "") ?: ""
-            val thumbUrl = WeiboApi.sanitizeThumbUrl(p?.optString("url", "").orEmpty())
-                ?: WeiboApi.thumbnailUrl(pid)
-            val fullUrl = WeiboApi.sanitizeThumbUrl(
+            val thumbUrl = WeiboImageUrl.sanitizeThumbUrl(p?.optString("url", "").orEmpty())
+                ?: WeiboImageUrl.thumbnailUrl(pid)
+            val fullUrl = WeiboImageUrl.sanitizeThumbUrl(
                 p?.optJSONObject("large")?.optString("url", "").orEmpty(),
-            ) ?: WeiboApi.originalImageUrl(pid)
+            ) ?: WeiboImageUrl.originalImageUrl(pid)
             items.add(
                 PicItem(
                     picId = pid,

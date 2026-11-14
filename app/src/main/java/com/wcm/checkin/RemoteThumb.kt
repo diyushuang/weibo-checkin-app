@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
  * ## 为什么 v0.9.13 之前是一屏空白
  *
  * sinaimg 有热链保护：**浏览器型 UA + 没有 Referer 一律 403**（实测响应体约 150 字节
- * `text/html`）。本类以前只发了 `User-Agent`（[WeiboApi.UA]，iPhone Safari 口径），
+ * `text/html`）。本类以前只发了 `User-Agent`（[WeiboHttp.UA]，iPhone Safari 口径），
  * 于是九宫格缩略图与长按大图 **100% 拿不到字节**：解码器拿到的是 HTML，采样解码
  * 直接返回 null，界面停在 `@color/image_placeholder` 的占位色上，长按弹「加载失败」。
  * 现在补 `Referer: https://m.weibo.cn/`（实测 200 image/jpeg；换成非浏览器 UA 也行，
@@ -38,7 +38,7 @@ import java.util.concurrent.TimeUnit
  * 只在卡片进入可见区时才发起、离屏即取消，卡片内的格子按顺序逐张来 —— 滚动时是
  * 「一格一格出现」，而不是一屏几十个请求一起挤 CDN。
  *
- * 所有 URL 必须过 [WeiboApi.weiboUrl] 白名单 —— 缩略图接口虽然在 L0 档，
+ * 所有 URL 必须过 [WeiboHttp.weiboUrl] 白名单 —— 缩略图接口虽然在 L0 档，
  * 安全口径与原图下载完全一致（https + 微博域）。
  */
 object RemoteThumb {
@@ -61,7 +61,7 @@ object RemoteThumb {
     private val io = Dispatchers.IO.limitedParallelism(4)
 
     /** 大图可能是 2MB+，用比接口更宽的 callTimeout（接口那套 25s 对 2MB 偏紧）。 */
-    private val client = WeiboApi.client.newBuilder()
+    private val client = WeiboHttp.client.newBuilder()
         .callTimeout(45, TimeUnit.SECONDS)
         .build()
 
@@ -99,8 +99,8 @@ object RemoteThumb {
     private fun fetch(rawUrl: String, maxBytes: Int): ByteArray? {
         return try {
             val req = okhttp3.Request.Builder()
-                .url(WeiboApi.weiboUrl(rawUrl))
-                .header("User-Agent", WeiboApi.UA)
+                .url(WeiboHttp.weiboUrl(rawUrl))
+                .header("User-Agent", WeiboHttp.UA)
                 .header("Referer", REFERER)
                 .header("Accept", "image/*,*/*;q=0.8")
                 .build()

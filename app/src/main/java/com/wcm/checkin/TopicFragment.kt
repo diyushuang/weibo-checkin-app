@@ -102,7 +102,7 @@ class TopicFragment : Fragment() {
     data class TopicRow(
         val uid: String,
         val accountName: String,
-        val topic: WeiboApi.Topic,
+        val topic: WeiboTopicApi.Topic,
     )
 
     companion object {
@@ -236,13 +236,13 @@ class TopicFragment : Fragment() {
     /** 拉一个账号的超话列表并落缓存；失败只写错误，不清掉上次的数据。 */
     private suspend fun loadAccount(ctx: Context, acc: AccountStore.Account) {
         try {
-            val verify = WeiboApi.verify(acc.cookie)
+            val verify = WeiboAuthApi.verify(acc.cookie)
             if (!verify.login) {
                 TopicStore.saveError(ctx, acc.uid, ctx.getString(R.string.home_cookie_dead))
                 return
             }
             rotateCookie(ctx, acc.uid, verify.cookie)
-            val topics = WeiboApi.listTopics(verify.cookie)
+            val topics = WeiboTopicApi.listTopics(verify.cookie)
             TopicStore.save(ctx, acc.uid, topics)
         } catch (e: CancellationException) {
             // 取消不是失败：不拦住就会被写成「Job was cancelled」并落盘，
@@ -428,7 +428,7 @@ class TopicFragment : Fragment() {
         return merged.values.toList()
     }
 
-    private fun matchFilter(topic: WeiboApi.Topic): Boolean = when (filter) {
+    private fun matchFilter(topic: WeiboTopicApi.Topic): Boolean = when (filter) {
         Filter.ALL -> true
         Filter.PENDING -> !topic.done
         Filter.DONE -> topic.done
@@ -520,11 +520,11 @@ class TopicFragment : Fragment() {
                 if (acc == null) {
                     error = "账号已不存在"
                 } else {
-                    val verify = WeiboApi.verify(acc.cookie)
+                    val verify = WeiboAuthApi.verify(acc.cookie)
                     if (!verify.login) {
                         error = ctx.getString(R.string.home_cookie_dead)
                     } else {
-                        val detail = WeiboApi.fetchTopicDetail(verify.cookie, topicId)
+                        val detail = WeiboTopicApi.fetchTopicDetail(verify.cookie, topicId)
                         TopicStore.saveDetail(ctx, detail)
                     }
                 }
@@ -610,21 +610,21 @@ class TopicFragment : Fragment() {
                 if (acc == null) {
                     message = "账号已不存在"
                 } else {
-                    val verify = WeiboApi.verify(acc.cookie)
+                    val verify = WeiboAuthApi.verify(acc.cookie)
                     if (!verify.login) {
                         message = ctx.getString(R.string.home_cookie_dead)
                     } else {
                         rotateCookie(ctx, acc.uid, verify.cookie)
                         var scheme = row.topic.scheme
                         if (scheme.isNullOrEmpty()) {
-                            val fresh = WeiboApi.listTopics(verify.cookie)
+                            val fresh = WeiboTopicApi.listTopics(verify.cookie)
                             TopicStore.save(ctx, acc.uid, fresh)
                             scheme = fresh.firstOrNull { it.key == row.topic.key }?.scheme
                         }
                         if (scheme.isNullOrEmpty()) {
                             message = ctx.getString(R.string.topic_copied_none)
                         } else {
-                            val result = WeiboApi.signDetailed(verify.cookie, scheme, verify.st)
+                            val result = WeiboTopicApi.signDetailed(verify.cookie, scheme, verify.st)
                             message = if (result.ok) {
                                 if (result.summary.isNotEmpty()) {
                                     ctx.getString(R.string.topic_checkin_ok_fmt, result.summary)
@@ -915,8 +915,8 @@ class TopicFragment : Fragment() {
                 }
             }
 
-            private fun bindBadge(ctx: Context, topic: WeiboApi.Topic) {
-                val tier = WeiboApi.topicLevelTier(topic.level)
+            private fun bindBadge(ctx: Context, topic: WeiboTopicApi.Topic) {
+                val tier = WeiboTopicApi.topicLevelTier(topic.level)
                 if (tier == 0) {
                     badge.visibility = View.GONE
                     return

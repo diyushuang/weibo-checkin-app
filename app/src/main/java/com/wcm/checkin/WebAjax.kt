@@ -65,11 +65,11 @@ object WebAjax {
      * 相册墙一页。
      *
      * [sinceId] 传空串表示第一页（最新的）。游标来自上一页返回的 `since_id`。
-     * 失败抛 [WeiboApi.WeiboException]，由调用方决定是否回落到时间线模式。
+     * 失败抛 [WeiboHttp.WeiboException]，由调用方决定是否回落到时间线模式。
      */
     fun imageWall(uid: String, sinceId: String): WallPage {
         val identity = GuestSession.cookie()
-            ?: throw WeiboApi.WeiboException(
+            ?: throw WeiboHttp.WeiboException(
                 "游客身份不可用" + (GuestSession.lastError?.let { "：$it" } ?: ""),
                 identitySuspect = true,
             )
@@ -109,7 +109,7 @@ object WebAjax {
      */
     fun statusShow(mid: String): JSONObject {
         val identity = GuestSession.cookie()
-            ?: throw WeiboApi.WeiboException(
+            ?: throw WeiboHttp.WeiboException(
                 "游客身份不可用" + (GuestSession.lastError?.let { "：$it" } ?: ""),
                 identitySuspect = true,
             )
@@ -121,7 +121,7 @@ object WebAjax {
 
     private fun get(url: String, referer: String, identity: String, what: String): JSONObject {
         val req = Request.Builder().url(url)
-            .header("User-Agent", WeiboApi.WEB_UA)
+            .header("User-Agent", WeiboHttp.WEB_UA)
             .header("Referer", referer)
             .header("Accept", "application/json, text/plain, */*")
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
@@ -132,7 +132,7 @@ object WebAjax {
             val body = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
                 // 403 + 「请登录后使用」是登录墙；432 是风控。两者都算身份问题
-                throw WeiboApi.WeiboException(
+                throw WeiboHttp.WeiboException(
                     "$what 请求失败：HTTP ${resp.code}",
                     httpCode = resp.code,
                     identitySuspect = true,
@@ -141,7 +141,7 @@ object WebAjax {
             val payload = try {
                 JSONObject(body)
             } catch (e: Exception) {
-                throw WeiboApi.WeiboException(
+                throw WeiboHttp.WeiboException(
                     "$what 响应不是 JSON（前 60 字：${body.trim().take(60)}）",
                     identitySuspect = true,
                 )
@@ -151,7 +151,7 @@ object WebAjax {
                 // HTTP 200 + ok=0 是微博最常见的拒绝方式（"请先登录"、"身份异常"）。
                 // 这里不置 identitySuspect 的话，Crawler 的「刷新游客身份再重试」
                 // 永远不会触发 —— 一次登录墙就让整轮相册抓取退化成时间线模式。
-                throw WeiboApi.WeiboException(
+                throw WeiboHttp.WeiboException(
                     "$what 接口拒绝：$msg",
                     identitySuspect = IDENTITY_MSG.any { msg.contains(it) },
                 )

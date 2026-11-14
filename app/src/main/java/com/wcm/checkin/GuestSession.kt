@@ -227,7 +227,7 @@ object GuestSession {
             .build()
         val req = Request.Builder().url(GEN_VISITOR)
             .post(body)
-            .header("User-Agent", WeiboApi.WEB_UA)
+            .header("User-Agent", WeiboHttp.WEB_UA)
             .header("Referer", WEB_HOME)
             .header("Origin", "https://weibo.com")
             .header("Accept", "*/*")
@@ -264,7 +264,7 @@ object GuestSession {
             (if (tip.subp.isEmpty()) "" else "&sp=${enc(tip.subp)}") +
             "&from=weibo&_rand=${Random.nextDouble()}&url=${enc(WEB_HOME)}"
         val req = Request.Builder().url(url)
-            .header("User-Agent", WeiboApi.WEB_UA)
+            .header("User-Agent", WeiboHttp.WEB_UA)
             .header("Referer", WEB_HOME)
             .header("Accept", "*/*")
             .build()
@@ -315,7 +315,7 @@ object GuestSession {
      */
     private fun probe(cookie: String): ProbeResult {
         val req = Request.Builder().url(PROBE_URL)
-            .header("User-Agent", WeiboApi.WEB_UA)
+            .header("User-Agent", WeiboHttp.WEB_UA)
             .header("Referer", WEB_HOME)
             .header("Accept", "application/json, text/plain, */*")
             .header("X-Requested-With", "XMLHttpRequest")

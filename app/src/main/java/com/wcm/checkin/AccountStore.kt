@@ -505,8 +505,8 @@ object AccountStore {
 
     /** 比较新旧 cookie，返回真正变化的登录关键字段。 */
     internal fun criticalChangedKeys(oldCookie: String, newCookie: String): List<String> {
-        val old = WeiboApi.parseCookieString(oldCookie)
-        val fresh = WeiboApi.parseCookieString(newCookie)
+        val old = WeiboHttp.parseCookieString(oldCookie)
+        val fresh = WeiboHttp.parseCookieString(newCookie)
         return LOGIN_CRITICAL_KEYS.filter { old[it] != fresh[it] }
     }
 

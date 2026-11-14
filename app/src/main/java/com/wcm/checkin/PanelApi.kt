@@ -23,7 +23,7 @@ object PanelApi {
      * `Authorization`，自定义头是原样转发的 —— 面板地址配错 / 面板被劫持时，
      * 令牌与 cookie 会被送到跳转目标去。
      */
-    private val client = WeiboApi.client.newBuilder()
+    private val client = WeiboHttp.client.newBuilder()
         .followRedirects(false)
         .followSslRedirects(false)
         .build()
@@ -73,7 +73,7 @@ object PanelApi {
                 return SyncResult(false, false, "", "invalid", detail)
             }
             if (!resp.isSuccessful) {
-                throw WeiboApi.WeiboException("面板返回 HTTP ${resp.code}")
+                throw WeiboHttp.WeiboException("面板返回 HTTP ${resp.code}")
             }
             val payload = JSONObject(text)
             return SyncResult(

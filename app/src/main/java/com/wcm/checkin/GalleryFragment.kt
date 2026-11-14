@@ -644,7 +644,7 @@ class GalleryFragment : Fragment() {
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val input = et.text?.toString() ?: ""
                 AppScope.launch {
-                    val uid = WeiboApi.resolveUid(input)
+                    val uid = WeiboAuthApi.resolveUid(input)
                     if (uid.isEmpty()) {
                         log("✗ 无法解析 UID：$input")
                         return@launch
@@ -652,7 +652,7 @@ class GalleryFragment : Fragment() {
                     // 昵称走游客身份也能拿到：没有登录账号时依然能把博主名显示出来
                     val accounts = AccountStore.load(ctx)
                     val cookie = if (accounts.isEmpty()) null else Crawler.pickCrawlCookie(requireContext(), accounts, ::log)
-                    val name = WeiboApi.fetchUserName(cookie, uid)
+                    val name = WeiboAuthApi.fetchUserName(cookie, uid)
                     AccountStore.addCrawlTarget(ctx, AccountStore.CrawlTarget(uid, name))
                     withContext(Dispatchers.Main) { renderTargets() }
                     log("✓ 已添加：${name.ifEmpty { uid }}（$uid）")
@@ -811,13 +811,13 @@ class GalleryFragment : Fragment() {
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val input = et.text?.toString() ?: ""
                 AppScope.launch {
-                    val bid = WeiboApi.parseBidFromInput(input)
+                    val bid = WeiboPostApi.parseBidFromInput(input)
                     if (bid.isNotEmpty()) {
                         startSingle(ctx, bid)
                         return@launch
                     }
                     // 不是微博链接：当博主 UID 处理，拉最近微博供选择
-                    val uid = WeiboApi.resolveUid(input)
+                    val uid = WeiboAuthApi.resolveUid(input)
                     if (uid.isEmpty()) {
                         log("✗ 无法识别输入：$input")
                         return@launch
@@ -825,10 +825,10 @@ class GalleryFragment : Fragment() {
                     val cookie = Crawler.pickCrawlCookie(ctx, AccountStore.load(ctx), ::log)
                         ?: return@launch
                     log("正在拉取博主 $uid 的最近微博…")
-                    val posts = ArrayList<WeiboApi.RawPost>()
+                    val posts = ArrayList<WeiboPostApi.RawPost>()
                     for (page in 1..2) {
                         try {
-                            val (_, list) = WeiboApi.fetchUserPosts(cookie, uid, page)
+                            val (_, list) = WeiboPostApi.fetchUserPosts(cookie, uid, page)
                             posts.addAll(list)
                             if (list.isEmpty()) break
                         } catch (e: Exception) {
@@ -846,9 +846,9 @@ class GalleryFragment : Fragment() {
     }
 
     /** 简单的微博选择器：时间 + 图数 + 置顶/转发标记 + 正文摘要，点选即抓。 */
-    private fun showPostPicker(posts: List<WeiboApi.RawPost>) {
+    private fun showPostPicker(posts: List<WeiboPostApi.RawPost>) {
         val items = posts.map { p ->
-            val t = WeiboApi.parseWeiboTime(p.createdAt)
+            val t = WeiboPostApi.parseWeiboTime(p.createdAt)
             val whenStr = if (t != null) {
                 "${t.first.substring(5)} ${t.second.substring(0, 5)}"
             } else {

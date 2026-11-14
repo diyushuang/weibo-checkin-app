@@ -28,7 +28,7 @@ object TopicStore {
     data class Snapshot(
         val uid: String,
         val at: Long = 0L,
-        val topics: List<WeiboApi.Topic> = emptyList(),
+        val topics: List<WeiboTopicApi.Topic> = emptyList(),
         val error: String = "",
     ) {
         val total: Int get() = topics.size
@@ -107,7 +107,7 @@ object TopicStore {
     }
 
     /** 写入一次成功拉取的结果。 */
-    fun save(ctx: Context, uid: String, topics: List<WeiboApi.Topic>, at: Long = System.currentTimeMillis()) {
+    fun save(ctx: Context, uid: String, topics: List<WeiboTopicApi.Topic>, at: Long = System.currentTimeMillis()) {
         if (uid.isEmpty()) return
         ensureLoaded(ctx)
         val snap = Snapshot(uid = uid, at = at, topics = topics, error = "")
@@ -145,12 +145,12 @@ object TopicStore {
      * 列表 bind 时每行都要读一次详情：原先每次都走 prefs 取串 + JSON 解析，
      * 滚动几屏就是几百次解析，全在 UI 线程上。缓存有上限，超出按写入顺序丢最旧的。
      */
-    private val detailCache = object : LinkedHashMap<String, WeiboApi.TopicDetail>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, WeiboApi.TopicDetail>?): Boolean =
+    private val detailCache = object : LinkedHashMap<String, WeiboTopicApi.TopicDetail>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, WeiboTopicApi.TopicDetail>?): Boolean =
             size > DETAIL_CACHE_MAX
     }
 
-    fun detail(ctx: Context, topicId: String): WeiboApi.TopicDetail? {
+    fun detail(ctx: Context, topicId: String): WeiboTopicApi.TopicDetail? {
         if (topicId.isEmpty()) return null
         synchronized(detailCache) { detailCache[topicId] }?.let { return it }
         val raw = SafePrefs.string(prefs(ctx), DETAIL_PREFIX + topicId)
@@ -160,7 +160,7 @@ object TopicStore {
         return parsed
     }
 
-    fun saveDetail(ctx: Context, d: WeiboApi.TopicDetail) {
+    fun saveDetail(ctx: Context, d: WeiboTopicApi.TopicDetail) {
         if (d.topicId.isEmpty()) return
         synchronized(detailCache) { detailCache[d.topicId] = d }
         val p = prefs(ctx)
@@ -261,13 +261,13 @@ object TopicStore {
             val o = JSONObject(raw)
             if (o.optInt("v", 0) != VERSION) return null
             val arr = o.optJSONArray("topics") ?: JSONArray()
-            val topics = ArrayList<WeiboApi.Topic>(arr.length())
+            val topics = ArrayList<WeiboTopicApi.Topic>(arr.length())
             for (i in 0 until arr.length()) {
                 val t = arr.optJSONObject(i) ?: continue
                 val name = t.optString("name", "")
                 if (name.isEmpty()) continue
                 topics.add(
-                    WeiboApi.Topic(
+                    WeiboTopicApi.Topic(
                         name = name,
                         scheme = null,               // 签到链接不落盘，必须刷新后才有
                         done = t.optInt("dn", 0) == 1,
@@ -283,7 +283,7 @@ object TopicStore {
         }
     }
 
-    fun serializeDetail(d: WeiboApi.TopicDetail): String {
+    fun serializeDetail(d: WeiboTopicApi.TopicDetail): String {
         val stats = JSONArray()
         d.stats.forEach { stats.put(it) }
         return JSONObject()
@@ -297,7 +297,7 @@ object TopicStore {
             .toString()
     }
 
-    fun deserializeDetail(topicId: String, raw: String): WeiboApi.TopicDetail? {
+    fun deserializeDetail(topicId: String, raw: String): WeiboTopicApi.TopicDetail? {
         if (raw.isEmpty()) return null
         return try {
             val o = JSONObject(raw)
@@ -308,7 +308,7 @@ object TopicStore {
                 val s = arr.optString(i, "")
                 if (s.isNotEmpty()) stats.add(s)
             }
-            WeiboApi.TopicDetail(
+            WeiboTopicApi.TopicDetail(
                 topicId = topicId,
                 title = o.optString("t", ""),
                 intro = o.optString("intro", ""),

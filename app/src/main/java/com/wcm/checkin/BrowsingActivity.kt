@@ -58,8 +58,8 @@ import kotlinx.coroutines.withContext
 @Suppress("NotifyDataSetChanged")
 class BrowsingActivity : AppCompatActivity() {
 
-    private val posts = ArrayList<WeiboApi.RawPost>()
-    private val visible = ArrayList<WeiboApi.RawPost>()
+    private val posts = ArrayList<WeiboPostApi.RawPost>()
+    private val visible = ArrayList<WeiboPostApi.RawPost>()
     private val selectedBids = LinkedHashSet<String>()
     private val adapter = PostAdapter()
 
@@ -304,7 +304,7 @@ class BrowsingActivity : AppCompatActivity() {
      * 传的是同一帖的小图清单，翻页就能在整帖里来回看；尺寸段由预览页自己换成
      * `large`（这里的小图是 orj360，直接放大会糊）。
      */
-    private fun openPreview(post: WeiboApi.RawPost, at: Int) {
+    private fun openPreview(post: WeiboPostApi.RawPost, at: Int) {
         val urls = post.thumbs.take(MAX_TILES)
         if (urls.isEmpty()) return
         RemotePreviewActivity.start(this, urls, at)
@@ -338,7 +338,7 @@ class BrowsingActivity : AppCompatActivity() {
 
         AppScope.launch {
             try {
-                val resolved = WeiboApi.resolveUid(input)
+                val resolved = WeiboAuthApi.resolveUid(input)
                 if (resolved.isEmpty()) {
                     failList(getString(R.string.browse_resolve_fail, input))
                     return@launch
@@ -355,7 +355,7 @@ class BrowsingActivity : AppCompatActivity() {
                         return@launch
                     }
                 // 昵称：游客身份优先，取不到用 UID 兜底
-                val name = WeiboApi.fetchUserName(cookie, resolved).ifEmpty { resolved }
+                val name = WeiboAuthApi.fetchUserName(cookie, resolved).ifEmpty { resolved }
                 withContext(Dispatchers.Main) {
                     if (isFinishing || isDestroyed) return@withContext
                     toolbar.subtitle = "$name · $resolved"
@@ -385,7 +385,7 @@ class BrowsingActivity : AppCompatActivity() {
      */
     private suspend fun fetchOnePage(cookie: String): Boolean {
         WeiboThrottle.await(KEY_BROWSE_PAGE, 700)
-        val (_, list) = WeiboApi.fetchUserPosts(cookie, uid, page + 1)
+        val (_, list) = WeiboPostApi.fetchUserPosts(cookie, uid, page + 1)
         if (list.isEmpty()) {
             withContext(Dispatchers.Main) { hasMore = false }
             return false
@@ -652,7 +652,7 @@ class BrowsingActivity : AppCompatActivity() {
             /** 当前是否在可见区内（RecyclerView 的 attach 状态，与 bind 是两条时间线）。 */
             private var attached = false
 
-            fun bind(post: WeiboApi.RawPost) {
+            fun bind(post: WeiboPostApi.RawPost) {
                 cancelThumbs()
                 meta.text = buildString {
                     append(metaLine(post))
@@ -705,10 +705,10 @@ class BrowsingActivity : AppCompatActivity() {
                 cancelThumbs()
             }
 
-            private fun metaLine(post: WeiboApi.RawPost): String {
-                val t = WeiboApi.parseWeiboTime(post.createdAt)
+            private fun metaLine(post: WeiboPostApi.RawPost): String {
+                val t = WeiboPostApi.parseWeiboTime(post.createdAt)
                 val whenStr = t?.let { "${it.first.substring(5)} ${it.second.substring(0, 5)}" } ?: "未知时间"
-                val doneCount = post.thumbs.count { CrawlMarks.hasPic(WeiboApi.pidFromImageUrl(it)) }
+                val doneCount = post.thumbs.count { CrawlMarks.hasPic(WeiboImageUrl.pidFromImageUrl(it)) }
                 val tags = buildList {
                     if (post.pinned) add(getString(R.string.browse_meta_pinned))
                     if (post.isRetweet) {
@@ -754,7 +754,7 @@ class BrowsingActivity : AppCompatActivity() {
              * **这里只摆格子、登记待加载清单，不发起请求** —— 真正的下载由
              * [startThumbs] 在卡片进入可见区后按顺序一格一格来。
              */
-            private fun fillPics(post: WeiboApi.RawPost) {
+            private fun fillPics(post: WeiboPostApi.RawPost) {
                 pics.removeAllViews()
                 val thumbs = post.thumbs
                 if (thumbs.isEmpty() || thumbPx <= 0) {
@@ -796,7 +796,7 @@ class BrowsingActivity : AppCompatActivity() {
                     }
                     iv.tag = url
                     cell.addView(iv)
-                    if (CrawlMarks.hasPic(WeiboApi.pidFromImageUrl(url))) cell.addView(doneBadge(ctx))
+                    if (CrawlMarks.hasPic(WeiboImageUrl.pidFromImageUrl(url))) cell.addView(doneBadge(ctx))
                     pics.addView(cell)
                     jobs.add(iv to url)
                 }
@@ -853,7 +853,7 @@ class BrowsingActivity : AppCompatActivity() {
 
         // ---- 旋转 / 深浅色切换的恢复现场 ----
         //
-        // `WeiboApi.RawPost` 不是 Parcelable，塞不进 Bundle；而重建一次就重跑一遍
+        // `WeiboPostApi.RawPost` 不是 Parcelable，塞不进 Bundle；而重建一次就重跑一遍
         // `resolveUid` + 最多 3 页请求（还覆盖用户输入、丢筛选与勾选）显然不可接受。
         // 所以列表本体放在进程级静态字段（配置变更时天然还在），Bundle 只存标量；
         // 进程被杀后静态字段为空，那时按恢复出来的 uid 重新翻页。
@@ -867,7 +867,7 @@ class BrowsingActivity : AppCompatActivity() {
         private const val KEY_INPUT = "browse_input"
         private const val KEY_SCROLL = "browse_scroll"
 
-        @Volatile private var keptPosts: List<WeiboApi.RawPost>? = null
+        @Volatile private var keptPosts: List<WeiboPostApi.RawPost>? = null
         @Volatile private var keptUid: String = ""
         @Volatile private var keptPage: Int = 0
         @Volatile private var keptHasMore: Boolean = true

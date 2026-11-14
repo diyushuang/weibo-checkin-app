@@ -167,7 +167,7 @@ class HomeFragment : Fragment() {
     }
 
     private data class TopicState(
-        val topics: List<WeiboApi.Topic> = emptyList(),
+        val topics: List<WeiboTopicApi.Topic> = emptyList(),
         /**
          * 这份状态的取得时刻（epoch ms；0 = 没有时间戳）。
          *
@@ -614,9 +614,9 @@ class HomeFragment : Fragment() {
             var fixed = 0
             pending.forEach { acc ->
                 try {
-                    val verify = WeiboApi.verify(acc.cookie)
+                    val verify = WeiboAuthApi.verify(acc.cookie)
                     if (!verify.login) return@forEach
-                    val name = WeiboApi.fetchProfile(verify.cookie, acc.uid).first
+                    val name = WeiboAuthApi.fetchProfile(verify.cookie, acc.uid).first
                     if (name.isEmpty()) return@forEach
                     AccountStore.markVerified(
                         ctx, acc.uid, verify.cookie, name = name,
@@ -1090,7 +1090,7 @@ class HomeFragment : Fragment() {
                     if (index > 0) delay(800)
                     val label = acc.name.ifEmpty { acc.uid }
                     val verify = try {
-                        WeiboApi.verify(acc.cookie)
+                        WeiboAuthApi.verify(acc.cookie)
                     } catch (e: Exception) {
                         null
                     }
@@ -1114,7 +1114,7 @@ class HomeFragment : Fragment() {
                     }
                     updateCookieAndName(ctx, acc.uid, verify.cookie)
                     val topics = try {
-                        WeiboApi.listTopics(verify.cookie)
+                        WeiboTopicApi.listTopics(verify.cookie)
                     } catch (e: Exception) {
                         setTopicState(
                             acc.uid,
@@ -1171,7 +1171,7 @@ class HomeFragment : Fragment() {
         val current = AccountStore.load(ctx).firstOrNull { it.uid == uid } ?: return
         if (AccountStore.needsNameResolve(current)) {
             // 传 uid 进去：Web 端资料接口直接按 uid 查，不再依赖 /api/config 回昵称
-            name = WeiboApi.fetchProfile(cookie, uid).first
+            name = WeiboAuthApi.fetchProfile(cookie, uid).first
         }
         AccountStore.markVerified(ctx, uid, cookie, name = name)
     }
@@ -1259,7 +1259,7 @@ class HomeFragment : Fragment() {
         val name = acc.name.ifEmpty { acc.uid }
         log("── $name ──")
         val verify = try {
-            WeiboApi.verify(acc.cookie)
+            WeiboAuthApi.verify(acc.cookie)
         } catch (e: Exception) {
             noteResult(ctx, acc, "探活失败：${e.message}")
             log("  ✗ 探活失败：${e.message}")
@@ -1280,7 +1280,7 @@ class HomeFragment : Fragment() {
             loginAt = verify.loginAt,
         )
         try {
-            val topics = WeiboApi.listTopics(acc.cookie)
+            val topics = WeiboTopicApi.listTopics(acc.cookie)
             val pending = topics.filter { !it.done }
             log("  ${topics.size} 个超话，${topics.size - pending.size} 已签，待签 ${pending.size}")
             setTopicState(acc.uid, TopicState(topics = topics, atMs = System.currentTimeMillis()))
@@ -1291,7 +1291,7 @@ class HomeFragment : Fragment() {
             for (topic in pending) {
                 delay(Random.nextLong(3000, 8000))
                 try {
-                    if (WeiboApi.sign(acc.cookie, topic.scheme ?: "", verify.st)) {
+                    if (WeiboTopicApi.sign(acc.cookie, topic.scheme ?: "", verify.st)) {
                         ok++; log("  ✓ ${topic.name}")
                     } else {
                         fail++; log("  ✗ ${topic.name}")
@@ -1363,7 +1363,7 @@ class HomeFragment : Fragment() {
         topicJob = AppScope.launch {
             try {
                 val verify = try {
-                    WeiboApi.verify(acc.cookie)
+                    WeiboAuthApi.verify(acc.cookie)
                 } catch (e: Exception) {
                     null
                 }
@@ -1382,7 +1382,7 @@ class HomeFragment : Fragment() {
                     return@launch
                 }
                 updateCookieAndName(ctx, uid, verify.cookie)
-                val topics = WeiboApi.listTopics(verify.cookie)
+                val topics = WeiboTopicApi.listTopics(verify.cookie)
                 setTopicState(uid, TopicState(topics = topics, atMs = System.currentTimeMillis()))
                 TopicStore.save(ctx, uid, topics)
                 log("  ${topics.size} 个超话，已签 ${topics.count { it.done }}")
@@ -1406,7 +1406,7 @@ class HomeFragment : Fragment() {
      * 超话清单：**全部超话逐条列出**并标注已签/待签。
      * 已签项勾选且不可再选（防重复签到），待签项可勾选后一次性补签。
      */
-    private fun presentTopics(uid: String, st: String?, topics: List<WeiboApi.Topic>) {
+    private fun presentTopics(uid: String, st: String?, topics: List<WeiboTopicApi.Topic>) {
         if (!isAdded || topics.isEmpty()) {
             if (isAdded && topics.isEmpty()) {
                 MaterialAlertDialogBuilder(requireContext())
@@ -1427,7 +1427,7 @@ class HomeFragment : Fragment() {
             R.string.home_topic_list_summary, topics.size, done, topics.size - done,
         )
 
-        val pendingBoxes = ArrayList<Pair<WeiboApi.Topic, MaterialCheckBox>>()
+        val pendingBoxes = ArrayList<Pair<WeiboTopicApi.Topic, MaterialCheckBox>>()
         topics.forEach { topic ->
             val box = MaterialCheckBox(ctx)
             if (topic.done) {
@@ -1468,7 +1468,7 @@ class HomeFragment : Fragment() {
      * 勾选补签：与主签到同节奏（3-8 秒随机间隔）。补完只重拉超话状态，
      * **不同步面板**（同步是独立动作，见 [syncOnly]）。
      */
-    private fun resignTopics(uid: String, st: String?, topics: List<WeiboApi.Topic>) {
+    private fun resignTopics(uid: String, st: String?, topics: List<WeiboTopicApi.Topic>) {
         if (topics.isEmpty()) return
         if (busy) {
             if (taskJob?.isActive == true) {
@@ -1494,7 +1494,7 @@ class HomeFragment : Fragment() {
                 var cookie = acc.cookie
                 var freshSt = st
                 try {
-                    val v = WeiboApi.verify(cookie)
+                    val v = WeiboAuthApi.verify(cookie)
                     if (v.login) {
                         cookie = v.cookie
                         if (!v.st.isNullOrEmpty()) freshSt = v.st
@@ -1517,7 +1517,7 @@ class HomeFragment : Fragment() {
                 for (topic in topics) {
                     delay(Random.nextLong(3000, 8000))
                     try {
-                        if (WeiboApi.sign(cookie, topic.scheme ?: "", freshSt)) {
+                        if (WeiboTopicApi.sign(cookie, topic.scheme ?: "", freshSt)) {
                             ok++; log("  ✓ ${topic.name}")
                         } else {
                             fail++; log("  ✗ ${topic.name}")
@@ -1594,7 +1594,7 @@ class HomeFragment : Fragment() {
                 for (acc in accounts) {
                     log("── ${acc.name.ifEmpty { acc.uid }} ──")
                     try {
-                        val verify = WeiboApi.verify(acc.cookie)
+                        val verify = WeiboAuthApi.verify(acc.cookie)
                         if (!verify.login) {
                             noteResult(ctx, acc, ctx.getString(R.string.home_cookie_dead))
                             AccountStore.markDead(ctx, acc.uid)

@@ -23,26 +23,26 @@ object PanelUrl {
         val isPrivateHost: Boolean,
     )
 
-    /** @throws WeiboApi.WeiboException 地址非法或违反明文策略时抛出，消息可直接展示给用户。 */
+    /** @throws WeiboHttp.WeiboException 地址非法或违反明文策略时抛出，消息可直接展示给用户。 */
     fun parse(raw: String): Parsed {
         val trimmed = raw.trim().trimEnd('/')
-        if (trimmed.isEmpty()) throw WeiboApi.WeiboException("未配置面板地址")
+        if (trimmed.isEmpty()) throw WeiboHttp.WeiboException("未配置面板地址")
         val uri = try {
             URI(trimmed)
         } catch (e: Exception) {
-            throw WeiboApi.WeiboException("面板地址格式不正确：$trimmed")
+            throw WeiboHttp.WeiboException("面板地址格式不正确：$trimmed")
         }
         val scheme = uri.scheme?.lowercase()
-            ?: throw WeiboApi.WeiboException("面板地址要带 http:// 或 https://")
+            ?: throw WeiboHttp.WeiboException("面板地址要带 http:// 或 https://")
         if (scheme != "http" && scheme != "https") {
-            throw WeiboApi.WeiboException("面板地址只支持 http/https：$scheme")
+            throw WeiboHttp.WeiboException("面板地址只支持 http/https：$scheme")
         }
         val host = uri.host?.lowercase()?.trimEnd('.')
-        if (host.isNullOrEmpty()) throw WeiboApi.WeiboException("面板地址缺少主机名：$trimmed")
+        if (host.isNullOrEmpty()) throw WeiboHttp.WeiboException("面板地址缺少主机名：$trimmed")
 
         val priv = isPrivateHost(host)
         if (scheme == "http" && !priv) {
-            throw WeiboApi.WeiboException("公网面板必须用 https：$host（明文会泄露登录态）")
+            throw WeiboHttp.WeiboException("公网面板必须用 https：$host（明文会泄露登录态）")
         }
         return Parsed(trimmed, scheme, host, priv)
     }

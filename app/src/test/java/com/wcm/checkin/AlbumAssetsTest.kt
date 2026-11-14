@@ -76,7 +76,7 @@ class AlbumAssetsTest {
         val mb = JSONObject()
             .put("pic_num", 0)
             .put("pics", JSONArray().put(JSONObject().put("pid", "a")))
-        assertEquals(1, WeiboApi.cardPicNum(mb))
+        assertEquals(1, WeiboPostApi.cardPicNum(mb))
     }
 
     @Test
@@ -84,7 +84,7 @@ class AlbumAssetsTest {
         val ids = JSONArray()
         (1..18).forEach { ids.put("pid$it") }
         val mb = JSONObject().put("pic_num", 0).put("pic_ids", ids)
-        assertEquals(18, WeiboApi.cardPicNum(mb))
+        assertEquals(18, WeiboPostApi.cardPicNum(mb))
     }
 
     @Test
@@ -92,13 +92,13 @@ class AlbumAssetsTest {
         val mb = JSONObject()
             .put("pic_num", 18)
             .put("pics", JSONArray().put(JSONObject()).put(JSONObject()))
-        assertEquals(18, WeiboApi.cardPicNum(mb))
+        assertEquals(18, WeiboPostApi.cardPicNum(mb))
     }
 
     @Test
     fun `纯文字帖仍然是 0`() {
         val mb = JSONObject().put("pic_num", 0)
-        assertEquals(0, WeiboApi.cardPicNum(mb))
+        assertEquals(0, WeiboPostApi.cardPicNum(mb))
         assertFalse(mb.has("pics"))
     }
 }

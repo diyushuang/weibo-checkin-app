@@ -40,7 +40,7 @@ object WeiboPasswordLogin {
         "https://weibo.com/ajaxlogin.php?framelogin=1&callback=parent.sinaSSOController.feedBackUrlCallBack"
     private const val MAX_CALLBACKS = 6
 
-    private const val UA = WeiboApi.WEB_UA
+    private const val UA = WeiboHttp.WEB_UA
 
     /** 需要人工处理（验证码 / 二次验证 / 扫码）。 */
     private val NEEDS_MANUAL_CODES = setOf(
@@ -105,7 +105,7 @@ object WeiboPasswordLogin {
         }
 
         val jar = MemoryJar()
-        val client = WeiboApi.client.newBuilder()
+        val client = WeiboHttp.client.newBuilder()
             .cookieJar(jar)
             .followRedirects(true)
             .followSslRedirects(true)
@@ -202,8 +202,8 @@ object WeiboPasswordLogin {
         if (merged.isEmpty()) return fail(ReloginPolicy.CODE_VERIFY_FAILED, retcode)
 
         val verify = try {
-            WeiboApi.verify(merged, force = true)
-        } catch (e: WeiboApi.WeiboException) {
+            WeiboAuthApi.verify(merged, force = true)
+        } catch (e: WeiboHttp.WeiboException) {
             val code = if (e.httpCode == 429 || e.httpCode == 432 || e.httpCode == 403) {
                 ReloginPolicy.CODE_RISK_CONTROL
             } else if (e.httpCode > 0) {
@@ -220,7 +220,7 @@ object WeiboPasswordLogin {
         if (!verify.login) return fail(ReloginPolicy.CODE_VERIFY_FAILED, retcode)
 
         val serverExpires = listOf(
-            WeiboApi.serverExpiryFromHeaders(expiries, verify.cookie),
+            WeiboHttp.serverExpiryFromHeaders(expiries, verify.cookie),
             verify.serverExpiresAt,
         ).filter { it > 0L }.minOrNull() ?: 0L
         val loginAt = verify.loginAt.takeIf { it > 0L } ?: System.currentTimeMillis()
@@ -278,7 +278,7 @@ object WeiboPasswordLogin {
                     } catch (e: Exception) {
                         ""
                     }
-                    if (host.isNotEmpty() && WeiboApi.isLoginHost(host)) out.add(https)
+                    if (host.isNotEmpty() && WeiboHttp.isLoginHost(host)) out.add(https)
                 }
 
                 is JSONObject -> any.keys().forEach { push(any.opt(it)) }

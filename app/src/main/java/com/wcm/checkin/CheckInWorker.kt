@@ -58,7 +58,7 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
                 // （后台跑，用户下次打开 App 就不再看到「（未获取到昵称）」）
                 val name = if (AccountStore.needsNameResolve(account)) {
                     try {
-                        WeiboApi.fetchProfile(cookie, account.uid).first
+                        WeiboAuthApi.fetchProfile(cookie, account.uid).first
                     } catch (e: Exception) {
                         ""
                     }
@@ -108,7 +108,7 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
                         }
                     }
 
-                    val verify = WeiboApi.verify(acc.cookie, force = true)
+                    val verify = WeiboAuthApi.verify(acc.cookie, force = true)
                     if (verify.login) {
                         acc.lastResult = acc.lastResult.ifEmpty { "后台保活 ✓" }
                         markAlive(acc, verify.cookie, verify.loginAt, verify.serverExpiresAt)
@@ -122,7 +122,7 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
                         }
                         val again = if (outcome.ok) {
                             try {
-                                WeiboApi.verify(fresh.cookie, force = true)
+                                WeiboAuthApi.verify(fresh.cookie, force = true)
                             } catch (e: Exception) {
                                 null
                             }
@@ -144,7 +144,7 @@ class CheckInWorker(context: Context, params: WorkerParameters) :
                 } catch (e: Exception) {
                     // 网络抖动/风控：记下原因供界面展示，但绝不判失效（断网不是掉登录）
                     val reason = when (e) {
-                        is WeiboApi.WeiboException ->
+                        is WeiboHttp.WeiboException ->
                             if (e.httpCode == 429 || e.httpCode == 432 || e.httpCode == 403) {
                                 "被微博风控拦截（HTTP ${e.httpCode}）"
                             } else {

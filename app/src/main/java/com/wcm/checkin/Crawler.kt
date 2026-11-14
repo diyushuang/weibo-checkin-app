@@ -128,7 +128,7 @@ object Crawler {
     private val LIVE_WRAPPER = "https://video.weibo.com/media/play?livephoto="
 
     /** 大文件下载专用 client：Live mov 可达 64MB，放宽全局 client 的 25s callTimeout。 */
-    private val downloadClient = WeiboApi.client.newBuilder()
+    private val downloadClient = WeiboHttp.client.newBuilder()
         .callTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .build()
@@ -246,7 +246,7 @@ object Crawler {
         accounts.forEachIndexed { index, acc ->
             val label = acc.name.ifEmpty { acc.uid }
             try {
-                val v = WeiboApi.verify(acc.cookie)
+                val v = WeiboAuthApi.verify(acc.cookie)
                 if (v.login) {
                     if (index > 0) log("抓图身份回退到「$label」")
                     // 探活已经证明这个 cookie 可用、也顺手拿到了轮换后的新 cookie：
@@ -280,7 +280,7 @@ object Crawler {
         }
         withCrawlContext(ctx, treeUriRaw, log) { state ->
             val detail = try {
-                WeiboApi.fetchPostDetail(cookie, bid)
+                WeiboPostApi.fetchPostDetail(cookie, bid)
             } catch (e: Exception) {
                 log("✗ 详情获取失败：${e.message}")
                 return@withCrawlContext
@@ -411,7 +411,7 @@ object Crawler {
                     break
                 }
                 val detail = try {
-                    WeiboApi.fetchPostDetail(cookie, task.bid)
+                    WeiboPostApi.fetchPostDetail(cookie, task.bid)
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -747,7 +747,7 @@ object Crawler {
                         return WebAjax.imageWall(uid, atCursor)
                     } catch (e: Exception) {
                         val reason = e.message ?: e.javaClass.simpleName
-                        val suspect = e is WeiboApi.WeiboException && e.identitySuspect
+                        val suspect = e is WeiboHttp.WeiboException && e.identitySuspect
                         if (attempt == 0 && suspect && !guest.refreshed) {
                             guest.refreshed = true
                             log("  · 游客身份可能已失效（$reason），刷新后重试")
@@ -890,7 +890,7 @@ object Crawler {
                     break
                 } catch (e: Exception) {
                     val reason = e.message ?: e.javaClass.simpleName
-                    val suspect = e is WeiboApi.WeiboException && e.identitySuspect
+                    val suspect = e is WeiboHttp.WeiboException && e.identitySuspect
                     if (attempt == 0 && suspect && !guest.refreshed) {
                         guest.refreshed = true
                         log("  · 游客身份可能已失效（$reason），刷新后重试 $mid")
@@ -913,7 +913,7 @@ object Crawler {
             val cookie = account()
             if (cookie != null) {
                 try {
-                    val mDetail = WeiboApi.fetchPostDetail(cookie, mid)
+                    val mDetail = WeiboPostApi.fetchPostDetail(cookie, mid)
                     val mAssets = assetsFromDetail(mDetail)
                     if (assets == null || mAssets.picIds.size > assets.picIds.size) {
                         detail = mDetail
@@ -988,7 +988,7 @@ object Crawler {
 
     /** 动图直链是否落在微博域名白名单内。 */
     private fun videoAllowed(url: String): Boolean = try {
-        WeiboApi.weiboUrl(url)
+        WeiboHttp.weiboUrl(url)
         true
     } catch (e: Exception) {
         false
@@ -1293,7 +1293,7 @@ object Crawler {
         log: (String) -> Unit,
     ): (Int) -> CrawlPlanner.PageOutcome = { page ->
         try {
-            val (_, list) = WeiboApi.fetchUserPosts(cookie, uid, page)
+            val (_, list) = WeiboPostApi.fetchUserPosts(cookie, uid, page)
             CrawlPlanner.PageOutcome.ok(
                 page,
                 list.map { rp ->
@@ -1326,7 +1326,7 @@ object Crawler {
         onEvent: (CrawlEvent) -> Unit = {},
     ): Int {
         val detail = try {
-            WeiboApi.fetchPostDetail(cookie, postId)
+            WeiboPostApi.fetchPostDetail(cookie, postId)
         } catch (e: Exception) {
             // 什么都不写会让索引根本不知道这帖存在，而游标仍按「页」推进 →
             // 它落在覆盖区间内部，planNew/planHistory 都判「已覆盖」跳过，永不补抓。
@@ -1361,7 +1361,7 @@ object Crawler {
     }
 
     private fun epochOf(createdAt: String): Long {
-        val t = WeiboApi.parseWeiboTime(createdAt) ?: return 0L
+        val t = WeiboPostApi.parseWeiboTime(createdAt) ?: return 0L
         return CrawlDate.epochSecOf(t.first, t.second) ?: 0L
     }
 
@@ -1422,7 +1422,7 @@ object Crawler {
             val r = saveOne(
                 state, postId, slot, CrawlIndex.Kind.STILL,
                 picId, name, "image/jpeg", log,
-            ) { fetchBytes(WeiboApi.originalImageUrl(picId), name, log) }
+            ) { fetchBytes(WeiboImageUrl.originalImageUrl(picId), name, log) }
             return when (r) {
                 SlotResult.SAVED -> {
                     failed.remove(slot); true
@@ -1653,7 +1653,7 @@ object Crawler {
     /** 单次下载尝试：返回 (字节, 失败原因)。成功时原因为空串。 */
     private fun tryDownload(rawUrl: String): Pair<ByteArray?, String> {
         return try {
-            val url = WeiboApi.weiboUrl(rawUrl)
+            val url = WeiboHttp.weiboUrl(rawUrl)
             val request = okhttp3.Request.Builder()
                 .url(url)
                 .header("User-Agent", "okhttp")

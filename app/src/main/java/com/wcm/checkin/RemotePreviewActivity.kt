@@ -35,7 +35,7 @@ import kotlinx.coroutines.withContext
  *
  * 关键取舍：
  * - **尺寸段**：列表里的小图是 `orj360`（最长边 360），直接放大是一张糊图。
- *   这里统一用 [WeiboApi.fullFromThumb] 换到 `large` 段（原分辨率）；
+ *   这里统一用 [WeiboImageUrl.fullFromThumb] 换到 `large` 段（原分辨率）；
  *   换不出来（非 sinaimg 地址）才退回缩略图地址。
  * - **并发闸门**：`large` 单张可达 2MB+，解出来 12-16MB。快速连滑会同时解出十几张，
  *   低端机直接 OOM —— 用 [Semaphore] 限 2 路（当前页 + 预取下一页）。
@@ -126,7 +126,7 @@ class RemotePreviewActivity : AppCompatActivity() {
         val pos = pager.currentItem
         if (pos !in urls.indices) return
         // 这张抓过没有：计数后面跟一个「已抓取」，不额外占一块界面（v0.9.18）
-        val done = CrawlMarks.hasPic(WeiboApi.pidFromImageUrl(urls[pos]))
+        val done = CrawlMarks.hasPic(WeiboImageUrl.pidFromImageUrl(urls[pos]))
         tvIndex.text = if (done) {
             getString(R.string.preview_index_done_fmt, pos + 1, urls.size)
         } else {
@@ -171,7 +171,7 @@ class RemotePreviewActivity : AppCompatActivity() {
                 zoomView.tag = url
                 job?.cancel()
                 job = lifecycleScope.launch(Dispatchers.IO) {
-                    val big = WeiboApi.fullFromThumb(url).ifEmpty { url }
+                    val big = WeiboImageUrl.fullFromThumb(url).ifEmpty { url }
                     val bmp = try {
                         fullLoadSlot.withPermit { RemoteThumb.loadFull(big) }
                     } catch (e: CancellationException) {

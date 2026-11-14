@@ -15,7 +15,7 @@ class WeiboApiPureTest {
 
     @Test
     fun parseWeiboTime_valid() {
-        val t = WeiboApi.parseWeiboTime("Thu Oct 22 15:27:12 +0800 2026")
+        val t = WeiboPostApi.parseWeiboTime("Thu Oct 22 15:27:12 +0800 2026")
         assertNotNull(t)
         assertEquals("2026-10-22", t!!.first)
         assertEquals("15:27:12", t.second)
@@ -24,34 +24,34 @@ class WeiboApiPureTest {
 
     @Test
     fun parseWeiboTime_invalid() {
-        assertNull(WeiboApi.parseWeiboTime("2026-10-22 15:27:12"))
-        assertNull(WeiboApi.parseWeiboTime("Thu Oct 22 2026"))
+        assertNull(WeiboPostApi.parseWeiboTime("2026-10-22 15:27:12"))
+        assertNull(WeiboPostApi.parseWeiboTime("Thu Oct 22 2026"))
     }
 
     // ---------- 正文摘要 ----------
 
     @Test
     fun summarize_stripsHtmlAndEntities() {
-        assertEquals("hello a&b", WeiboApi.summarize("hello&nbsp;<a>a&amp;b</a>"))
-        assertEquals("纯 文本", WeiboApi.summarize("  纯\t文本  "))   // \t 折叠为单个空格
+        assertEquals("hello a&b", WeiboPostApi.summarize("hello&nbsp;<a>a&amp;b</a>"))
+        assertEquals("纯 文本", WeiboPostApi.summarize("  纯\t文本  "))   // \t 折叠为单个空格
     }
 
     @Test
     fun summarize_truncatesTo90() {
-        assertEquals(91, WeiboApi.summarize("x".repeat(200)).length)   // 90 字 + 省略号
+        assertEquals(91, WeiboPostApi.summarize("x".repeat(200)).length)   // 90 字 + 省略号
     }
 
     // ---------- 单条微博标识解析 ----------
 
     @Test
     fun parseBidFromInput_variants() {
-        assertEquals("RnQI2A5sU", WeiboApi.parseBidFromInput("https://m.weibo.cn/detail/RnQI2A5sU"))
-        assertEquals("RnQI2A5sU", WeiboApi.parseBidFromInput("https://m.weibo.cn/status/RnQI2A5sU?f=1"))
-        assertEquals("RnQI2A5sU", WeiboApi.parseBidFromInput("https://weibo.com/1234567/RnQI2A5sU"))
-        assertEquals("AbCd12345", WeiboApi.parseBidFromInput("AbCd12345"))
-        assertEquals("5356841628600820", WeiboApi.parseBidFromInput("5356841628600820"))
-        assertEquals("", WeiboApi.parseBidFromInput("https://m.weibo.cn/u/123456"))
-        assertEquals("", WeiboApi.parseBidFromInput("不是链接也不是ID"))
+        assertEquals("RnQI2A5sU", WeiboPostApi.parseBidFromInput("https://m.weibo.cn/detail/RnQI2A5sU"))
+        assertEquals("RnQI2A5sU", WeiboPostApi.parseBidFromInput("https://m.weibo.cn/status/RnQI2A5sU?f=1"))
+        assertEquals("RnQI2A5sU", WeiboPostApi.parseBidFromInput("https://weibo.com/1234567/RnQI2A5sU"))
+        assertEquals("AbCd12345", WeiboPostApi.parseBidFromInput("AbCd12345"))
+        assertEquals("5356841628600820", WeiboPostApi.parseBidFromInput("5356841628600820"))
+        assertEquals("", WeiboPostApi.parseBidFromInput("https://m.weibo.cn/u/123456"))
+        assertEquals("", WeiboPostApi.parseBidFromInput("不是链接也不是ID"))
     }
 
     // ---------- cookie 工具 ----------
@@ -59,8 +59,8 @@ class WeiboApiPureTest {
     @Test
     fun cookie_roundtrip() {
         val raw = "SUB=abc123; SUBP=def; SCF=x"
-        assertEquals(raw, WeiboApi.cookieToString(WeiboApi.parseCookieString(raw)))
-        assertEquals(emptyMap<String, String>(), WeiboApi.parseCookieString("垃圾串无等号"))
+        assertEquals(raw, WeiboHttp.cookieToString(WeiboHttp.parseCookieString(raw)))
+        assertEquals(emptyMap<String, String>(), WeiboHttp.parseCookieString("垃圾串无等号"))
     }
 
     // ---------- 出站 URL 白名单（安全约束：仅微博域，拒绝其余 host 与私网 IP） ----------
@@ -69,27 +69,27 @@ class WeiboApiPureTest {
     fun weiboUrl_acceptsWeiboHosts() {
         assertEquals(
             "https://wx1.sinaimg.cn/large/a.jpg",
-            WeiboApi.weiboUrl("https://wx1.sinaimg.cn/large/a.jpg"),
+            WeiboHttp.weiboUrl("https://wx1.sinaimg.cn/large/a.jpg"),
         )
         assertEquals(
             "https://video.weibo.com/media/play?livephoto=x",
-            WeiboApi.weiboUrl("https://video.weibo.com/media/play?livephoto=x"),
+            WeiboHttp.weiboUrl("https://video.weibo.com/media/play?livephoto=x"),
         )
     }
 
     @Test
     fun weiboUrl_rejectsForeignAndPrivateHosts() {
-        assertThrows(WeiboApi.WeiboException::class.java) {
-            WeiboApi.weiboUrl("https://evil.example.com/steal.jpg")
+        assertThrows(WeiboHttp.WeiboException::class.java) {
+            WeiboHttp.weiboUrl("https://evil.example.com/steal.jpg")
         }
-        assertThrows(WeiboApi.WeiboException::class.java) {
-            WeiboApi.weiboUrl("http://192.168.1.1/internal")
+        assertThrows(WeiboHttp.WeiboException::class.java) {
+            WeiboHttp.weiboUrl("http://192.168.1.1/internal")
         }
-        assertThrows(WeiboApi.WeiboException::class.java) {
-            WeiboApi.weiboUrl("http://127.0.0.1:8000/")
+        assertThrows(WeiboHttp.WeiboException::class.java) {
+            WeiboHttp.weiboUrl("http://127.0.0.1:8000/")
         }
-        assertThrows(WeiboApi.WeiboException::class.java) {
-            WeiboApi.weiboUrl("ftp://m.weibo.cn/a")
+        assertThrows(WeiboHttp.WeiboException::class.java) {
+            WeiboHttp.weiboUrl("ftp://m.weibo.cn/a")
         }
     }
 
@@ -97,7 +97,7 @@ class WeiboApiPureTest {
 
     @Test
     fun parseSignResponse_successWithRankAndExp() {
-        val r = WeiboApi.parseSignResponse(
+        val r = WeiboTopicApi.parseSignResponse(
             """{"code":"100000","data":{"alert_title":"签到第12名","alert_subtitle":"经验+8"}}"""
         )
         assertTrue(r.ok)
@@ -108,14 +108,14 @@ class WeiboApiPureTest {
 
     @Test
     fun parseSignResponse_acceptsOkAndResultFlags() {
-        assertTrue(WeiboApi.parseSignResponse("""{"ok":1}""").ok)
-        assertTrue(WeiboApi.parseSignResponse("""{"result":1}""").ok)
-        assertTrue(WeiboApi.parseSignResponse("""{"result":"1"}""").ok)
+        assertTrue(WeiboTopicApi.parseSignResponse("""{"ok":1}""").ok)
+        assertTrue(WeiboTopicApi.parseSignResponse("""{"result":1}""").ok)
+        assertTrue(WeiboTopicApi.parseSignResponse("""{"result":"1"}""").ok)
     }
 
     @Test
     fun parseSignResponse_failureKeepsMessage() {
-        val r = WeiboApi.parseSignResponse("""{"ok":0,"msg":"今天已经签到过了"}""")
+        val r = WeiboTopicApi.parseSignResponse("""{"ok":0,"msg":"今天已经签到过了"}""")
         assertFalse(r.ok)
         assertEquals("今天已经签到过了", r.msg)
         assertEquals("", r.summary)
@@ -123,7 +123,7 @@ class WeiboApiPureTest {
 
     @Test
     fun parseSignResponse_nonJsonIsFailure() {
-        val r = WeiboApi.parseSignResponse("<html>blocked</html>")
+        val r = WeiboTopicApi.parseSignResponse("<html>blocked</html>")
         assertFalse(r.ok)
         assertTrue(r.msg.contains("blocked"))
     }
@@ -133,81 +133,81 @@ class WeiboApiPureTest {
     @Test
     fun isLoginHost_allowsWeiboAndSinaSso() {
         // 微博自家域
-        assertTrue(WeiboApi.isLoginHost("passport.weibo.com"))
-        assertTrue(WeiboApi.isLoginHost("m.weibo.cn"))
-        assertTrue(WeiboApi.isLoginHost("weibo.com"))
+        assertTrue(WeiboHttp.isLoginHost("passport.weibo.com"))
+        assertTrue(WeiboHttp.isLoginHost("m.weibo.cn"))
+        assertTrue(WeiboHttp.isLoginHost("weibo.com"))
         // 新浪 SSO：wapsso 把登录态写回 .weibo.cn 的必经一跳，拦掉会停在半登录态
-        assertTrue(WeiboApi.isLoginHost("login.sina.com.cn"))
-        assertTrue(WeiboApi.isLoginHost("passport.sina.com.cn"))
-        assertTrue(WeiboApi.isLoginHost("sina.com.cn"))
+        assertTrue(WeiboHttp.isLoginHost("login.sina.com.cn"))
+        assertTrue(WeiboHttp.isLoginHost("passport.sina.com.cn"))
+        assertTrue(WeiboHttp.isLoginHost("sina.com.cn"))
         // .cn 护照域：实测漏掉它就会卡在「已拦截跳转：passport.sina.cn」
-        assertTrue(WeiboApi.isLoginHost("passport.sina.cn"))
-        assertTrue(WeiboApi.isLoginHost("login.sina.cn"))
-        assertTrue(WeiboApi.isLoginHost("sina.cn"))
+        assertTrue(WeiboHttp.isLoginHost("passport.sina.cn"))
+        assertTrue(WeiboHttp.isLoginHost("login.sina.cn"))
+        assertTrue(WeiboHttp.isLoginHost("sina.cn"))
         // 大小写 / 结尾点号不影响判定
-        assertTrue(WeiboApi.isLoginHost("Login.Sina.Com.CN."))
+        assertTrue(WeiboHttp.isLoginHost("Login.Sina.Com.CN."))
     }
 
     @Test
     fun isLoginHost_rejectsLookalikesAndOthers() {
-        assertFalse(WeiboApi.isLoginHost(""))
-        assertFalse(WeiboApi.isLoginHost("example.com"))
-        assertFalse(WeiboApi.isLoginHost("evil-sina.com.cn"))     // 前缀伪装
-        assertFalse(WeiboApi.isLoginHost("sina.com.cn.evil.com")) // 后缀伪装
-        assertFalse(WeiboApi.isLoginHost("weibo.com.evil.com"))
-        assertFalse(WeiboApi.isLoginHost("notweibo.cn"))
+        assertFalse(WeiboHttp.isLoginHost(""))
+        assertFalse(WeiboHttp.isLoginHost("example.com"))
+        assertFalse(WeiboHttp.isLoginHost("evil-sina.com.cn"))     // 前缀伪装
+        assertFalse(WeiboHttp.isLoginHost("sina.com.cn.evil.com")) // 后缀伪装
+        assertFalse(WeiboHttp.isLoginHost("weibo.com.evil.com"))
+        assertFalse(WeiboHttp.isLoginHost("notweibo.cn"))
     }
 
     @Test
     fun isWeiboHost_staysStrictForOutboundApi() {
         // 出口白名单不能被登录白名单放宽：cookie 只允许发往微博自家人域名
-        assertFalse(WeiboApi.isWeiboHost("login.sina.com.cn"))
-        assertTrue(WeiboApi.isWeiboHost("m.weibo.cn"))
+        assertFalse(WeiboHttp.isWeiboHost("login.sina.com.cn"))
+        assertTrue(WeiboHttp.isWeiboHost("m.weibo.cn"))
     }
 
     // ---------- data.login 宽松解析（v0.9.2） ----------
 
     @Test
     fun parseLoginFlag_acceptsBooleanNumberAndString() {
-        assertTrue(WeiboApi.parseLoginFlag(true))
-        assertTrue(WeiboApi.parseLoginFlag(1))
-        assertTrue(WeiboApi.parseLoginFlag(1L))
-        assertTrue(WeiboApi.parseLoginFlag("1"))
-        assertTrue(WeiboApi.parseLoginFlag("true"))
-        assertTrue(WeiboApi.parseLoginFlag(" TRUE "))
+        assertTrue(WeiboAuthApi.parseLoginFlag(true))
+        assertTrue(WeiboAuthApi.parseLoginFlag(1))
+        assertTrue(WeiboAuthApi.parseLoginFlag(1L))
+        assertTrue(WeiboAuthApi.parseLoginFlag("1"))
+        assertTrue(WeiboAuthApi.parseLoginFlag("true"))
+        assertTrue(WeiboAuthApi.parseLoginFlag(" TRUE "))
     }
 
     @Test
     fun parseLoginFlag_treatsEverythingElseAsNotLoggedIn() {
-        assertFalse(WeiboApi.parseLoginFlag(null))
-        assertFalse(WeiboApi.parseLoginFlag(false))
-        assertFalse(WeiboApi.parseLoginFlag(0))
-        assertFalse(WeiboApi.parseLoginFlag("false"))
-        assertFalse(WeiboApi.parseLoginFlag("0"))
-        assertFalse(WeiboApi.parseLoginFlag(org.json.JSONObject()))
+        assertFalse(WeiboAuthApi.parseLoginFlag(null))
+        assertFalse(WeiboAuthApi.parseLoginFlag(false))
+        assertFalse(WeiboAuthApi.parseLoginFlag(0))
+        assertFalse(WeiboAuthApi.parseLoginFlag("false"))
+        assertFalse(WeiboAuthApi.parseLoginFlag("0"))
+        assertFalse(WeiboAuthApi.parseLoginFlag(org.json.JSONObject()))
     }
 
     // ---------- 签到响应判定（v0.9.6：对齐面板口径） ----------
 
     @Test
     fun parseSignResponse_countsFlagSuccess() {
-        assertTrue(WeiboApi.parseSignResponse("""{"ok":1}""").ok)
-        assertTrue(WeiboApi.parseSignResponse("""{"ok":"1"}""").ok)
-        assertTrue(WeiboApi.parseSignResponse("""{"result":1}""").ok)
-        assertTrue(WeiboApi.parseSignResponse("""{"code":"100000"}""").ok)
+        assertTrue(WeiboTopicApi.parseSignResponse("""{"ok":1}""").ok)
+        assertTrue(WeiboTopicApi.parseSignResponse("""{"ok":"1"}""").ok)
+        assertTrue(WeiboTopicApi.parseSignResponse("""{"result":1}""").ok)
+        assertTrue(WeiboTopicApi.parseSignResponse("""{"code":"100000"}""").ok)
     }
 
     @Test
     fun parseSignResponse_countsSuccessCopy() {
         // 微博对「今天已经签过」常回 ok=0 + 文案写着已签到：这是成功，不是失败
-        assertTrue(WeiboApi.parseSignResponse("""{"ok":0,"msg":"今天已签到"}""").ok)
-        assertTrue(WeiboApi.parseSignResponse("""{"ok":0,"msg":"签到成功，经验 +8"}""").ok)
-        assertTrue(WeiboApi.parseSignResponse("""{"ok":0,"msg":"今天已簽到"}""").ok)
+        assertTrue(WeiboTopicApi.parseSignResponse("""{"ok":0,"msg":"今天已签到"}""").ok)
+        assertTrue(WeiboTopicApi.parseSignResponse("""{"ok":0,"msg":"签到成功，经验 +8"}""").ok)
+        assertTrue(WeiboTopicApi.parseSignResponse("""{"ok":0,"msg":"今天已簽到"}""").ok)
     }
 
     @Test
     fun parseSignResponse_plainFailureStaysFailure() {
-        val r = WeiboApi.parseSignResponse("""{"ok":0,"msg":"系统繁忙，请稍后再试"}""")
+        val r = WeiboTopicApi.parseSignResponse("""{"ok":0,"msg":"系统繁忙，请稍后再试"}""")
         assertFalse(r.ok)
         assertEquals("系统繁忙，请稍后再试", r.msg)
         assertFalse(r.needsVerifyRetry)
@@ -215,26 +215,26 @@ class WeiboApiPureTest {
 
     @Test
     fun parseSignResponse_flagsVerifyRetry() {
-        val r = WeiboApi.parseSignResponse("""{"ok":0,"errno":100015,"msg":"验签失败"}""")
+        val r = WeiboTopicApi.parseSignResponse("""{"ok":0,"errno":100015,"msg":"验签失败"}""")
         assertFalse(r.ok)
         assertEquals(100015, r.errno)
         assertTrue(r.needsVerifyRetry)
 
         // errno 可能是字符串，也可能嵌在 data 里
-        val nested = WeiboApi.parseSignResponse("""{"ok":0,"data":{"errno":"100015"}}""")
+        val nested = WeiboTopicApi.parseSignResponse("""{"ok":0,"data":{"errno":"100015"}}""")
         assertEquals(100015, nested.errno)
         assertTrue(nested.needsVerifyRetry)
 
         // 已成功 / 其它错误码都不该触发重试
-        assertFalse(WeiboApi.parseSignResponse("""{"ok":1}""").needsVerifyRetry)
+        assertFalse(WeiboTopicApi.parseSignResponse("""{"ok":1}""").needsVerifyRetry)
         assertFalse(
-            WeiboApi.parseSignResponse("""{"ok":0,"errno":100001,"msg":"系统繁忙"}""").needsVerifyRetry
+            WeiboTopicApi.parseSignResponse("""{"ok":0,"errno":100001,"msg":"系统繁忙"}""").needsVerifyRetry
         )
     }
 
     @Test
     fun parseSignResponse_readsAlertCopy() {
-        val r = WeiboApi.parseSignResponse(
+        val r = WeiboTopicApi.parseSignResponse(
             """{"ok":1,"data":{"alert_title":"签到第 12 名","alert_subtitle":"经验 +8"}}"""
         )
         assertTrue(r.ok)
@@ -250,7 +250,7 @@ class WeiboApiPureTest {
             """{"ok":1,"data":{"login":true,"st":"5b6cb0","uid":"1904178193",
                "loginUrl":"https://passport.weibo.com/sso/signin"}}"""
         )
-        val p = WeiboApi.extractProfile(payload)
+        val p = WeiboAuthApi.extractProfile(payload)
         assertEquals("", p.name)
     }
 
@@ -262,7 +262,7 @@ class WeiboApiPureTest {
                "screen_name":"微博开放平台",
                "profile_image_url":"https://tvax3.sinaimg.cn/a.jpg"}}}"""
         )
-        val p = WeiboApi.extractProfile(payload)
+        val p = WeiboAuthApi.extractProfile(payload)
         assertEquals("微博开放平台", p.name)
         assertEquals("1904178193", p.uid)
         assertEquals("https://tvax3.sinaimg.cn/a.jpg", p.avatarUrl)
@@ -274,12 +274,12 @@ class WeiboApiPureTest {
         val lower = org.json.JSONObject(
             """{"ok":1,"data":{"userinfo":{"id":42,"screen_name":"小号甲"}}}"""
         )
-        assertEquals("小号甲", WeiboApi.extractProfile(lower).name)
+        assertEquals("小号甲", WeiboAuthApi.extractProfile(lower).name)
 
         val upper = org.json.JSONObject(
             """{"ok":1,"data":{"userInfo":{"id":43,"screen_name":"小号乙"}}}"""
         )
-        assertEquals("小号乙", WeiboApi.extractProfile(upper).name)
+        assertEquals("小号乙", WeiboAuthApi.extractProfile(upper).name)
     }
 
     /**
@@ -296,7 +296,7 @@ class WeiboApiPureTest {
                   "buttons":[{"name":"已签","scheme":""}]}
                ]}}"""
         )
-        val p = WeiboApi.extractProfile(payload)
+        val p = WeiboAuthApi.extractProfile(payload)
         assertEquals("", p.name)
         assertEquals("", p.uid)
     }
@@ -307,11 +307,11 @@ class WeiboApiPureTest {
         val userLike = org.json.JSONObject(
             """{"data":{"user":{"id":7,"name":"阿甲","followers_count":100}}}"""
         )
-        assertEquals("阿甲", WeiboApi.extractProfile(userLike).name)
-        assertEquals("7", WeiboApi.extractProfile(userLike).uid)
+        assertEquals("阿甲", WeiboAuthApi.extractProfile(userLike).name)
+        assertEquals("7", WeiboAuthApi.extractProfile(userLike).uid)
 
         val notUser = org.json.JSONObject("""{"data":{"name":"签到"}}""")
-        assertEquals("", WeiboApi.extractProfile(notUser).name)
+        assertEquals("", WeiboAuthApi.extractProfile(notUser).name)
     }
 
     // ---------- 缩略图 → 大图（v0.9.17） ----------
@@ -320,17 +320,17 @@ class WeiboApiPureTest {
     fun fullFromThumb_swapsSizeSegment() {
         assertEquals(
             "https://wx1.sinaimg.cn/large/0060jpg.jpg",
-            WeiboApi.fullFromThumb("https://wx1.sinaimg.cn/orj360/0060jpg.jpg"),
+            WeiboImageUrl.fullFromThumb("https://wx1.sinaimg.cn/orj360/0060jpg.jpg"),
         )
         // 尺寸段不总是 orj360：老帖/活动页是 mw690，按结构替换才不会漏
         assertEquals(
             "https://wx3.sinaimg.cn/large/abc.gif",
-            WeiboApi.fullFromThumb("https://wx3.sinaimg.cn/mw690/abc.gif"),
+            WeiboImageUrl.fullFromThumb("https://wx3.sinaimg.cn/mw690/abc.gif"),
         )
         // 已经是 large 的再换一次还是原样（幂等）
         assertEquals(
             "https://wx2.sinaimg.cn/large/abc.jpg",
-            WeiboApi.fullFromThumb("https://wx2.sinaimg.cn/large/abc.jpg"),
+            WeiboImageUrl.fullFromThumb("https://wx2.sinaimg.cn/large/abc.jpg"),
         )
     }
 
@@ -338,16 +338,16 @@ class WeiboApiPureTest {
     fun fullFromThumb_upgradesHttp() {
         assertEquals(
             "https://wx2.sinaimg.cn/large/abc.jpg",
-            WeiboApi.fullFromThumb("http://wx2.sinaimg.cn/thumbnail/abc.jpg"),
+            WeiboImageUrl.fullFromThumb("http://wx2.sinaimg.cn/thumbnail/abc.jpg"),
         )
     }
 
     @Test
     fun fullFromThumb_rejectsForeignOrMalformed() {
-        assertEquals("", WeiboApi.fullFromThumb("https://example.com/orj360/abc.jpg"))
-        assertEquals("", WeiboApi.fullFromThumb("https://wx1.sinaimg.cn/abc.jpg"))
-        assertEquals("", WeiboApi.fullFromThumb("https://wx1.sinaimg.cn/orj360/"))
-        assertEquals("", WeiboApi.fullFromThumb(""))
+        assertEquals("", WeiboImageUrl.fullFromThumb("https://example.com/orj360/abc.jpg"))
+        assertEquals("", WeiboImageUrl.fullFromThumb("https://wx1.sinaimg.cn/abc.jpg"))
+        assertEquals("", WeiboImageUrl.fullFromThumb("https://wx1.sinaimg.cn/orj360/"))
+        assertEquals("", WeiboImageUrl.fullFromThumb(""))
     }
 
     /** 查询串（`?from=...`）必须原样保留：去掉它 CDN 会给 403。 */
@@ -355,7 +355,7 @@ class WeiboApiPureTest {
     fun fullFromThumb_keepsQuery() {
         assertEquals(
             "https://wx1.sinaimg.cn/large/abc.jpg?from=timeline",
-            WeiboApi.fullFromThumb("https://wx1.sinaimg.cn/orj360/abc.jpg?from=timeline"),
+            WeiboImageUrl.fullFromThumb("https://wx1.sinaimg.cn/orj360/abc.jpg?from=timeline"),
         )
     }
 
@@ -363,24 +363,24 @@ class WeiboApiPureTest {
 
     @Test
     fun pidFromImageUrl_takesBasename() {
-        assertEquals("0060jpg", WeiboApi.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/0060jpg.jpg"))
-        assertEquals("abc", WeiboApi.pidFromImageUrl("https://wx3.sinaimg.cn/large/abc.jpg"))
-        assertEquals("abc", WeiboApi.pidFromImageUrl("https://wx3.sinaimg.cn/orj360/abc.gif"))
-        assertEquals("ABC", WeiboApi.pidFromImageUrl("https://wx2.sinaimg.cn/thumb300/ABC.JPG"))
+        assertEquals("0060jpg", WeiboImageUrl.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/0060jpg.jpg"))
+        assertEquals("abc", WeiboImageUrl.pidFromImageUrl("https://wx3.sinaimg.cn/large/abc.jpg"))
+        assertEquals("abc", WeiboImageUrl.pidFromImageUrl("https://wx3.sinaimg.cn/orj360/abc.gif"))
+        assertEquals("ABC", WeiboImageUrl.pidFromImageUrl("https://wx2.sinaimg.cn/thumb300/ABC.JPG"))
     }
 
     @Test
     fun pidFromImageUrl_stripsQueryAndFragment() {
-        assertEquals("abc", WeiboApi.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/abc.jpg?from=timeline"))
-        assertEquals("abc", WeiboApi.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/abc.jpg#x"))
-        assertEquals("abc", WeiboApi.pidFromImageUrl("  https://wx1.sinaimg.cn/orj360/abc.jpg  "))
+        assertEquals("abc", WeiboImageUrl.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/abc.jpg?from=timeline"))
+        assertEquals("abc", WeiboImageUrl.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/abc.jpg#x"))
+        assertEquals("abc", WeiboImageUrl.pidFromImageUrl("  https://wx1.sinaimg.cn/orj360/abc.jpg  "))
     }
 
     /** 没有扩展名 / 空串 / 只有目录：都返回空或原样基名，绝不返回整条 URL。 */
     @Test
     fun pidFromImageUrl_degradesSafely() {
-        assertEquals("", WeiboApi.pidFromImageUrl(""))
-        assertEquals("", WeiboApi.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/"))
-        assertEquals("abc", WeiboApi.pidFromImageUrl("abc"))
+        assertEquals("", WeiboImageUrl.pidFromImageUrl(""))
+        assertEquals("", WeiboImageUrl.pidFromImageUrl("https://wx1.sinaimg.cn/orj360/"))
+        assertEquals("abc", WeiboImageUrl.pidFromImageUrl("abc"))
     }
 }
