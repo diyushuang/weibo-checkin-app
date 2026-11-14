@@ -41,6 +41,28 @@ class AppSmokeTest {
     }
 
     @Test
+    fun shellNavigatesTabsAndBrowsingRoute() {
+        device.wait(Until.hasObject(By.text("首页")), 15_000)
+        device.findObject(By.text("超话")).click()
+        device.wait(Until.hasObject(By.text("全部")), 10_000)
+        assertNotNull(device.findObject(By.text("全部")))
+
+        device.findObject(By.text("图片")).click()
+        device.wait(Until.hasObject(By.text("图库预览")), 10_000)
+        assertNotNull(device.findObject(By.text("图库预览")))
+
+        device.swipe(540, 1800, 540, 900, 20)
+        device.wait(Until.hasObject(By.text("浏览博主抓图（预览 · 选图 · 批量）")), 5_000)
+        device.findObject(By.text("浏览博主抓图（预览 · 选图 · 批量）")).click()
+        device.wait(Until.hasObject(By.text("浏览博主")), 10_000)
+        assertNotNull(device.findObject(By.text("浏览博主")))
+
+        device.pressBack()
+        device.wait(Until.hasObject(By.text("浏览博主抓图（预览 · 选图 · 批量）")), 10_000)
+        assertNotNull(device.findObject(By.text("浏览博主抓图（预览 · 选图 · 批量）")))
+    }
+
+    @Test
     fun settingsTogglePersistsToPrefs() {
         device.wait(Until.hasObject(By.text("首页")), 15_000)
         activityRule.scenario.onActivity { it.selectSettingsTab() }
