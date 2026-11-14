@@ -23,9 +23,9 @@ class PickCrawlTest {
     private fun assets(
         picIds: List<String>,
         liveIdx: Set<Int> = emptySet(),
-    ): Crawler.PostAssets {
+    ): PostAssets {
         val live = liveIdx.associateWith { "https://video.weibo.com/media/play?livephoto=x" }
-        return Crawler.PostAssets(picIds, live, emptyList())
+        return PostAssets(picIds, live, emptyList())
     }
 
     @Test
@@ -69,9 +69,9 @@ class PickCrawlTest {
     fun `slot numbering matches incremental crawl`() {
         // 槽位口径必须与增量抓取共用：still i*2、paired i*2+1（Crawler.kt 槽位编码注释）。
         val a = assets(listOf("a", "b", "c", "d"), liveIdx = setOf(2))
-        assertEquals(Crawler.stillSlot(0), 0)
-        assertEquals(Crawler.stillSlot(2), 4)
-        assertEquals(Crawler.pairedLiveSlot(2), 5)
+        assertEquals(AssetSlots.still(0), 0)
+        assertEquals(AssetSlots.still(2), 4)
+        assertEquals(AssetSlots.pairedLive(2), 5)
         assertEquals(setOf(5), Crawler.slotsForPics(a, setOf("c")))
     }
 

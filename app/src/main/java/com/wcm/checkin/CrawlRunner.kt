@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 抓取单闸门：全应用同一时刻只允许一个抓取任务（增量 / 单条也算同一个）。
  *
  * 为什么必须有：首页签到后的自动抓图与图库页的手动抓取原本各跑各的，
- * 两个 [Crawler.TreeStore] 各自缓存目录名快照，同时写同一目录会撞名产生
+ * 两个 [SafTreeStore] 各自缓存目录名快照，同时写同一目录会撞名产生
  * `xxx (1).jpg` 副本；旧版进度是全量覆盖写，后结束的一轮会把先结束的进度盖回去。
  *
  * 采用**非阻塞**闸门（`tryLock`）：拿不到锁立即返回 [RunResult.Busy]，

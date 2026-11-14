@@ -39,188 +39,15 @@ import java.io.IOException
  */
 object Crawler {
 
-    /** SAF 相册目录：DocumentsContract 单次查询缓存全部文件名与大小。 */
-    class TreeStore(private val resolver: ContentResolver, treeUri: Uri) {
-        private val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
-        private val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
-        private val childrenUri =
-            DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootDocId)
-
-        /** 精确文件名 → 字节数。 */
-        private val names = HashMap<String, Long>()
-
-        /** 归一后的文件名（去掉 ` (1)` 撞名后缀）→ 字节数。 */
-        private val canonicals = HashMap<String, Long>()
-
-        fun loadExisting() {
-            names.clear()
-            canonicals.clear()
-            resolver.query(
-                childrenUri,
-                arrayOf(
-                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    DocumentsContract.Document.COLUMN_SIZE,
-                ),
-                null, null, null,
-            )?.use { cursor ->
-                val nameIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                val sizeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
-                while (cursor.moveToNext()) {
-                    val n = cursor.getString(nameIdx) ?: continue
-                    remember(n, cursor.getLong(sizeIdx))
-                }
-            }
-        }
-
-        private fun remember(name: String, size: Long) {
-            names[name] = size
-            val c = AssetName.canonical(name)
-            if (!canonicals.containsKey(c)) canonicals[c] = size
-        }
-
-        fun count(): Int = names.size
-
-        /** 精确匹配（旧行为，保留给日志与兼容）。 */
-        fun hasFile(name: String): Boolean = names.containsKey(name)
-
-        /** 归一匹配：`x (1).jpg` 也算 `x.jpg` 已存在 —— SAF 撞名副本不会再被当成「没有」。 */
-        fun hasCanonical(name: String): Boolean = canonicals.containsKey(AssetName.canonical(name))
-
-        fun sizeOf(name: String): Long =
-            names[name] ?: canonicals[AssetName.canonical(name)] ?: 0L
-
-        /** 幂等写入：同名文件已存在视为成功（断点续跑不产生 "(1)" 副本）。 */
-        fun save(name: String, mime: String, bytes: ByteArray): Boolean {
-            if (hasCanonical(name)) return true
-            if (bytes.isEmpty()) return false
-            val docUri = try {
-                DocumentsContract.createDocument(resolver, rootUri, mime, name)
-            } catch (e: Exception) {
-                null
-            } ?: return false
-            // createDocument 已经把文档建出来了；写入失败若就这样返回 false，
-            // 相册里会留下一个 0 字节 / 截断的坏图，而下次 loadExisting() 会把它收进
-            // canonicals → 判 EXISTS → 永远不再重下。所以失败必须回滚（删掉空文档）。
-            val wrote = try {
-                resolver.openOutputStream(docUri)?.use { out ->
-                    out.write(bytes)
-                    out.flush()
-                    true
-                } ?: false
-            } catch (e: IOException) {
-                false
-            } catch (e: Exception) {
-                false
-            }
-            if (!wrote) {
-                runCatching { DocumentsContract.deleteDocument(resolver, docUri) }
-                return false
-            }
-            remember(name, bytes.size.toLong())
-            return true
-        }
-    }
-
     private const val DOWNLOAD_ATTEMPTS = 3    // 单文件下载尝试次数（CDN 偶发 403/超时自动重试）
 
     /** 单文件大小上限：Live mov 正常在 64MB 以内，超过直接放弃而不是撑爆内存。 */
     private const val MAX_FILE_BYTES = 64L * 1024 * 1024
-    private val LIVE_WRAPPER = "https://video.weibo.com/media/play?livephoto="
-
     /** 大文件下载专用 client：Live mov 可达 64MB，放宽全局 client 的 25s callTimeout。 */
     private val downloadClient = WeiboHttp.client.newBuilder()
         .callTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .build()
-
-    // ========================= 资产解析 =========================
-
-    /** pics 归一化：数组或数字键对象 → 列表。 */
-    private fun normPics(o: Any?): List<JSONObject> {
-        return when (o) {
-            is org.json.JSONArray ->
-                (0 until o.length()).mapNotNull { o.optJSONObject(it) }
-            is JSONObject -> o.keys().asSequence().mapNotNull { o.optJSONObject(it) }.toList()
-            else -> emptyList()
-        }
-    }
-
-    /** 从 large.url 反推 pid（比 p.pid 稳：Live 条目两处 pid 不总一致）。 */
-    private fun pidOf(pic: JSONObject): String {
-        val url = pic.optJSONObject("large")?.optString("url", "")
-            ?: pic.optString("url", "")
-        if (url.isNotEmpty()) {
-            return url.substringAfterLast('/')
-                .replace(Regex("\\.(jpg|jpeg|png|gif|webp)$", RegexOption.IGNORE_CASE), "")
-        }
-        return pic.optString("pid", "")
-    }
-
-    /** 一条微博的全部图片资产（解析自详情接口）。 */
-    class PostAssets(
-        val picIds: List<String>,
-        val liveByIndex: Map<Int, String>,
-        val liveExtras: List<String>,
-    ) {
-        /**
-         * 实际应落盘的文件数。
-         *
-         * Live 项只存动图（gif/mov），**不再额外存配对静图** —— 那张 jpg 只是动图的封面帧，
-         * 存下来就是同一张图的两份（旧版 v0.4 的 bug）。所以一张配图恰好对应一个文件。
-         */
-        val expectedFiles: Int get() = picIds.size + liveExtras.size
-    }
-
-    /** 槽位编码：静图 i*2，配对 Live i*2+1，帖级 Live 1000+n。全局唯一且稳定。 */
-    internal fun stillSlot(i: Int) = i * 2
-    internal fun pairedLiveSlot(i: Int) = i * 2 + 1
-    private fun extraLiveSlot(n: Int) = 1000 + n
-
-    /** 详情 → 图清单（pic_ids 完整保序）+ Live 配对（pics 前 9 条内）+ 独立 Live。 */
-    private fun assetsFromDetail(detail: JSONObject): PostAssets {
-        val picIds = ArrayList<String>()
-        val idsArr = detail.optJSONArray("pic_ids")
-        if (idsArr != null) {
-            // 空串 / 空白 pid 必须剔掉：它们会占掉一个槽位却永远下不下来，
-            // expectedFiles 因此永远大于实际落盘数 —— 这条帖永远判不成完成，
-            // 每轮抓取都重试一次，日志里无限重复同一帖。
-            for (i in 0 until idsArr.length()) {
-                val id = idsArr.optString(i, "").trim()
-                if (id.isNotEmpty()) picIds.add(id)
-            }
-        }
-        val pics = normPics(detail.opt("pics"))
-        if (picIds.isEmpty()) {
-            pics.forEach { p ->
-                val id = pidOf(p).trim()
-                if (id.isNotEmpty()) picIds.add(id)
-            }
-        }
-
-        val liveByIndex = HashMap<Int, String>()
-        val usedLiveUrls = HashSet<String>()
-        for (pic in pics) {
-            val videoSrc = pic.optString("videoSrc", "")
-            if (pic.optString("type") == "livephoto" && videoSrc.isNotEmpty()) {
-                val idx = picIds.indexOf(pidOf(pic))
-                if (idx >= 0) {
-                    liveByIndex[idx] = videoSrc
-                    usedLiveUrls.add(videoSrc)
-                }
-            }
-        }
-        val liveExtras = ArrayList<String>()
-        val postLive = detail.optJSONArray("live_photo")
-        if (postLive != null) {
-            for (i in 0 until postLive.length()) {
-                val enc = postLive.optString(i, "")
-                if (enc.isNotEmpty() && !usedLiveUrls.contains(LIVE_WRAPPER + enc)) {
-                    liveExtras.add(LIVE_WRAPPER + enc)
-                }
-            }
-        }
-        return PostAssets(picIds, liveByIndex, liveExtras)
-    }
 
     // ========================= 抓图身份选择（多账号回退） =========================
 
@@ -285,7 +112,7 @@ object Crawler {
                 log("✗ 详情获取失败：${e.message}")
                 return@withCrawlContext
             }
-            val assets = assetsFromDetail(detail)
+            val assets = PostAssetsParser.fromDetail(detail)
             if (assets.picIds.isEmpty()) {
                 log("✗ 该微博没有图片（或为视频微博）")
                 return@withCrawlContext
@@ -328,7 +155,7 @@ object Crawler {
      * 用户勾选的 picId → 落盘槽位（internal 供 JVM 单测钉住口径）。
      *
      * - 未选中的图不产生槽位；
-     * - 选中的图若是配对 Live（`liveByIndex` 有值），槽位是 `pairedLiveSlot(i)`：
+     * - 选中的图若是配对 Live（`liveByIndex` 有值），槽位是 `AssetSlots.pairedLive(i)`：
      *   落动图不落封面静图，与增量抓取「Live 只存一份」的口径一致；
      * - picked 为 null（整帖）直接返回 null = `savePost(onlySlots=null)` 全槽位。
      */
@@ -338,7 +165,7 @@ object Crawler {
         val slots = LinkedHashSet<Int>()
         assets.picIds.forEachIndexed { i, pid ->
             if (pid in picked) {
-                slots.add(if (assets.liveByIndex.containsKey(i)) pairedLiveSlot(i) else stillSlot(i))
+                slots.add(if (assets.liveByIndex.containsKey(i)) AssetSlots.pairedLive(i) else AssetSlots.still(i))
             }
         }
         return slots
@@ -420,7 +247,7 @@ object Crawler {
                     onEvent(CrawlEvent.Post(0, 0))
                     continue
                 }
-                val assets = assetsFromDetail(detail)
+                val assets = PostAssetsParser.fromDetail(detail)
                 if (assets.picIds.isEmpty()) {
                     log("· 帖 ${task.bid} 没有图片（或为视频微博），跳过")
                     onEvent(CrawlEvent.Post(0, 0))
@@ -886,7 +713,7 @@ object Crawler {
                 try {
                     val web = WebAjax.statusShow(mid)
                     detail = web
-                    assets = assetsFromWebStatus(web)
+                    assets = PostAssetsParser.fromWebStatus(web)
                     break
                 } catch (e: Exception) {
                     val reason = e.message ?: e.javaClass.simpleName
@@ -914,7 +741,7 @@ object Crawler {
             if (cookie != null) {
                 try {
                     val mDetail = WeiboPostApi.fetchPostDetail(cookie, mid)
-                    val mAssets = assetsFromDetail(mDetail)
+                    val mAssets = PostAssetsParser.fromDetail(mDetail)
                     if (assets == null || mAssets.picIds.size > assets.picIds.size) {
                         detail = mDetail
                         assets = mAssets
@@ -956,46 +783,8 @@ object Crawler {
         return outcome.saved
     }
 
-    /**
-     * Web 端扁平 status → 图清单。
-     *
-     * `pic_ids` 是权威顺序；Live 判定看 `pic_infos[pid].type == "livephoto"`，其 `video`
-     * 就是动图直链。Web 版没有帖级 `live_photo`，所以 `liveExtras` 恒为空。
-     */
-    internal fun assetsFromWebStatus(status: JSONObject): PostAssets {
-        val picIds = ArrayList<String>()
-        status.optJSONArray("pic_ids")?.let { arr ->
-            for (i in 0 until arr.length()) {
-                val pid = arr.optString(i, "").trim()
-                if (pid.isNotEmpty()) picIds.add(pid)
-            }
-        }
-        val liveByIndex = HashMap<Int, String>()
-        val infos = status.optJSONObject("pic_infos")
-        if (infos != null && picIds.isNotEmpty()) {
-            picIds.forEachIndexed { idx, pid ->
-                val info = infos.optJSONObject(pid) ?: return@forEachIndexed
-                if (info.optString("type") != "livephoto") return@forEachIndexed
-                val video = info.optString("video", "").ifEmpty {
-                    info.optJSONObject("video")?.optString("url", "").orEmpty()
-                }
-                // 只认能过白名单的直链：否则干脆当静图存，别让整张图因为「域名不在白名单」失败
-                if (video.isNotEmpty() && videoAllowed(video)) liveByIndex[idx] = video
-            }
-        }
-        return PostAssets(picIds, liveByIndex, emptyList())
-    }
 
-    /** 动图直链是否落在微博域名白名单内。 */
-    private fun videoAllowed(url: String): Boolean = try {
-        WeiboHttp.weiboUrl(url)
-        true
-    } catch (e: Exception) {
-        false
-    }
-
-
-    private class CrawlContext(val store: TreeStore, val index: CrawlIndex, val treeTag: String)
+    private class CrawlContext(val store: SafTreeStore, val index: CrawlIndex, val treeTag: String)
 
     private suspend fun withCrawlContext(
         ctx: Context,
@@ -1004,7 +793,7 @@ object Crawler {
         block: suspend (CrawlContext) -> Unit,
     ) {
         val treeTag = CrawlIndex.treeTagOf(treeUriRaw)
-        val store = TreeStore(ctx.contentResolver, treeUriRaw.toUri())
+        val store = SafTreeStore(ctx.contentResolver, treeUriRaw.toUri())
         // 打开索引**之后**的所有准备动作（load / migrateLegacy / Takeover.claimAll）
         // 都可能抛异常（SAF 目录被删、磁盘满、迁移写盘失败…）。此前这些操作在 try
         // 之外，一旦抛出 index.close() 就永远不会执行 —— 索引句柄与临时文件泄漏，
@@ -1337,7 +1126,7 @@ object Crawler {
             return 0
         }
         val at = epochOf(detail.optString("created_at", ""))
-        val assets = assetsFromDetail(detail)
+        val assets = PostAssetsParser.fromDetail(detail)
         if (assets.picIds.isEmpty()) {
             state.index.onVoid(postId, at)
             onEvent(CrawlEvent.Post(saved = 0, failed = 0))
@@ -1408,14 +1197,14 @@ object Crawler {
         // 之后增量/历史/全量都用 isTerminal 跳过它，那几张图再也补不回来。
         val allSlots = HashSet<Int>()
         for (i in assets.picIds.indices) {
-            allSlots.add(if (assets.liveByIndex[i] == null) stillSlot(i) else pairedLiveSlot(i))
+            allSlots.add(if (assets.liveByIndex[i] == null) AssetSlots.still(i) else AssetSlots.pairedLive(i))
         }
-        for (n in assets.liveExtras.indices) allSlots.add(extraLiveSlot(n))
+        for (n in assets.liveExtras.indices) allSlots.add(AssetSlots.extraLive(n))
         val notPicked = notPickedSlots(allSlots, onlySlots, countNotPicked)
 
         /** 落盘第 i 张配图的静图；返回是否新写了文件。 */
         suspend fun saveStill(i: Int): Boolean {
-            val slot = stillSlot(i)
+            val slot = AssetSlots.still(i)
             if (!attempted(slot)) return false
             val picId = assets.picIds[i]
             val name = AssetName.stillName(prefix, i + 1)
@@ -1448,7 +1237,7 @@ object Crawler {
 
             // Live 项：动图（gif/mov）就是这张图的全部内容，**不再另存配对静图**。
             // 旧逻辑先存 _01.jpg 再存 _01_live.gif，同一张图在相册里出现两遍。
-            val liveSlot = pairedLiveSlot(i)
+            val liveSlot = AssetSlots.pairedLive(i)
             if (!attempted(liveSlot)) continue
 
             val existing = existingLiveName(state, prefix, i + 1, false, ctx)
@@ -1481,7 +1270,7 @@ object Crawler {
             }
         }
         assets.liveExtras.forEachIndexed { n, wrapper ->
-            val slot = extraLiveSlot(n)
+            val slot = AssetSlots.extraLive(n)
             if (!attempted(slot)) return@forEachIndexed
             val existing = existingLiveName(state, prefix, n + 1, true, ctx)
             if (existing != null) {

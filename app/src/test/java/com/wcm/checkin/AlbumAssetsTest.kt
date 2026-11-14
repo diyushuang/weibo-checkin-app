@@ -41,7 +41,7 @@ class AlbumAssetsTest {
     @Test
     fun `18 图 web 详情一张不少`() {
         val ids = (1..18).map { "001iT40ely1pic$it" }
-        val assets = Crawler.assetsFromWebStatus(webStatus(ids))
+        val assets = PostAssetsParser.fromWebStatus(webStatus(ids))
         assertEquals(18, assets.picIds.size)
         assertEquals(ids, assets.picIds)
         assertEquals(18, assets.expectedFiles)
@@ -53,7 +53,7 @@ class AlbumAssetsTest {
     @Test
     fun `livephoto 按 pic_ids 下标配对`() {
         val ids = (1..3).map { "pid$it" }
-        val assets = Crawler.assetsFromWebStatus(webStatus(ids, livePids = setOf("pid2")))
+        val assets = PostAssetsParser.fromWebStatus(webStatus(ids, livePids = setOf("pid2")))
         assertEquals(3, assets.picIds.size)
         assertEquals(setOf(1), assets.liveByIndex.keys)
         assertEquals("https://f.video.weibocdn.com/pid2.mp4", assets.liveByIndex[1])
@@ -61,14 +61,14 @@ class AlbumAssetsTest {
 
     @Test
     fun `pic_ids 里的空串被丢掉`() {
-        val assets = Crawler.assetsFromWebStatus(webStatus(listOf("a", "", "b")))
+        val assets = PostAssetsParser.fromWebStatus(webStatus(listOf("a", "", "b")))
         assertEquals(listOf("a", "b"), assets.picIds)
     }
 
     @Test
     fun `没有 pic_ids 时不出图`() {
         val root = JSONObject().put("id", "123")
-        assertTrue(Crawler.assetsFromWebStatus(root).picIds.isEmpty())
+        assertTrue(PostAssetsParser.fromWebStatus(root).picIds.isEmpty())
     }
 
     @Test
