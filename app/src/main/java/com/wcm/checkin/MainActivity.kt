@@ -5,11 +5,12 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,7 +76,7 @@ private const val ROUTE_IMAGE_PREVIEW = "image_preview"
  * 正在跑的签到状态；登录 WebView 仍是独立 Activity。
  */
 @AndroidEntryPoint
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
     private val homeViewModel: HomeViewModel by viewModels()
     private val topicViewModel: TopicViewModel by viewModels()
@@ -93,16 +94,11 @@ class MainActivity : AppCompatActivity() {
         // （数据库损坏 / 系统限制），不该连带首页一起起不来。
         runCatching { CheckInWorker.schedule(this) }
 
-        val view = androidx.compose.ui.platform.ComposeView(this)
-        view.setViewCompositionStrategy(
-            androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
-        )
-        view.setContent {
+        setContent {
             val nav = rememberNavController()
             navController = nav
             WcmTheme { AppShell(nav, homeViewModel, topicViewModel, galleryViewModel, settingsViewModel, badgeState) }
         }
-        setContentView(view)
     }
 
     /** 跳到「超话」Tab 并选中指定账号（首页点账号行 / Hero 卡时调用）。 */
