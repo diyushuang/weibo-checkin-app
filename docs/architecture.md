@@ -146,6 +146,19 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 - UI→data：Compose 页已无 `CrawlSettings`/`PanelUrl`/`GalleryFiles` 等 data 直接引用，
   浏览/超话清单均改为 UI 模型映射；仅登录 Activity 直接调认证与账号存储（刻意保留）。
 - 未覆盖：签到/自动重登/浏览博主/单条抓取需要真实登录账号（当前无可用的授权凭据）；
+
+### 登录态 E2E 待执行（需要本人登录，凭据不导出）
+
+1. 打开 App → 首页右上「＋」→ 在微博官方页完成登录；确认首页出现账号行。
+2. 打开「打开 App 即自动签到」后重启 App，观察日志卡完成探活→超话→签到；
+   再点「立即签到」「Cookie 同步」各一次。
+3. 超话页刷新、筛选/排序、展开详情、勾选补签；回首页确认状态 chip 更新。
+4. 图库页添加目标 → 浏览博主 → 点卡片进选图 → 长按看大图 → 勾选下载；
+   图库浏览确认新图出现，单条抓取一条公开链接。
+5. 删除一张已抓图片，确认图库计数与抓取索引同步回退。
+6. `cmd jobscheduler run -f -n androidx.work.systemjobscheduler com.wcm.checkin 1`
+   确认 `CheckInWorker` 返回 SUCCESS。
+7. 以上通过后再 bump `versionName` 并打 `v1.0.0`。
   单条抓取在无账号时正确提示「没有登录账号，先在首页添加账号」。
 
 已完成：
