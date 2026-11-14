@@ -79,7 +79,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 
 当前基线（2026-11-14）：
 
-- 312 个 JVM 单测，0 failures
+- 315 个 JVM 单测，0 failures
 - `assembleDebug` / `assembleRelease` 通过
 - release APK ≈ 3.55MB（R8 开启前 6.55MB；Compose 试点后 3.55MB）
 - `lint` 在本机 Windows 环境会长时间卡在 `lintAnalyzeDebug`；CI 的 `build-apk.yml`
