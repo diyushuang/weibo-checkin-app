@@ -31,6 +31,7 @@
 - **首页 Hero Compose**：进度环/待签数/pill/一句话结论改为 `HomeHeroCard`。
 - **首页账号列表 Compose**：账号行、头像 tone、状态 chip、⋮ 菜单与空态迁到 Compose；
   `WcmTheme` 补齐 M3 容器色，菜单/卡片不再被品牌色 tint。
+- **首页 Cookie 卡 Compose**：卡头 pill、提示、逐账号有效期、配置入口迁到 Compose。
 - **release 开启 R8/资源收缩**：APK 6.55MB → 3.55MB（含 Compose 运行时）。
 - **数据零迁移**：SharedPreferences 仍是 `wcm`，索引/游标/keystore/签名格式不变。
 - 验证：312 个 JVM 单测 / 0 failures；`assembleDebug` / `assembleRelease` 通过。

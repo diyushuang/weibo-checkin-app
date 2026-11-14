@@ -98,6 +98,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
   com.wcm.checkin 1` 强制触发后，`CheckInWorker` 由 Hilt 实例化并返回 SUCCESS。
 - 首页 Compose Hero：白卡视觉与 XML 一致，点击可跳转「超话」页。
 - 首页账号列表：空态、假账号行（头像/UID/状态）、⋮ 菜单（查看超话/重登/删除）均正常。
+- 首页 Cookie 卡：假账号失效态（红字/「已失效」pill）与面板未配置提示正常。
 - 未覆盖：真实签到/抓取（需要微博账号）、选图/预览（需要图片数据）、
   `PostPickActivity`/`ImagePreviewActivity`/`RemotePreviewActivity`。
 
@@ -117,12 +118,14 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 - **首页 Hero Compose**：`HomeHeroCard` + `HomeHeroUiState`；`fragment_home` 的 Hero
   卡已换成 ComposeView，其余账号/Cookie/日志区块仍为 XML
 - **首页账号列表 Compose**：`AccountList` 负责行/头像 tone/状态 chip/⋮ 菜单；
-  空态与账号菜单也由 Compose 渲染；Cookie 卡与日志卡仍为 XML
+  空态与账号菜单也由 Compose 渲染
+- **首页 Cookie 卡 Compose**：`CookieCard` 负责卡头 pill/提示/逐账号有效期/配置入口；
+  日志卡与账号对话框仍为 XML/Android Dialog
 - ViewBinding：全部界面已替换（LogPanel 的通用 host 仍按 id 查找；Gallery 两个对话框输入框保留 dialogView 查找）
 
 待办（按建议顺序）：
 
-1. 首页 Compose 化：Hero 卡与账号列表已迁移；下一步 Cookie 卡/日志卡/对话框。
+1. 首页 Compose 化：Hero/账号列表/Cookie 卡已迁移；下一步日志卡与账号对话框。
 2. 超话/图库/浏览/预览 Compose 化；主题令牌继续对齐 `docs/design/ui-system-v2.0.md`。
 3. 导航壳与登录页收尾；删除已迁移的旧 XML。
 4. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
