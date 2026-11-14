@@ -38,6 +38,8 @@
 - **全页面 route 化**：图库浏览/浏览博主/选图/本地预览/远程预览从 Activity 改为
   NavHost route，对应 ViewModel 接管编排；仅登录 WebView 保留独立 Activity；
   旧 `activity_*.xml` 只剩登录页。
+- **资源清理**：删除迁移后无引用的 18 个 drawable、14 个 string、2 个 color、
+  23 个 dimen；release APK 3.63MB。
 - **模拟器冒烟（2026-11-14）**：首页/超话/图库/图库浏览/设置/登录/浏览页正常；
   超话筛选排序详情、图库多选、预览翻页均已走查；设置页深浅色、开关持久化、
   面板地址校验均通过；强制触发 WorkManager 后 `CheckInWorker` 由 Hilt 实例化并返回 SUCCESS。
