@@ -1,5 +1,7 @@
 package com.wcm.checkin
 
+import com.wcm.checkin.databinding.ActivityPostPickBinding
+import com.wcm.checkin.databinding.ItemPickPicBinding
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.content.Context
@@ -72,6 +74,7 @@ class PostPickActivity : AppCompatActivity() {
     private lateinit var loading: ProgressBar
     private lateinit var btnDownload: MaterialButton
     private lateinit var toolbar: MaterialToolbar
+    private lateinit var binding: ActivityPostPickBinding
 
     /** 单元格边长（px）：按可用宽度对半算，首次测量后覆写。 */
     private var cellPx = 0
@@ -86,7 +89,8 @@ class PostPickActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_post_pick)
+        binding = ActivityPostPickBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
         bid = intent.getStringExtra(EXTRA_BID) ?: ""
         if (bid.isEmpty()) {
@@ -98,11 +102,11 @@ class PostPickActivity : AppCompatActivity() {
                 savedInstanceState.getStringArrayList(KEY_SELECTED)?.toSet() ?: emptySet()
             pendingScroll = savedInstanceState.getInt(KEY_SCROLL, -1)
         }
-        toolbar = findViewById(R.id.pickToolbar)
-        recycler = findViewById(R.id.pickGrid)
-        tvEmpty = findViewById(R.id.tvPickEmpty)
-        loading = findViewById(R.id.pickLoading)
-        btnDownload = findViewById(R.id.btnPickDownload)
+        toolbar = binding.pickToolbar
+        recycler = binding.pickGrid
+        tvEmpty = binding.tvPickEmpty
+        loading = binding.pickLoading
+        btnDownload = binding.btnPickDownload
 
         toolbar.setNavigationOnClickListener { finish() }
         toolbar.setOnMenuItemClickListener { item ->
@@ -116,7 +120,7 @@ class PostPickActivity : AppCompatActivity() {
         recycler.layoutManager = GridLayoutManager(this, 2)
         recycler.adapter = adapter
 
-        findViewById<View>(R.id.pickRoot)?.let { root ->
+        binding.pickRoot.let { root ->
             ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
                 val bars = insets.getInsets(
                     WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
@@ -430,12 +434,13 @@ class PostPickActivity : AppCompatActivity() {
     private inner class GridAdapter : RecyclerView.Adapter<GridAdapter.Holder>() {
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-            val view = LayoutInflater.from(parent.context)
-                .inflate(R.layout.item_pick_pic, parent, false)
+            val binding = ItemPickPicBinding.inflate(
+                LayoutInflater.from(parent.context), parent, false,
+            )
             if (cellPx > 0) {
-                view.layoutParams = RecyclerView.LayoutParams(cellPx, cellPx)
+                binding.root.layoutParams = RecyclerView.LayoutParams(cellPx, cellPx)
             }
-            return Holder(view)
+            return Holder(binding)
         }
 
         override fun getItemCount(): Int = items.size
@@ -461,12 +466,13 @@ class PostPickActivity : AppCompatActivity() {
             super.onViewDetachedFromWindow(holder)
         }
 
-        inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
-            private val image = view.findViewById<ImageView>(R.id.pickImage)
-            private val badge = view.findViewById<TextView>(R.id.pickBadge)
-            private val done = view.findViewById<ImageView>(R.id.pickDone)
-            private val scrim = view.findViewById<View>(R.id.pickScrim)
-            private val check = view.findViewById<ImageView>(R.id.pickCheck)
+        inner class Holder(private val binding: ItemPickPicBinding) :
+            RecyclerView.ViewHolder(binding.root) {
+            private val image = binding.pickImage
+            private val badge = binding.pickBadge
+            private val done = binding.pickDone
+            private val scrim = binding.pickScrim
+            private val check = binding.pickCheck
 
             /** 当前格的缩略图请求；换绑/回收时取消，避免 Job 堆积与错位回填。 */
             private var thumbJob: Job? = null
