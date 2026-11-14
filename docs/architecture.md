@@ -140,8 +140,8 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
   继续增量后图库 106 张；`CheckInWorker` 强制触发返回 SUCCESS。
 - **同签名覆盖安装**：release APK `install -r` 后目录授权、抓取目标、图库 106 张全部保留；
   release 冷启动 864ms。
-- UI→data：Compose 页不再直接读 `CrawlSettings`，目标选择文案由 ViewModel 生成；
-  仍通过 `GalleryFiles`/`WeiboTopicApi` 模型类型传参（后续随模型下沉 `:core` 收口）。
+- UI→data：Compose 页已无 `CrawlSettings`/`PanelUrl`/`GalleryFiles` 等 data 直接引用，
+  浏览/超话清单均改为 UI 模型映射；仅登录 Activity 直接调认证与账号存储（刻意保留）。
 - 未覆盖：签到/自动重登/浏览博主需要真实登录账号（当前无可用的授权凭据），
   只验证了假账号与游客态链路。
 
@@ -166,7 +166,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 - **全部页面 route 化**：浏览/选图/本地预览/远程预览从 Activity 改为 NavHost route，
   对应 ViewModel 接管编排；`activity_*.xml` 只剩登录页
 - **Phase 7 清理**：删除迁移后无引用的 18 个 drawable、14 个 string、2 个 color、
-  23 个 dimen；release APK 3.63MB
+  23 个 dimen；Compose 页与 data 模型解耦；release APK 3.63MB
 - ViewBinding：仅剩登录页 `LoginWebViewActivity` 使用
 
 待办（按建议顺序）：
