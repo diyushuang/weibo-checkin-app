@@ -1,7 +1,7 @@
 # 架构说明（架构现代化进行中）
 
-> 状态：2026-11 架构现代化 **Phase 0–6 已完成**：四个 Tab 全部是 Compose 目的地，
-> `MainActivity` 已换成 Navigation Compose；浏览/选图/预览仍是独立 Activity。
+> 状态：2026-11 架构现代化 **Phase 0–6 已完成**：四个 Tab + 浏览/选图/预览全部是
+> NavHost route；仅登录 WebView 保留独立 Activity。
 > 本文描述当前真实结构，不描述最终目标态的想象结构。
 
 ## 1. Gradle 模块与依赖方向
@@ -31,7 +31,7 @@
 | `:core` | `AssetName`、`Hashing`、`CrawlCursor`/`Budget`/`Phase`/`StopReason`、`ReloginPolicy`、`AccountStatusHead`、`AppScope` | Android UI、SharedPreferences、OkHttp 业务 |
 | `:data` | `WeiboHttp/Auth/Topic/Post/ImageUrl`、`PanelApi`、`GuestSession`、`WeiboPasswordLogin`、`AccountStore`、`PanelSettings`、`CrawlSettings`、`CrawlIndex`、`SafTreeStore`、`GalleryFiles`、`TopicStore`、`CredentialVault`、`GifEncoder`、`LivePhotoConverter` | View/Fragment、签到/抓取编排 |
 | `:domain` | `CheckinService`、`AccountMaintenanceService`、`CrawlEngine`、`AlbumCrawler`、`TimelineCrawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`CrawlService`、`PostAssets`、`AutoRelogin` | Android UI、资源 `R.*` |
-| `:app` | `MainActivity`（Navigation Compose，4 Tab）、`Home/Topic/Gallery/Settings*Tab`、`Browsing/PostPick/ImagePreview/RemotePreview Activity`、`RemoteThumb`、`ThumbLoader`、`ZoomableImageView`、`CheckInWorker`、`WcmApp` | 业务规则、网络/存储实现 |
+| `:app` | `MainActivity`（Navigation 壳，全部页面为 route）、`LoginWebViewActivity`、四个 Tab 的 Screen/ViewModel、`ZoomPager`、`CheckInWorker`、`WcmApp` | 业务规则、网络/存储实现 |
 
 ## 3. 状态与并发
 
@@ -133,8 +133,9 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 - Navigation Compose 壳：四 Tab 切换、底部 Badge、主题色与旧底栏一致；
   超话筛选切 Tab 往返后仍保持（Activity 作用域 ViewModel）；设置页输入时
   底栏隐藏且内容被 IME 顶起。
-- 未覆盖：真实签到/抓取（需要微博账号）、选图页实际载入（需要有效 cookie 的帖子详情）、
-  浏览/选图/预览仍是独立 Activity（未改成 NavHost route）。
+- 叶子 route：图库抓取页 → 图库浏览（6 张网格）→ 本地预览（1/6 翻页、底栏隐藏）
+  整条链路跑通；浏览博主 → 选图/远程预览已切路由（无有效 cookie/网络时只验证空态）。
+- 未覆盖：真实签到/抓取（需要微博账号）、选图页实际载入（需要有效 cookie 的帖子详情）。
 
 已完成：
 
@@ -154,12 +155,14 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
   展开/日志/进度/任务状态；Fragment 壳与 `LogPanel` 已删除
 - **全部业务界面 Compose**：超话/图库网格/图库浏览/浏览博主/选图/本地与远程预览；
   RecyclerView 适配器与旧布局全部删除
+- **全部页面 route 化**：浏览/选图/本地预览/远程预览从 Activity 改为 NavHost route，
+  对应 ViewModel 接管编排；`activity_*.xml` 只剩登录页
 - ViewBinding：仅剩登录页 `LoginWebViewActivity` 使用
 
 待办（按建议顺序）：
 
-1. 把浏览/选图/预览从独立 Activity 改成 NavHost route（登录 WebView 保持独立）。
-2. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路。
+1. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路。
+2. Phase 7 清理：清理迁移后无引用的 drawable/style；`grep` 复核 UI→data 直接依赖。
 3. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
    `:feature` 模块（需先把 `R.*` 资源迁移到 feature）。
 4. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路。
