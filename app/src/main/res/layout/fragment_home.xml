@@ -139,53 +139,10 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ==================== 日志卡（默认收起） ==================== -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/Widget.Wcm.Card">
-
-            <LinearLayout style="@style/Widget.Wcm.CardContent">
-
-                <LinearLayout
-                    android:id="@+id/logHeader"
-                    style="@style/Widget.Wcm.LogHeader"
-                    android:contentDescription="@string/cd_log_collapsed">
-
-                    <TextView
-                        style="@style/Widget.Wcm.Text.SectionTitle"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:text="@string/log_label" />
-
-                    <ImageButton
-                        android:id="@+id/btnLogToggle"
-                        style="@style/Widget.Wcm.IconButton.Row"
-                        android:clickable="false"
-                        android:focusable="false"
-                        android:importantForAccessibility="no"
-                        android:src="@drawable/ic_expand_more"
-                        app:tint="@color/ink_3" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tvLogSummary"
-                    style="@style/Widget.Wcm.Text.Hint.SingleLine"
-                    android:text="@string/log_empty" />
-
-                <!-- 这是**故意**的嵌套滚动：日志是一块固定高度的控制台窗口，
-                     内容自己滚、页面也能滚。改成不嵌套就只能把整段日志摊平，
-                     500 行会把页面撑到几万 dp。lint 的通用规则在这里不适用。 -->
-                <ScrollView
-                    android:id="@+id/logScroll"
-                    style="@style/Widget.Wcm.LogScroll"
-                    android:visibility="gone"
-                    tools:ignore="NestedScrolling">
-
-                    <TextView
-                        android:id="@+id/logView"
-                        style="@style/Widget.Wcm.Text.Log"
-                        android:text="@string/log_empty" />
-                </ScrollView>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+        <androidx.compose.ui.platform.ComposeView
+            android:id="@+id/logCompose"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/card_gap" />
     </LinearLayout>
 </ScrollView>

@@ -98,8 +98,8 @@ class HomeFragment : Fragment() {
     /** 日志卡是否展开（默认收起，把首屏让给签到主行动）。 */
     private var logExpanded = false
 
-    /** 日志面板：与图片页共用同一份实现（[LogPanel]），这里只负责绑定资源 id。 */
-    private var panel: LogPanel? = null
+    /** 日志卡（Compose）的渲染状态；每次 render / 追加日志时重建。 */
+    private val logState = MutableStateFlow(LogCardUi())
 
     /**
      * 时间格式化：`SimpleDateFormat` **不是线程安全的**。
@@ -220,25 +220,17 @@ class HomeFragment : Fragment() {
             }
         }
         // 日志卡：卡头整行可点，收起时只显示一行摘要
-        panel = LogPanel(
-            host = view,
-            lines = viewModel.logLines,
-            scrollId = R.id.logScroll,
-            textId = R.id.logView,
-            summaryId = R.id.tvLogSummary,
-            toggleId = R.id.btnLogToggle,
-            headerId = R.id.logHeader,
-            emptyTextRes = R.string.log_empty,
-            cdExpandedRes = R.string.cd_log_expanded,
-            cdCollapsedRes = R.string.cd_log_collapsed,
-            maxLines = LOG_MAX_LINES,
+        binding.logCompose.setViewCompositionStrategy(
+            ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
         )
-        binding.logHeader.setOnClickListener {
-            setLogExpanded(!logExpanded)
+        binding.logCompose.setContent {
+            val state by logState.collectAsState()
+            WcmTheme {
+                LogCard(state, onToggle = { setLogExpanded(!logExpanded) })
+            }
         }
         // 视图重建时恢复上一次的展开态（默认收起），并把历史日志重新贴上去
-        setLogExpanded(logExpanded)
-        panel?.render()
+        pushLogState()
         syncFromStore(requireContext())
         render()
         // 视图是新建的（刚进页面 / 旋转重建）：上一次的 busy latch 不代表现在真在跑，
@@ -292,7 +284,6 @@ class HomeFragment : Fragment() {
      * 进度通过 [AccountStore] 与 `TopicStore` 落盘，回到页面重新读即可。
      */
     override fun onDestroyView() {
-        panel = null
         _binding = null
         super.onDestroyView()
     }
@@ -858,28 +849,33 @@ class HomeFragment : Fragment() {
     // ========================= 日志（可滚动，不打断阅读） =========================
 
     /**
-     * 追加一行日志（渲染细节见 [LogPanel]：只有本来就贴底时才自动滚到底）。
+     * 追加一行日志（渲染由 Compose 日志卡负责：只有原本贴底时才跟随滚动）。
      *
-     * 缓冲 [logLines] 是 Fragment 级的，**不随视图销毁**：旋转/切页期间签到还在跑，
-     * 原先没面板就直接 return 会把这段日志整段丢掉，回来只剩半截。
-     * 所以先无条件入缓冲，有面板时再触发渲染（重建时 onViewCreated 会 render 一次）。
+     * 缓冲 [logLines] 在 ViewModel 里，**不随视图销毁**：旋转/切页期间签到还在跑，
+     * 历史和当前日志都不能丢。
      */
     private fun log(line: String) {
         synchronized(viewModel.logLines) {
             viewModel.logLines.addLast(line)
             while (viewModel.logLines.size > LOG_MAX_LINES) viewModel.logLines.removeFirst()
         }
-        // render() 直接改 TextView（tv.text / tv.append），而本函数绝大多数调用点
-        // 在 AppScope(Dispatchers.IO) 的签到协程里 —— 视图 attach 时改 View 会直接抛
-        // CalledFromWrongThreadException。旧实现走 LogPanel.append，内部自带 host.post，
-        // 这次把缓冲提到 Fragment 后必须自己把这段兜底补回来。
-        view?.post { panel?.render() }
+        // 日志大多从 AppScope(IO) 追加，统一切主线程再推状态
+        view?.post { pushLogState() }
     }
 
     /** 展开 / 收起日志区；[logExpanded] 记住用户选择，视图重建后恢复。 */
     private fun setLogExpanded(expanded: Boolean) {
         logExpanded = expanded
-        panel?.setExpanded(expanded)
+        pushLogState()
+    }
+
+    private fun pushLogState() {
+        val lines = synchronized(viewModel.logLines) { viewModel.logLines.toList() }
+        logState.value = LogCardUi(
+            expanded = logExpanded,
+            lines = lines,
+            summary = lines.lastOrNull { it.isNotBlank() } ?: getString(R.string.log_empty),
+        )
     }
 
     private fun now(): String = formatTime(System.currentTimeMillis())
