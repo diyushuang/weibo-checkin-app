@@ -38,6 +38,7 @@ import java.util.Locale
 fun GalleryTab(
     viewModel: GalleryViewModel,
     onPickDir: () -> Unit,
+    onBrowse: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -88,7 +89,7 @@ fun GalleryTab(
             onRetryFailed = { viewModel.loadRetryItems() },
             onBrowse = {
                 val first = CrawlSettings.crawlTargets(context).firstOrNull()?.uid ?: ""
-                BrowsingActivity.start(context, first)
+                onBrowse(first)
             },
             onSinglePost = {
                 singleInput = ""

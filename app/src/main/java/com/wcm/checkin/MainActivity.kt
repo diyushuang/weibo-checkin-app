@@ -3,6 +3,8 @@ package com.wcm.checkin
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,7 +17,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
@@ -29,6 +30,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,12 +41,15 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -52,6 +57,7 @@ private const val ROUTE_HOME = "home"
 private const val ROUTE_TOPICS = "topics"
 private const val ROUTE_GALLERY = "gallery"
 private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_BROWSING = "browsing"
 
 /**
  * 单 Activity + Navigation Compose 壳：四个 Tab 都是纯 Compose 目的地。
@@ -131,6 +137,8 @@ private fun AppShell(
     val context = LocalContext.current
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    val showBottomBar = route == ROUTE_HOME || route == ROUTE_TOPICS ||
+        route == ROUTE_GALLERY || route == ROUTE_SETTINGS
 
     Column(
         modifier = Modifier
@@ -199,14 +207,65 @@ private fun AppShell(
                             galleryViewModel.onDirPicked()
                         }
                     }
-                    GalleryTab(viewModel = galleryViewModel, onPickDir = { dirPicker.launch(null) })
+                    GalleryTab(
+                        viewModel = galleryViewModel,
+                        onPickDir = { dirPicker.launch(null) },
+                        onBrowse = { uid ->
+                            nav.navigate("$ROUTE_BROWSING?uid=${Uri.encode(uid)}")
+                        },
+                    )
+                }
+                composable(
+                    route = "$ROUTE_BROWSING?uid={uid}",
+                    arguments = listOf(
+                        navArgument("uid") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
+                ) { entry ->
+                    val vm: BrowsingViewModel = hiltViewModel()
+                    val state by vm.state.collectAsState()
+                    val initialUid = entry.arguments?.getString("uid").orEmpty()
+                    LaunchedEffect(initialUid) { vm.start(initialUid) }
+                    OnResume { vm.onResume() }
+                    LaunchedEffect(vm) {
+                        vm.events.collect { event ->
+                            when (event) {
+                                is BrowsingEvent.Toast ->
+                                    Toast.makeText(context, event.text, Toast.LENGTH_SHORT).show()
+                                is BrowsingEvent.OpenPostPick ->
+                                    PostPickActivity.start(context, event.bid)
+                                is BrowsingEvent.OpenRemotePreview ->
+                                    RemotePreviewActivity.start(context, event.urls, event.index)
+                            }
+                        }
+                    }
+                    BackHandler(enabled = state.selectMode) { vm.exitSelectMode() }
+                    BrowsingScreen(
+                        state = state,
+                        onBack = { nav.popBackStack() },
+                        onInputChange = vm::updateInput,
+                        onLoad = vm::reload,
+                        onTargetClick = vm::selectTarget,
+                        onToggleOriginal = vm::toggleOriginal,
+                        onTogglePic = vm::togglePic,
+                        onPostClick = vm::onPostClick,
+                        onPostLongClick = vm::onPostLongClick,
+                        onThumbClick = vm::onThumbClick,
+                        onMorePics = vm::openPostPick,
+                        onExitSelect = vm::exitSelectMode,
+                        onDownload = vm::submitSelected,
+                        onLoadMore = vm::loadMore,
+                        onVisibleIndex = {},
+                    )
                 }
                 composable(ROUTE_SETTINGS) {
                     SettingsTab(viewModel = settingsViewModel)
                 }
             }
         }
-        if (!imeVisible) {
+        if (showBottomBar && !imeVisible) {
             HorizontalDivider(thickness = 1.dp, color = colorResource(R.color.line))
             NavigationBar(containerColor = colorResource(R.color.surface), tonalElevation = 0.dp) {
                 NavItem(
