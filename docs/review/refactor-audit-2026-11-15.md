@@ -194,3 +194,50 @@
   对照 `com.wcm.checkin.HomeViewModel -> n6.c8`（正常混淆）—— 证明升级后旧 WorkSpec 仍能按类名实例化 worker。
 
 **未执行**：真机/模拟器安装、真实账号登录、签到与抓取联调、TalkBack 实听、lint 全量（仅构建期 lintVital）。
+
+---
+
+## 七、收尾复核（2026-11-15 晚，重构全部落盘后）
+
+- **复核对象**：`refactor/modernize` @ `0410b19`。相对 §一 的 `6d18950`，又多出三笔提交：
+  `f134c9d`（无状态客户端/文件原语下沉 `:core`）、`5489f61`（5 个端口 + `PortAdapters`）、
+  `7e48543`（依赖倒置落地、八个服务改构造注入）、`0410b19`（CI 门禁注释修正）。
+  即 §四 P2 的三条架构债是在那次审查之后才还掉的，本节把它们纳入复核范围。
+- **复核方法**：`clean` 后全量重建（471 tasks，439 executed），静态比对 + 产物校验。
+
+### 7.1 门禁结果（全部通过）
+
+```
+./gradlew --offline clean testDebugUnitTest lintDebug assembleRelease assembleDebugAndroidTest
+BUILD SUCCESSFUL in 9m 24s
+
+:app:testDebugUnitTest   315 用例 / 0 失败 / 0 跳过（22 个测试类）
+lintDebug                app / core / data / domain 四模块均 "No issues found."
+:app:assembleRelease     app-release.apk 3,630,532 B（3.63 MB）
+:app:assembleDebugAndroidTest  app-debug-androidTest.apk 编译通过（仪器测试未被重构打散）
+```
+
+### 7.2 静态复核结论
+
+| 项 | 结果 |
+| --- | --- |
+| 依赖方向 | `:domain` 的 `build.gradle.kts` 内 `project(":data")` 零命中；`grep` 全仓仅 `:app` 声明对 `:data` 的依赖 |
+| 端口装配 | `DomainModule` 12 条 `@Provides` 全部 `@Singleton`；5 个端口 32 个方法在 `PortAdapters.kt` 里只做转发（不缓存、不加锁、不改默认值） |
+| 绕过 DI 的实例化 | 八个服务在工作区源码里**只在 `DomainModule` 被 new 一次**，`CrawlService` 的闸门（`GATE` / `STOP`）已下沉 companion，即使漏标 scope 也不会出现两个闸门 |
+| 数据兼容 | `Account` 24 个字段、24 个 JSON 键与 0.9.18 逐字一致；prefs 仍叫 `wcm`；模式常量仍是 `album` / `timeline`；索引仍 `filesDir/crawl/index/<treeTag>.ndjson` |
+| R8 产物 | `CheckInWorker -> CheckInWorker`（保留）、`HomeViewModel -> n6.j8`（正常混淆）、`WcmApp` 保留、`debuggable` 未开启 |
+| 签名 | 本次本机构建的证书 SHA-256 `05b5a60b…c380edd` 与 `dist/` 里 0.9.15 / 0.9.16 两个历史包**完全一致**；`versionCode 30 → 33`，覆盖安装路径打通 |
+| 死代码 | 全仓源码 0 处 `TODO` / `FIXME` / `NotImplementedError`；UI 层 0 处空回调（`= {}`）占位 |
+
+**§四 P1 #2（签名指纹未核对）已关闭**；P1 #1（真实账号 E2E：签到 / 自动重登 / 浏览博主 / 单条抓取）
+本机无可用设备与授权凭据，**仍未执行**，结论不变。
+
+### 7.3 本节顺带修掉的文档与注释漂移
+
+- `CHANGELOG.md`：0.10.0 小节写「312 个 JVM 单测」→ 实测 315；同节「依赖方向
+  `app -> domain -> data -> core`」与依赖倒置后的事实不符 → 改为 `app -> domain -> core` /
+  `app -> data -> core`。
+- `README.md`：删掉「Android 12+ 跟随系统取色」—— 改用 Compose 后主题由 `WcmTheme` 固定映射
+  `colors.xml` 令牌，`DynamicColors` 只对残留的 XML 页面（登录 WebView）生效。
+- `app/src/main/res/values/themes.xml`：删除指向已删样式 `Theme.Wcm.Preview` 的孤儿注释。
+- `app/proguard-rules.pro`：「后续引入 Hilt / Compose 时…」的将来时说明已过期，改为已完成事实。

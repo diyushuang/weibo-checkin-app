@@ -77,7 +77,6 @@
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.Wcm.Dialog</item>
     </style>
 
-    <!-- 全屏图片预览：纯黑沉浸背景，系统栏图标恒为浅色 -->
     <!-- 弹窗：24dp 大圆角 + 抬高一层底色，与卡片形成"层更高、角更圆"的一致心智 -->
     <style name="ThemeOverlay.Wcm.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="shapeAppearance">@style/ShapeAppearance.Wcm.ExtraLarge</item>

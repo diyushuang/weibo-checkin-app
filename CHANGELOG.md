@@ -38,8 +38,9 @@
   worker 类名以字符串存进 `work.db`，升级后要按类名反射实例化旧任务。已用 release 包的
   `mapping.txt` 验证该类名确实未被混淆（`HomeViewModel` 等同批类已正常改名为 `n6.c8`）。
 - **4 个 Gradle 模块**：`:app`（UI/Worker）、`:domain`（签到/抓取/保活/重登服务）、
-  `:data`（微博/面板网络、SharedPreferences、NDJSON 索引、SAF、Keystore）、
-  `:core`（模型与纯算法、应用级协程）。依赖方向 `app -> domain -> data -> core`。
+  `:data`（账号表/抓取设置等需要 `Context` 的本地状态 + `PortAdapters.kt` 适配器）、
+  `:core`（模型、纯算法、端口接口、微博客户端、文件原语、应用级协程）。
+  依赖方向 `app -> domain -> core` / `app -> data -> core`（domain 不依赖 data）。
 - **拆分大文件**：`WeiboApi`（1114 行）→ Http/Auth/Topic/Post/ImageUrl；
   `Crawler`（1681 行）→ CrawlEngine/CrawlSaver/PostAssets/AlbumCrawler/TimelineCrawler；
   `AccountStore`（933 行）→ 账号表 + PanelSettings + CrawlSettings。
@@ -83,7 +84,7 @@
 - **首页 Compose 化完成**：Hero/账号/Cookie/日志/菜单/对话框全部 Compose，Fragment 只保留编排。
 - **release 开启 R8/资源收缩**：APK 6.55MB → 3.55MB（含 Compose 运行时）。
 - **数据零迁移**：SharedPreferences 仍是 `wcm`，索引/游标/keystore/签名格式不变。
-- 验证：312 个 JVM 单测 / 0 failures；`assembleDebug` / `assembleRelease` 通过。
+- 验证：315 个 JVM 单测 / 0 failures；`assembleDebug` / `assembleRelease` 通过。
 
 详见 [`docs/architecture.md`](docs/architecture.md)。
 
