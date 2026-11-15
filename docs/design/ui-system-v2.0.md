@@ -6,7 +6,7 @@
 > 抓取内核、签到逻辑、面板同步、Cookie 存储一行未改。
 >
 > **v0.10.0 起承载方式已变**：界面从「XML + Fragment」改为 Compose，令牌不再以
-> XML 样式为主要载体，而是由 `WcmTheme`（定义在 `:app` 的 `SettingsScreen.kt`）
+> XML 样式为主要载体，而是由 `WcmTheme`（定义在 `:app` 的 `Theme.kt`）
 > 把 `values/colors.xml` / `dimens.xml` 的同一套令牌映射到 Material 3 色彩角色与
 > 形状。**令牌本身（色值、四档尺寸、圆角）仍然有效**，本文的 §1 视觉规范与
 > §3 适配档位继续适用；凡是提到「布局 XML」「Fragment 视图绑定」的段落，

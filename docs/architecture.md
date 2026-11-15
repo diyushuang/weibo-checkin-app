@@ -80,8 +80,26 @@
 ### `:app` — UI 与装配
 
 `WcmApp`（`@HiltAndroidApp`）、`MainActivity`（ComponentActivity + NavHost 壳）、
-`LoginWebViewActivity`（唯一保留 ViewBinding 的页面）、四个 Tab 的 Screen/ViewModel、
-浏览/选图/预览 route、`CheckInWorker`、`DomainModule`。
+`LoginWebViewActivity`（唯一保留 ViewBinding 的页面）、`Theme.kt`（`WcmTheme`）、
+四个 Tab 的 Screen/ViewModel、浏览/选图/预览 route、`CheckInWorker`、`DomainModule`。
+
+命名约定：`*Tab.kt` 是 route 入口，`*Screen.kt` 纯渲染，`*Ui.kt` 是 UI 状态模型
+（不含 Compose），`*ViewModel.kt` 持状态与编排。四类之外只有 `Theme.kt`（主题）、
+`DomainModule.kt`（装配）与零散工具。
+
+### 2.1 主题与设计令牌
+
+**色值的唯一来源是 `res/values/colors.xml`（浅色）与 `res/values-night/colors.xml`（深色）**，
+两处都只存令牌名，不带语义判断。往下有两条消费路径，必须同时照顾：
+
+| 消费者 | 映射处 | 说明 |
+| --- | --- | --- |
+| 残留 XML 页面（登录 WebView） | `res/values/themes.xml` 的 `Theme.Wcm` | 把令牌映射到 Material 3 的 XML 属性 |
+| 全部 Compose 页面 | `:app` 的 `Theme.kt` 的 `WcmTheme` | 把令牌映射到 M3 色彩角色 |
+
+改色值只改 `colors.xml`，两边自动一起变；**新增一个角色则两处都要补**。
+`WcmTheme` 故意不映射 `error` 系列 —— Compose 页的出错语义直接取 `R.color.danger*`，
+改成 `colorScheme.error` 会拿到 M3 默认红，原因写在 `Theme.kt` 的类注释里。
 
 ## 3. 运行时结构
 
@@ -160,6 +178,7 @@ manifest 关闭 WorkManager 默认初始化，避免自定义 `HiltWorkerFactory
 | 新服务要读的本地状态 | 先在 `:core` 的 `Ports.kt` 加接口，再在 `:data` 的 `PortAdapters.kt` 实现 | 端口**不声明默认值**，默认值留实现类 |
 | 新页面 | `:app` 的 Screen + ViewModel + 一条 route | 长任务仍挂 `AppScope` |
 | 新的一次性后台任务 | `:app` 的 `@HiltWorker` + `DomainModule` | Worker 类名要进 `proguard-rules.pro` 的 keep 列表 |
+| 新颜色 / 新尺寸令牌 | `res/values/colors.xml` + `res/values-night/colors.xml` | 同时补 `values/themes.xml`（XML 页面）与 `Theme.kt`（Compose）；漏一处会出现「Compose 页新色、登录页旧色」 |
 
 ## 6. 构建入口
 

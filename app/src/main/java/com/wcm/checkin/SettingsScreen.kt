@@ -2,7 +2,6 @@ package com.wcm.checkin
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,72 +24,24 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-/** 对齐 values/colors.xml 的 Material3 主题（与 XML 页面保持同一套品牌色）。 */
-@Composable
-fun WcmTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit,
-) {
-    val scheme = if (darkTheme) {
-        darkColorScheme(
-            primary = colorResource(R.color.brand),
-            onPrimary = colorResource(R.color.brand_on),
-            surfaceTint = colorResource(R.color.surface),
-            secondary = colorResource(R.color.brand),
-            onSecondary = colorResource(R.color.brand_on),
-            secondaryContainer = colorResource(R.color.surface_2),
-            onSecondaryContainer = colorResource(R.color.ink),
-            background = colorResource(R.color.bg),
-            surface = colorResource(R.color.surface),
-            surfaceVariant = colorResource(R.color.surface_2),
-            surfaceContainer = colorResource(R.color.surface),
-            surfaceContainerHigh = colorResource(R.color.surface),
-            surfaceContainerHighest = colorResource(R.color.surface),
-            surfaceContainerLow = colorResource(R.color.surface),
-            surfaceContainerLowest = colorResource(R.color.surface),
-            onSurface = colorResource(R.color.ink),
-            onSurfaceVariant = colorResource(R.color.ink_2),
-            outline = colorResource(R.color.line_2),
-            outlineVariant = colorResource(R.color.line),
-        )
-    } else {
-        lightColorScheme(
-            primary = colorResource(R.color.brand),
-            onPrimary = colorResource(R.color.brand_on),
-            surfaceTint = colorResource(R.color.surface),
-            secondary = colorResource(R.color.brand),
-            onSecondary = colorResource(R.color.brand_on),
-            secondaryContainer = colorResource(R.color.surface_2),
-            onSecondaryContainer = colorResource(R.color.ink),
-            background = colorResource(R.color.bg),
-            surface = colorResource(R.color.surface),
-            surfaceVariant = colorResource(R.color.surface_2),
-            surfaceContainer = colorResource(R.color.surface),
-            surfaceContainerHigh = colorResource(R.color.surface),
-            surfaceContainerHighest = colorResource(R.color.surface),
-            surfaceContainerLow = colorResource(R.color.surface),
-            surfaceContainerLowest = colorResource(R.color.surface),
-            onSurface = colorResource(R.color.ink),
-            onSurfaceVariant = colorResource(R.color.ink_2),
-            outline = colorResource(R.color.line_2),
-            outlineVariant = colorResource(R.color.line),
-        )
-    }
-    MaterialTheme(colorScheme = scheme, content = content)
-}
-
+/**
+ * 设置页：面板地址与令牌、打开即签到、GIF 转换、自动重登总开关。
+ *
+ * 纯渲染：状态来自 `SettingsViewModel`，每个控件把改动直接发回 ViewModel 落盘
+ * （开关是即时生效的，没有「保存」这一步）；只有面板地址与令牌需要显式保存，
+ * 保存失败的文案由 ViewModel 回写到 `SettingsUiState` 里，本页只负责显示。
+ *
+ * 主题不在这里 —— `WcmTheme` 已抽到同包的 `Theme.kt`。
+ */
 @Composable
 fun SettingsScreen(
     state: SettingsUiState,

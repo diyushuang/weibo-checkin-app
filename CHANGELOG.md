@@ -87,6 +87,17 @@
   recyclerview 1.0.0 / viewpager2 1.0.0 —— 删掉它们不会从 APK 里消失，只会把版本退回 2018–2022
   年的老版本。三者已在 `app/build.gradle.kts` 上标注为**版本钉并说明不可删的原因**，
   避免下次清理时又被当成死依赖删掉。
+- **`WcmTheme` 从 `SettingsScreen.kt` 抽到独立的 `Theme.kt`**：主题挂在设置页文件下是
+  职责错位。抽离后类注释写清了三件事：令牌唯一来源是 `colors.xml` + `values-night/colors.xml`；
+  为什么两个 `ColorScheme` builder 的字段一模一样却都要留；以及**故意不映射
+  `error` 系列**的原因（Compose 页出错语义直接取 `R.color.danger*`，改用
+  `colorScheme.error` 会拿到 M3 默认红）。行为零变化。
+- **修 lint 配置漏关规则**：四个模块的注释都写着「有更新版本可用不是代码缺陷」，
+  但只 `disable` 了 `NewerVersionAvailable` / `AndroidGradlePluginVersion`，
+  真正触发提示的 `GradleDependency` 没关，`core`/`data`/`domain` 长期挂着 11 条噪音。
+  补齐后四模块 `lintDebug` 均为 **0 errors / 0 warnings**。
+- `SecretBox` 的 ALC 读写改用 KTX 的 `edit { }` 扩展（原 `edit().putString().apply()`），
+  语义相同（`edit {}` 默认 `commit = false`，即 `apply`）。清掉最后 2 条 `UseKtx` 警告。
 
 ### 已知边界
 

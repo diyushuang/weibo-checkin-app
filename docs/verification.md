@@ -10,7 +10,7 @@
 | --- | --- |
 | JVM 单测 | 331 个（23 个测试类），0 失败 |
 | 仪器测试 | 7 个（需要设备/模拟器，CI 未接入 emulator） |
-| lint | 四个模块 `lintDebug` 均 No issues found |
+| lint | 四个模块 `lintDebug` 均 0 errors / 0 warnings（`NewApi` 为硬错误，`GradleDependency` 等版本提示已显式关闭，理由见各模块 `build.gradle.kts`） |
 | release APK | 约 3.63 MB（4 模块化 + R8 + 资源收缩前为 6.55 MB） |
 | release 冷启动 | 864 ms（热安装）/ 3195 ms（全新安装） |
 
@@ -24,7 +24,7 @@ BUILD SUCCESSFUL in 9m 24s
 | 任务 | 结果 |
 | --- | --- |
 | `:app:testDebugUnitTest` | 331 用例 / 0 失败 / 0 跳过 |
-| `lintDebug`（app / core / data / domain） | 四模块均 No issues found |
+| `lintDebug`（app / core / data / domain） | 四模块均 0 errors / 0 warnings |
 | `:app:assembleRelease` | `app-release.apk` 3,630,532 B |
 | `:app:assembleDebugAndroidTest` | 编译通过（仪器测试未被重构打散） |
 

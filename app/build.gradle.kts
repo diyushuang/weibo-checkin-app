@@ -114,6 +114,8 @@ android {
         // 这几条留在这里只会长期制造噪音，给它们一个明确的处置结论：
         disable += "NewerVersionAvailable"
         disable += "AndroidGradlePluginVersion"
+        // 真正触发提示的是这条：只在上面关掉 NewerVersionAvailable 会漏掉它。
+        disable += "GradleDependency"
     }
 }
 

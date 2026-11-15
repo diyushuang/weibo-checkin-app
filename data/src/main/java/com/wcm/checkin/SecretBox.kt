@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.util.Log
+import androidx.core.content.edit
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -155,7 +156,7 @@ object AlcVault {
 
     fun save(ctx: Context, uid: String, alc: String) {
         val token = SecretBox.sealOrPlain(alc.trim())
-        prefs(ctx).edit().putString(KEY_PREFIX + uid, token).apply()
+        prefs(ctx).edit { putString(KEY_PREFIX + uid, token) }
     }
 
     /** 读取并解密；没存返回 null，解不开抛 [CredentialUnreadableException]（与密码同语义）。 */
@@ -170,6 +171,6 @@ object AlcVault {
     }
 
     fun clear(ctx: Context, uid: String) {
-        prefs(ctx).edit().remove(KEY_PREFIX + uid).apply()
+        prefs(ctx).edit { remove(KEY_PREFIX + uid) }
     }
 }
