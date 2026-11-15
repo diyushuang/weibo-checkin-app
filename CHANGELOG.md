@@ -7,6 +7,67 @@
 
 ---
 
+## [0.11.0] - 2026-11-15 — 持久登录加固：Cookie 加密落盘、登录墙判死、ALC 免密码重登
+
+依据 `docs/research/weibo-persistent-login.md` 的诊断结论做的四项改动，**行为等价性优先**：
+存量账号不需要重新登录，老数据可读。
+
+### 安全
+
+- **Cookie 改为加密落盘**：账号表里的 `cookie` 字段在序列化时即用 Android Keystore
+  AES-256-GCM 封存（`v1:<iv>:<ciphertext>`），磁盘上不再有明文 `SUB=`。
+  与账号密码用**不同的 key alias**（`wcm_secret_key_v1` / `wcm_credential_key_v1`），
+  互不连累。加密失败时降级明文并打 warn 日志——宁可退化也不能让"登录成功却存不上"。
+- **升级首次启动一次性全量迁移**：`AccountStore.migrateToSealed` 在 IO 线程把存量明文
+  整表重写为密文，写完回读校验 uid 与 cookie 一致，不一致就回滚成原串。
+- **登录成功后清空 WebView 的 Cookie 库**：此前那份明文 cookie 会长期留在
+  `app_webview/Default/Cookies` 里（删账号也不清），现在会话入库后立即
+  `removeAllCookies + flush`。
+- **探活结果缓存不再存明文**：`WeiboAuthApi.verifyCache` 改为按 SHA-256 摘要命中，
+  内存里不再长期躺着一整串凭据；命中时用调用方传入的 cookie 回填（语义等价）。
+- **ALC 重签的跳转地址过白名单**：`sso/login.php` 返回的 `location.replace` 目标与
+  `setCrossDomainUrlList` 的 `arrURL` 完全由服务端决定，而这一路请求携带 `ALC`。
+  现在只放行「https + 微博域 / 新浪护照域」（与 WebView 导航白名单同口径），
+  其余一律拒绝，避免被开放重定向把票据带去第三方主机。
+
+### 新增
+
+- **ALC 免密码重登（路线 E）**：`WeiboAlcLogin` 用 `ALC` 走
+  `sso/login.php?useticket=1` 换一套新会话，**不使用、也不保存微博密码**。
+  重登弹窗新增一个 ALC 输入框，可"只填 ALC"保存。有密码时仍优先走账密（能力更全），
+  没密码但有 ALC 时自动改走重签；两者都没有才算"无凭证"。
+- **账号行记录 `alcAt` / `cookieDomains`**（后者是从 Set-Cookie 学到的域映射，仅作诊断，
+  当前不参与 cookie 过滤——m 站实测接受跨域 SUB，按域裁剪会引入回归）。
+
+### 修复
+
+- **假在线（登录墙漏判）**：此前只认 `login=false` 与 `ok=-100`，微博掉登录时常见的
+  「200 + 访客页 HTML / 302 到 signin」会被当成正常响应。现在 `WeiboHttp` 增加了
+  登录墙识别（`looksLikeLoginWall` / `isLoginLanding`），命中后抛带 `loginWall` 标记的
+  异常，签到与后台保活据此判死；其余异常（超时、5xx、429/432）仍然只记原因、绝不判死。
+- **重登失败不再误标失效**：`AutoRelogin` 失败时按"是否已过 EXPIRED"决定并保持
+  `cookieDead`，避免一次网络抖动把还能用的账号标红（逻辑收敛到 `attemptLogin`）。
+- **uid 取不到时不再静默退出**：登录成功后若读不到 uid，页面停住并给出可点重试的说明，
+  不再直接 Toast + 关闭（此前用户以为登录成功，实际一条记录都没存，cookie 只悬空在 WebView）。
+
+### 工程
+
+- 新增会话对象 `WeiboHttp.WeiboSession`：超话列表、超话详情、签到、验签重试统一走它，
+  **响应里的 `Set-Cookie` 会被逐条收下**（此前只有探活会合并），整批结束回写账号。
+- 新增 `AccountPort.updateCookie`，把"任务内的换发回写"收敛成一个入口。
+- 新增 16 个 JVM 单测（`PersistentLoginTest`）：ALC 解析、登录墙判定、会话合并、
+  加密序列化契约（含明文/密文混表、解密失败降级）。
+- 明确写入代码注释：**永不调用** `sso/updatetgt.php` + `sso/crossdomain.php` 那条
+  "续期链"——社区认证态实测显示调用后 5 秒原凭证即失效，且不会换回新 SUB。
+
+### 已知边界
+
+- 游客身份（`GuestSession`）的 cookie 仍是明文缓存，属 L1 免登录身份、不能代表账号操作，
+  本次未改；面板同步（`PanelApi`）仍以 JSON 明文 POST cookie，内网 http 场景仍有暴露面。
+- 抓图链路（`WeiboPostApi` / `WebAjax`）尚未接入会话对象，仍用字符串 cookie。
+
+---
+
 ## [0.10.1] - 2026-11-15 — 修「浏览博主」列表一直报 NetworkOnMainThreadException
 
 ### 缺陷

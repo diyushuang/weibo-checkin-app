@@ -93,9 +93,24 @@ class CheckinService(
     ): AccountOutcome {
         val name = acc.name.ifEmpty { acc.uid }
         log("── $name ──")
+        // 已判失效的账号不再发业务请求：探活必然失败、签到必然 0/N，徒增一次
+        // 必失败的往返并把 IP 往风控上推。恢复由两条路负责——后台保活的自动重登
+        // （账密 / ALC），或用户在首页点「重登」。
+        if (acc.cookieDead) {
+            log("  ✗ $cookieDeadText")
+            return AccountOutcome(acc.uid, error = cookieDeadText)
+        }
         val verify = try {
             maintenance.probeAndPersist(ctx, acc)
         } catch (e: Exception) {
+            // 登录墙（302 到登录页 / 访客页 HTML）是"服务端明确要你重新登录"，
+            // 属于允许判死的强判据；其余异常只记原因，绝不判死。
+            if (e is WeiboHttp.WeiboException && e.loginWall) {
+                noteResult(ctx, acc, cookieDeadText)
+                account.markDead(ctx, acc.uid, e.message.orEmpty(), System.currentTimeMillis())
+                log("  ✗ $cookieDeadText")
+                return AccountOutcome(acc.uid, error = cookieDeadText)
+            }
             noteResult(ctx, acc, "探活失败：${e.message}")
             log("  ✗ 探活失败：${e.message}")
             return AccountOutcome(acc.uid, error = "探活失败：${e.message}")
@@ -108,35 +123,47 @@ class CheckinService(
             return AccountOutcome(acc.uid, error = text)
         }
         try {
-            val topics = WeiboTopicApi.listTopics(acc.cookie)
-            val pending = topics.filter { !it.done }
-            log("  ${topics.size} 个超话，${topics.size - pending.size} 已签，待签 ${pending.size}")
-            onTopics(acc.uid, topics)
-            topicCache.save(ctx, acc.uid, topics, System.currentTimeMillis())
-            var ok = 0
-            var fail = 0
-            for (topic in pending) {
-                pause(Random.nextLong(3000, 8000))
-                try {
-                    if (WeiboTopicApi.sign(acc.cookie, topic.scheme ?: "", verify.st)) {
-                        ok++
-                        log("  ✓ ${topic.name}")
-                    } else {
+            // 一个账号一次会话：后续每个请求都用它，响应里的 Set-Cookie 会被逐条收下。
+            // 整批结束（无论成败）把 session.cookie 写回账号，完成"换发回写"。
+            val session = WeiboHttp.WeiboSession.of(acc.cookie, acc.cookieDomains)
+            try {
+                val topics = WeiboTopicApi.listTopics(session)
+                val pending = topics.filter { !it.done }
+                log("  ${topics.size} 个超话，${topics.size - pending.size} 已签，待签 ${pending.size}")
+                onTopics(acc.uid, topics)
+                topicCache.save(ctx, acc.uid, topics, System.currentTimeMillis())
+                var ok = 0
+                var fail = 0
+                for (topic in pending) {
+                    pause(Random.nextLong(3000, 8000))
+                    try {
+                        if (WeiboTopicApi.sign(session, topic.scheme ?: "", verify.st)) {
+                            ok++
+                            log("  ✓ ${topic.name}")
+                        } else {
+                            fail++
+                            log("  ✗ ${topic.name}")
+                        }
+                    } catch (e: Exception) {
                         fail++
-                        log("  ✗ ${topic.name}")
+                        log("  ✗ ${topic.name}：${e.message}")
                     }
-                } catch (e: Exception) {
-                    fail++
-                    log("  ✗ ${topic.name}：${e.message}")
+                }
+                noteResult(
+                    ctx, acc,
+                    "签到 $ok/${pending.size}" +
+                        (if (fail > 0) "（失败 $fail）" else "") + " · ${now()}",
+                )
+                log("  小结：${acc.lastResult}")
+                return AccountOutcome(acc.uid, ok = ok, failed = fail, pending = pending.size)
+            } finally {
+                // 即使中途抛异常也要写回：签到途中拿到的新 cookie 同样是有效的换发。
+                // 同时把内存快照的 cookie 对齐，避免调用方随后的 mergeSave 把旧串写回去。
+                if (session.cookie != acc.cookie) {
+                    acc.cookie = session.cookie
+                    account.updateCookie(ctx, acc.uid, session.cookie, session.domainHints)
                 }
             }
-            noteResult(
-                ctx, acc,
-                "签到 $ok/${pending.size}" +
-                    (if (fail > 0) "（失败 $fail）" else "") + " · ${now()}",
-            )
-            log("  小结：${acc.lastResult}")
-            return AccountOutcome(acc.uid, ok = ok, failed = fail, pending = pending.size)
         } catch (e: Exception) {
             noteResult(ctx, acc, "超话列表失败：${e.message}")
             log("  ✗ ${e.message}")

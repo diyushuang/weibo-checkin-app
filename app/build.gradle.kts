@@ -91,8 +91,8 @@ android {
         // 0.10.1：修「浏览博主 → 载入」必弹「列表请求失败：NetworkOnMainThreadException」、
         // 列表永远空白 —— 该页是唯一没把网络调用切到 IO 的编排（viewModelScope 默认
         // Main.immediate，OkHttp 的同步 execute() 在主线程直接抛这个异常）。
-        versionCode = 34
-        versionName = "0.10.1"
+        versionCode = 35
+        versionName = "0.11.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

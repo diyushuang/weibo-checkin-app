@@ -534,17 +534,23 @@ class HomeViewModel @Inject constructor(
     fun showRelogin(uid: String) {
         val acc = AccountStore.load(ctx).firstOrNull { it.uid == uid } ?: return
         val hasCredential = CredentialVault.has(ctx, acc.uid)
+        val hasAlc = AlcVault.has(ctx, acc.uid)
         val state = AccountStore.reloginState(acc)
         val status = buildString {
-            if (hasCredential) {
-                append(
+            when {
+                hasCredential -> append(
                     ctx.getString(
                         R.string.relogin_status_saved_fmt,
                         if (acc.credentialAt > 0L) formatStamp(acc.credentialAt) else "时间未知",
                     ),
                 )
-            } else {
-                append(ctx.getString(R.string.relogin_status_none))
+                hasAlc -> append(
+                    ctx.getString(
+                        R.string.relogin_status_alc_fmt,
+                        if (acc.alcAt > 0L) formatStamp(acc.alcAt) else "时间未知",
+                    ),
+                )
+                else -> append(ctx.getString(R.string.relogin_status_none))
             }
             when {
                 state.blocked -> {
@@ -566,33 +572,56 @@ class HomeViewModel @Inject constructor(
                         ),
                     )
                 }
-                hasCredential -> {
+                hasCredential || hasAlc -> {
                     append("\n")
                     append(ctx.getString(R.string.relogin_status_ready))
                 }
             }
         }
-        _reloginDialog.value = ReloginDialogUi(acc.uid, status, hasCredential)
+        _reloginDialog.value = ReloginDialogUi(acc.uid, status, hasCredential, hasAlc)
     }
 
     fun dismissRelogin() {
         _reloginDialog.value = null
     }
 
-    fun saveReloginCredentials(uid: String, username: String, password: String): Boolean {
-        if (username.isEmpty() || password.isEmpty()) {
+    /**
+     * 保存自动重登凭证。
+     *
+     * 支持三种组合：只存密码、只存 ALC、两者都存。**只要有一项可用**就算成功——
+     * 路线 E（ALC 重签）的意义正是"不想交密码也能自动恢复"。
+     */
+    fun saveReloginCredentials(
+        uid: String,
+        username: String,
+        password: String,
+        alcRaw: String = "",
+    ): Boolean {
+        val hasPassword = username.isNotEmpty() && password.isNotEmpty()
+        val alc = WeiboAlcLogin.normalizeAlc(alcRaw)
+        if (!hasPassword && alc.isEmpty()) {
+            toast(ctx.getString(R.string.relogin_need_both))
+            return false
+        }
+        if (username.isNotEmpty() != password.isNotEmpty()) {
             toast(ctx.getString(R.string.relogin_need_both))
             return false
         }
         try {
-            CredentialVault.save(ctx, uid, username, password)
-            AccountStore.setCredentialAt(ctx, uid, System.currentTimeMillis())
+            if (hasPassword) {
+                CredentialVault.save(ctx, uid, username, password)
+                AccountStore.setCredentialAt(ctx, uid, System.currentTimeMillis())
+            }
+            if (alc.isNotEmpty()) {
+                AlcVault.save(ctx, uid, alc)
+                AccountStore.setAlcAt(ctx, uid, System.currentTimeMillis())
+            }
             AccountStore.setAccountAutoRelogin(ctx, uid, true)
         } catch (e: Exception) {
             toast(ctx.getString(R.string.relogin_failure_fmt, "凭证加密保存失败"))
             return false
         }
-        toast(ctx.getString(R.string.relogin_saved))
+        toast(ctx.getString(if (hasPassword) R.string.relogin_saved else R.string.relogin_alc_only_saved))
         _reloginDialog.value = null
         AccountStore.load(ctx).firstOrNull { it.uid == uid }?.let { runManualRelogin(it) }
         return true
@@ -600,6 +629,8 @@ class HomeViewModel @Inject constructor(
 
     fun deleteReloginCredentials(uid: String) {
         CredentialVault.clear(ctx, uid)
+        AlcVault.clear(ctx, uid)
+        AccountStore.setAlcAt(ctx, uid, 0L)
         AccountStore.saveReloginState(ctx, uid, ReloginPolicy.State(credentialAt = 0L))
         AccountStore.setAccountAutoRelogin(ctx, uid, false)
         toast(ctx.getString(R.string.relogin_deleted))

@@ -285,7 +285,7 @@
     <string name="login_sync_sso">已拿到 Cookie，正在让微博把登录态同步到 m 站…</string>
     <string name="login_uid_pending">登录态已确认，正在读取账号 UID…</string>
     <string name="login_added_fmt">已添加账号：%1$s</string>
-    <string name="login_uid_missing">登录验证成功但未取到 uid，请重试</string>
+    <string name="login_uid_missing_retry">登录已成功，但没能读取到账号信息（uid），所以还没有保存。请点这一行重试；多次失败可退出后重新登录。</string>
 
     <!-- ===== v0.6 UI 刷新：设置页 ===== -->
     <string name="settings_auto_on_open_desc">打开应用时为全部账号自动签到（6 小时内不重复）</string>
@@ -293,12 +293,18 @@
     <string name="settings_appearance_note">界面配色跟随系统深浅色模式；Android 12 及以上支持跟随壁纸取色。</string>
 
     <!-- ===== 账号密码自动重登 ===== -->
-    <string name="settings_auto_relogin">账号密码自动重登</string>
-    <string name="settings_auto_relogin_desc">Cookie 失效或临期时，用本机加密保存的账号密码自动重新登录（默认开启）</string>
-    <string name="settings_auto_relogin_note">凭证用 Android Keystore 加密保存在本机，不上传面板。密码错误、验证码或二次验证、风控都会暂停重登并等待人工处理；自动重登不能保证永久保活。</string>
+    <string name="settings_auto_relogin">自动重登（账号密码 / ALC）</string>
+    <string name="settings_auto_relogin_desc">Cookie 失效或临期时，用本机加密保存的账号密码重新登录，或改用 ALC 票据重签（默认开启）</string>
+    <string name="settings_auto_relogin_note">账号密码与 ALC 都用 Android Keystore 加密保存在本机，不上传面板。账号密码优先；只存 ALC 时不使用密码。密码错误、验证码或二次验证、风控都会暂停重登并等待人工处理；重登不是续期，不能保证永久保活。</string>
     <string name="account_action_relogin">自动重登 / 账号密码</string>
-    <string name="relogin_dialog_title">账号密码自动重登</string>
+    <string name="relogin_dialog_title">自动重登凭证</string>
     <string name="relogin_dialog_desc">密码仅在本机加密保存，用于 Cookie 失效或临期时自动重登。微博要求验证码或二次验证时会暂停，并提示人工扫码处理。</string>
+    <string name="relogin_alc_title">或者：用 ALC 免密码自动恢复</string>
+    <string name="relogin_alc_hint">ALC（可只填这一项）</string>
+    <string name="relogin_alc_desc">电脑浏览器登录 weibo.com 后，在开发者工具 → Application → Cookies 里找到 ALC 并整条粘贴过来（只需一次）。ALC 存的是登录票据，不是你的微博密码；失效后仍需重新获取。</string>
+    <string name="relogin_alc_saved">已保存 ALC。留空再保存不会改动它。</string>
+    <string name="relogin_status_alc_fmt">已保存 ALC（%1$s），可不填密码</string>
+    <string name="relogin_alc_only_saved">ALC 已加密保存</string>
     <string name="relogin_username_hint">微博账号（手机号 / 邮箱 / 用户名）</string>
     <string name="relogin_password_hint">密码</string>
     <string name="relogin_status_saved_fmt">已保存加密凭证（%1$s）</string>
@@ -308,11 +314,11 @@
     <string name="relogin_status_ready">可自动重登</string>
     <string name="relogin_action_save">保存并尝试重登</string>
     <string name="relogin_action_delete">删除凭证</string>
-    <string name="relogin_need_both">账号与密码需同时填写</string>
+    <string name="relogin_need_both">请填写账号和密码，或只填 ALC</string>
     <string name="relogin_saved">凭证已加密保存</string>
     <string name="relogin_deleted">已删除凭证并暂停自动重登</string>
-    <string name="relogin_running">正在尝试账密重登…</string>
-    <string name="relogin_success">账密重登成功，已更新登录凭据与真实登录时间</string>
+    <string name="relogin_running">正在尝试自动重登…</string>
+    <string name="relogin_success">重登成功，已更新登录凭据与真实登录时间</string>
     <string name="relogin_failure_fmt">重登失败：%1$s</string>
 
     <!-- ===== v2.0：应用栏问候与 Hero 指标 ===== -->

@@ -165,7 +165,7 @@ fun HomeTab(
         ReloginDialog(
             state = dlg,
             onDismiss = { viewModel.dismissRelogin() },
-            onSave = { user, pass -> viewModel.saveReloginCredentials(dlg.uid, user, pass) },
+            onSave = { user, pass, alc -> viewModel.saveReloginCredentials(dlg.uid, user, pass, alc) },
             onDelete = { viewModel.deleteReloginCredentials(dlg.uid) },
         )
     }

@@ -34,7 +34,7 @@
 | 模块 | 放什么 | 不放什么 |
 | --- | --- | --- |
 | `:core` | 模型（`Account`/`CrawlTarget`/`CrawlIndex` 记录…）、端口（`AccountPort` 等 5 个）、纯算法（`AssetName`/`Hashing`/`CrawlCursor`/`ReloginPolicy`/`AccountStatusHead`/`AppScope`）、微博客户端（`WeiboHttp/Auth/Topic/Post/ImageUrl`/`WebAjax`/`GuestSession`/`PasswordLogin`）、文件与媒体原语（`CrawlIndex`/`SafTreeStore`/`GalleryFiles`/`Takeover`/`GifEncoder`/`LivePhotoConverter`/`RemoteBytes`） | 需要 `Context` 的状态、Android UI |
-| `:data` | `AccountStore`、`CrawlSettings`、`PanelSettings`、`TopicStore`、`CredentialVault`、`CrawlMarks`、`SafAccess`、`StorePrefs`、端口适配器 `PortAdapters.kt` | View、网络与纯算法（已上移 `:core`） |
+| `:data` | `AccountStore`、`CrawlSettings`、`PanelSettings`、`TopicStore`、`CredentialVault`、`SecretBox` / `AlcVault`（v0.11.0：cookie 与 ALC 的字段级加密）、`CrawlMarks`、`SafAccess`、`StorePrefs`、端口适配器 `PortAdapters.kt` | View、网络与纯算法（已上移 `:core`） |
 | `:domain` | `CheckinService`、`AccountMaintenanceService`、`CrawlEngine`、`AlbumCrawler`、`TimelineCrawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`CrawlService`、`PostAssets`、`AutoRelogin` | Android UI、资源 `R.*` |
 | `:app` | `MainActivity`（ComponentActivity + Navigation 壳，全部页面为 route）、`LoginWebViewActivity`、四个 Tab 的 Screen/ViewModel、`ZoomPager`、`CheckInWorker`、`WcmApp` | 业务规则、网络/存储实现 |
 

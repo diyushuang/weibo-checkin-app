@@ -25,18 +25,30 @@ data class ReloginDialogUi(
     val uid: String,
     val statusText: String,
     val hasCredential: Boolean,
+    /** 是否已保存过 ALC（路线 E：不碰密码也能自动恢复）。 */
+    val hasAlc: Boolean = false,
 )
 
-/** 自动重登凭证弹窗：密码只在本次输入中存在，保存即加密落盘。 */
+/**
+ * 自动重登凭证弹窗。
+ *
+ * 两条路线并存、互不替代：
+ * - **账号密码**：能力最全，但等于把微博密码托管在本机（Keystore 加密）；
+ * - **ALC**：登录中心下发的中长期票据，凭它重签一次即可换新 `SUB`，
+ *   不涉及密码。适合"愿意多点一次浏览器、但不愿交出密码"的用户。
+ *
+ * 密码只在本次输入中存在，保存即加密落盘；ALC 同理。
+ */
 @Composable
 fun ReloginDialog(
     state: ReloginDialogUi,
     onDismiss: () -> Unit,
-    onSave: (String, String) -> Boolean,
+    onSave: (String, String, String) -> Boolean,
     onDelete: () -> Unit,
 ) {
     var user by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var alc by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.relogin_dialog_title)) },
@@ -70,14 +82,33 @@ fun ReloginDialog(
                     text = stringResource(R.string.relogin_dialog_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = colorResource(R.color.ink_3),
-                    modifier = Modifier.padding(top = 8.dp),
+                    modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
+                )
+                Text(
+                    text = stringResource(R.string.relogin_alc_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+                OutlinedTextField(
+                    value = alc,
+                    onValueChange = { alc = it },
+                    label = { Text(stringResource(R.string.relogin_alc_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                Text(
+                    text = stringResource(
+                        if (state.hasAlc) R.string.relogin_alc_saved else R.string.relogin_alc_desc,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colorResource(R.color.ink_3),
                 )
                 TextButton(
                     onClick = {
                         onDelete()
                         onDismiss()
                     },
-                    enabled = state.hasCredential,
+                    enabled = state.hasCredential || state.hasAlc,
                     modifier = Modifier.padding(top = 4.dp),
                 ) {
                     Text(stringResource(R.string.relogin_action_delete))
@@ -86,7 +117,7 @@ fun ReloginDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                if (onSave(user.trim(), password)) onDismiss()
+                if (onSave(user.trim(), password, alc)) onDismiss()
             }) {
                 Text(stringResource(R.string.relogin_action_save))
             }

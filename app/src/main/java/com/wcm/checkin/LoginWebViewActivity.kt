@@ -368,6 +368,13 @@ class LoginWebViewActivity : AppCompatActivity() {
                         )
                     )
                     Toast.makeText(this@LoginWebViewActivity, getString(R.string.login_added_fmt, name), Toast.LENGTH_SHORT).show()
+                    // 会话已经复制进账号表，WebView 自己那份明文 cookie 库不再有任何用途。
+                    // 立刻清掉：否则设备上会长期同时存在两份明文凭据（prefs 一份 + Cookie SQLite 一份），
+                    // 删账号时那份也不会跟着消失。清理是异步的，flush 必须放在回调里，
+                    // 否则可能在删完之前就刷盘，留下一份"已删又写回"的残留。
+                    CookieManager.getInstance().removeAllCookies {
+                        CookieManager.getInstance().flush()
+                    }
                     finish()
                 }
                 // 登录态成立但配置接口没给 uid：再轮几次（多为刚跳转完、字段还没回填）
@@ -377,9 +384,11 @@ class LoginWebViewActivity : AppCompatActivity() {
                     handler.postDelayed(::pollLogin, POLL_MS)
                 }
                 else -> {
-                    finished = true
-                    Toast.makeText(this@LoginWebViewActivity, R.string.login_uid_missing, Toast.LENGTH_LONG).show()
-                    finish()
+                    // 不能静默退出：uid 拿不到 = 一条记录都没存，用户却以为登录成功了，
+                    // 而 cookie 只悬空在 WebView 里，下次进登录页就被清掉。
+                    // 停在这一页把话说清楚，点状态行可立即重试（retryNow 会清零计数）。
+                    busy = false
+                    setStatus(getString(R.string.login_uid_missing_retry))
                 }
             }
         }

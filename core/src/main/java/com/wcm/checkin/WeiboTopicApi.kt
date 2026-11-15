@@ -265,6 +265,18 @@ object WeiboTopicApi {
         cookie: String,
         maxPages: Int = 20,
         onPage: (Int) -> Unit = {},
+    ): List<Topic> = listTopics(WeiboHttp.WeiboSession.of(cookie), maxPages, onPage)
+
+    /**
+     * 会话版：同一个 [WeiboHttp.WeiboSession] 贯穿整批请求，
+     * 响应里的 `Set-Cookie` 会被逐条收下（旧实现只有探活会收，业务请求全丢）。
+     *
+     * 调用方在整批结束后把 `session.cookie` 写回账号即可完成"换发回写"。
+     */
+    suspend fun listTopics(
+        session: WeiboHttp.WeiboSession,
+        maxPages: Int = 20,
+        onPage: (Int) -> Unit = {},
     ): List<Topic> {
         // 以超话 ID（缺失时退化为名称）为键：跨页去重，后页覆盖前页（签到状态以最新为准）
         val byKey = LinkedHashMap<String, Topic>()
@@ -277,7 +289,7 @@ object WeiboTopicApi {
             if (sinceId.isNotEmpty()) url += "&since_id=$sinceId"
             // 页间间隔交给统一闸门：用 delay 而不是 Thread.sleep，切页/退出能立刻取消
             WeiboThrottle.await(WeiboThrottle.KEY_TOPIC_PAGE, TOPIC_PAGE_GAP_MS)
-            val parsed = WeiboHttp.client.newCall(WeiboHttp.request(url, cookie)).execute().use { resp ->
+            val parsed = WeiboHttp.call(url, session).use { resp ->
                 if (!resp.isSuccessful) {
                     throw WeiboHttp.httpFailure("超话列表", resp.code)
                 }
@@ -329,31 +341,37 @@ object WeiboTopicApi {
     }
 
     /** 签到一个超话，返回结构化结果（成功时带「签到第 N 名 · 经验 +X」）。 */
-    fun signDetailed(cookie: String, scheme: String, st: String?): SignResult {
-        val first = signOnce(cookie, scheme, st)
+    fun signDetailed(cookie: String, scheme: String, st: String?): SignResult =
+        signDetailed(WeiboHttp.WeiboSession.of(cookie), scheme, st)
+
+    /**
+     * 会话版签到：签到响应也可能带 `Set-Cookie`，用会话接住能少丢一次换发。
+     *
+     * 验签失败（`errno=100015`）时的重试**必须 `force` 探活**：缓存里那份结果很可能
+     * 正是过期 `st` 的来源。重试成功后把探活返回的合并串并回会话。
+     */
+    fun signDetailed(session: WeiboHttp.WeiboSession, scheme: String, st: String?): SignResult {
+        val first = signOnce(session, scheme, st)
         if (!first.needsVerifyRetry) return first
-        // 验签失败（errno=100015）：st 过期了。重新探活拿一份新的 st（顺带收下换发的
-        // Cookie）再原样请求一次 —— 与面板 run_account_checkin 的处理一致。
-        // 这里必须 force：缓存里的那份探活结果很可能正是过期 st 的来源。
-        // 探测失败就直接返回首次结果，把真实原因留给调用方展示。
         val fresh = try {
-            WeiboAuthApi.verify(cookie, force = true)
+            WeiboAuthApi.verify(session.cookie, force = true)
         } catch (e: Exception) {
             return first
         }
         if (!fresh.login) return first
-        return signOnce(fresh.cookie, scheme, fresh.st).copy(retried = true)
+        session.merge(fresh.cookie)
+        return signOnce(session, scheme, fresh.st).copy(retried = true)
     }
 
     /** 单次签到请求（不含验签重试）。 */
-    private fun signOnce(cookie: String, scheme: String, st: String?): SignResult {
+    private fun signOnce(session: WeiboHttp.WeiboSession, scheme: String, st: String?): SignResult {
         if (scheme.isEmpty()) throw WeiboHttp.WeiboException("缺少签到链接")
         var url = if (scheme.startsWith("http")) scheme else WeiboHttp.BASE + scheme
         url = WeiboHttp.weiboUrl(url)
         if (!st.isNullOrEmpty()) {
             url += (if (url.contains('?')) "&" else "?") + "st=" + st
         }
-        WeiboHttp.client.newCall(WeiboHttp.request(url, cookie)).execute().use { resp ->
+        WeiboHttp.call(url, session).use { resp ->
             if (!resp.isSuccessful) {
                 throw WeiboHttp.WeiboException("HTTP ${resp.code}" + WeiboHttp.httpHint(resp.code))
             }
@@ -364,4 +382,8 @@ object WeiboTopicApi {
     // 兼容旧调用点：只关心成功与否时用这个。
     fun sign(cookie: String, scheme: String, st: String?): Boolean =
         signDetailed(cookie, scheme, st).ok
+
+    /** 会话版便捷入口。 */
+    fun sign(session: WeiboHttp.WeiboSession, scheme: String, st: String?): Boolean =
+        signDetailed(session, scheme, st).ok
 }

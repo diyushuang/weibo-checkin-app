@@ -42,6 +42,16 @@ interface AccountPort {
     /** 记录一次成功的面板同步（只影响面板，不作为 cookie 寿命基准）。 */
     fun markSynced(ctx: Context, uid: String, at: Long): Boolean
 
+    /**
+     * 把一次任务内累积的 cookie（含业务响应里的 `Set-Cookie` 换发）写回账号。
+     *
+     * 是否算"换发"由实现按 `LOGIN_CRITICAL_KEYS` 比对决定，调用方不判断——
+     * 这样"什么时候推进寿命锚点"的口径只有一处（见 `CookieLife`）。
+     *
+     * @param domainHints 学到的 `name=domain` 映射；空串表示这次没有新信息
+     */
+    fun updateCookie(ctx: Context, uid: String, cookie: String, domainHints: String): Boolean
+
     /** 写「上次签到小结」——签到链路的唯一写入点。 */
     fun setLastResult(ctx: Context, uid: String, result: String, at: Long)
 
@@ -125,11 +135,26 @@ interface PanelPort {
     fun panelToken(ctx: Context): String
 }
 
-/** 账号密码凭证库（Keystore 加密）。 */
+/**
+ * 账号凭证库（Keystore 加密）。
+ *
+ * 两类凭证分开存、分开判：
+ * - **账号密码**：走 `sso/login.php` 表单登录（路线 D），要存两个字段，风险最高；
+ * - **`ALC`**：SSO 长效票据，凭它重签一次即可拿到新 `SUB`（路线 E），
+ *   不涉及密码，是"不想把密码交给 App"的用户唯一可用的自动恢复手段。
+ *
+ * 优先级由 domain 层决定：有密码先用密码，没有才用 ALC（见 `AutoRelogin`）。
+ */
 interface CredentialPort {
 
     fun has(ctx: Context, uid: String): Boolean
 
     /** 返回 (账号, 密码)；解不开时抛 `CredentialUnreadableException`。 */
     fun load(ctx: Context, uid: String): Pair<String, String>?
+
+    /** 是否保存过 `ALC`（不解密，不抛异常）。 */
+    fun hasAlc(ctx: Context, uid: String): Boolean
+
+    /** 读取并解密 `ALC`；没存返回 null，解不开抛 `CredentialUnreadableException`。 */
+    fun loadAlc(ctx: Context, uid: String): String?
 }

@@ -117,17 +117,27 @@ class CheckInWorker @AssistedInject constructor(
                     // 取消必须原样抛出：吞掉会让 doWork 谎报成功，WorkManager 以为跑完了
                     throw e
                 } catch (e: Exception) {
-                    // 网络抖动/风控：记下原因供界面展示，但绝不判失效（断网不是掉登录）
-                    val reason = when (e) {
-                        is WeiboHttp.WeiboException ->
-                            if (e.httpCode == 429 || e.httpCode == 432 || e.httpCode == 403) {
-                                "被微博风控拦截（HTTP ${e.httpCode}）"
-                            } else {
-                                e.message ?: "探活失败"
-                            }
-                        else -> "网络异常：" + (e.message ?: e.javaClass.simpleName)
+                    if (e is WeiboHttp.WeiboException && e.loginWall) {
+                        // 登录墙 = 服务端明确把请求送回登录页/访客页，属于"确定失效"，
+                        // 与 login=false 同级。其余异常（超时、5xx、429/432）一律不判死。
+                        AccountStore.markDead(
+                            ctx, acc.uid,
+                            e.message.orEmpty().ifEmpty { "登录态已失效（登录墙）" },
+                        )
+                        dead++
+                    } else {
+                        // 网络抖动/风控：记下原因供界面展示，但绝不判失效（断网不是掉登录）
+                        val reason = when (e) {
+                            is WeiboHttp.WeiboException ->
+                                if (e.httpCode == 429 || e.httpCode == 432 || e.httpCode == 403) {
+                                    "被微博风控拦截（HTTP ${e.httpCode}）"
+                                } else {
+                                    e.message ?: "探活失败"
+                                }
+                            else -> "网络异常：" + (e.message ?: e.javaClass.simpleName)
+                        }
+                        AccountStore.markCheckError(ctx, acc.uid, reason.take(80))
                     }
-                    AccountStore.markCheckError(ctx, acc.uid, reason.take(80))
                 }
             }
         }

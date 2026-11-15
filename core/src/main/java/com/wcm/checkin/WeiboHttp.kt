@@ -26,6 +26,15 @@ object WeiboHttp {
          * 换身份也没用，重试只会多打一次请求。
          */
         val identitySuspect: Boolean = false,
+        /**
+         * 是否命中「登录墙」：响应不是业务数据，而是登录页 / 访客页 / 302 到 signin。
+         *
+         * 与 [identitySuspect] 的区别是**强度**：`identitySuspect` 只说明"可能像身份问题"
+         * （风控、限流也会命中），而 `loginWall` 是「服务端明确要你重新登录」。
+         * 前者一律不能判死（`markCheckError`），后者才是除 `login=false` 之外
+         * 唯一允许判死的信号（见 docs/research/weibo-persistent-login.md §8 S11）。
+         */
+        val loginWall: Boolean = false,
     ) : Exception(message)
 
     const val BASE = "https://m.weibo.cn"
@@ -79,6 +88,9 @@ object WeiboHttp {
 
     /**
      * JSON 解析失败统一标记：访客拦截页 / 风控页都是 HTML 或空串，正常接口不会走到这里。
+     *
+     * 同时判定是否是**登录墙**：`looksLikeLoginWall` 命中时调用方可以据此判死，
+     * 否则只能当成"这次没成功"（见 [WeiboException.loginWall]）。
      */
     internal fun parseJson(body: String, what: String): JSONObject =
         try {
@@ -87,6 +99,7 @@ object WeiboHttp {
             throw WeiboException(
                 "$what 响应不是 JSON（前 60 字：${body.trim().take(60)}）",
                 identitySuspect = true,
+                loginWall = looksLikeLoginWall(body),
             )
         }
 
@@ -188,4 +201,145 @@ object WeiboHttp {
     fun serverExpiryFromHeaders(expiries: Map<String, Long>, mergedCookie: String): Long =
         expiries.filterKeys { it in LOGIN_EXPIRY_COOKIES }.values.minOrNull()
             ?: CookieLife.serverExpiryOf(mergedCookie)
+
+    // ---------- 登录墙识别（S11 信号）----------
+
+    /**
+     * 登录墙的特征串：命中任意一条即可判定「服务端要你重新登录」。
+     *
+     * 为什么不能只靠 HTTP 状态码：微博掉登录时最常见的两种表现是
+     * **200 + 访客页 HTML**、**200 + 空 body**，401 反而是少数。
+     * 只看状态码就会出现"假在线"（cookie 已死，本地还显示正常）。
+     */
+    private val LOGIN_WALL_MARKS = listOf(
+        "sina visitor system",          // 访客页标题
+        "passport.weibo.com/sso/signin", // 主站登录入口
+        "passport.weibo.cn/signin/login",// m 站登录入口
+        "/sso/v2/login",                 // 新版登录页
+    )
+
+    /**
+     * 判据保守化：只在「不是 JSON 且带登录特征」时命中，避免把正常文本误判成登录墙
+     * （误判死的代价比漏判死高，见 docs/research/weibo-persistent-login.md §2.3）。
+     */
+    fun looksLikeLoginWall(body: String): Boolean {
+        val text = body.trim()
+        if (text.isEmpty() || text.startsWith("{") || text.startsWith("[")) return false
+        val lower = text.take(4000).lowercase()
+        if (LOGIN_WALL_MARKS.any { lower.contains(it) }) return true
+        // 整段 HTML 且带登录语义也算：登录页不会带业务 JSON。
+        // 中文关键词只对 HTML 生效——纯文本接口回复（如"签到成功"）不受影响。
+        return lower.startsWith("<") &&
+            (lower.contains("visitor") || lower.contains("passport") ||
+                lower.contains("signin") || lower.contains("请登录") ||
+                lower.contains("登录后"))
+    }
+
+    /** 请求最终落到登录页（OkHttp 默认跟随 302，所以要看最终 URL 而不是响应头）。 */
+    fun isLoginLanding(url: String): Boolean {
+        val u = url.lowercase()
+        return u.contains("/signin") || u.contains("/sso/v2/login") || u.contains("visitor.passport")
+    }
+
+    /**
+     * cookie 的短摘要，用作缓存键。
+     *
+     * 用途：探活结果缓存不能拿明文 cookie 当键，否则静态变量里长期躺着一串凭据
+     * （内存 dump 就能拿走）。摘要只用于"这份 cookie 是否还是刚才那份"。
+     */
+    fun digest(raw: String): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        val bytes = md.digest(raw.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }.take(32)
+    }
+
+    // ---------- 会话（吸收每次响应的 Set-Cookie）----------
+
+    /**
+     * 一个账号在一次任务内的 cookie 会话。
+     *
+     * **为什么需要它**：现状是「每个请求手工拼一次 Cookie 头」，只有探活
+     * （[WeiboAuthApi.verify]）会把响应里的 `Set-Cookie` 合并回来。于是业务请求
+     * （超话列表、签到、时间线）里微博换发的新 cookie 被直接丢掉——服务端以为
+     * "你收到了却没记"，下一轮就可能判你过期。
+     *
+     * 用法：任务开始时 `val s = WeiboSession.of(acc.cookie)`，每个请求用
+     * `WeiboHttp.call(url, s)`，任务结束时把 `s.cookie` 写回账号。
+     *
+     * **刻意不做域过滤**：学习到的 Domain 只作诊断记录（[domainHints]）。原因很实际——
+     * m 站实测接受 `.weibo.com` 那份 SUB，按域裁剪反而会把当前可用的 cookie 裁掉，
+     * 属于"为了正确性引入回归"。等 §7.3 的域路由矩阵有实测结论再开。
+     */
+    class WeiboSession internal constructor(
+        private val jar: LinkedHashMap<String, String>,
+        private val domains: MutableMap<String, String>,
+    ) {
+        /** 当前最新整串 cookie（可直接落库）。 */
+        val cookie: String get() = cookieToString(jar)
+
+        /** 学到的 (name → domain) 映射，形如 `SUB=weibo.cn;SUBP=weibo.cn`；仅作诊断。 */
+        val domainHints: String
+            get() = domains.entries.joinToString(";") { "${it.key}=${it.value}" }
+
+        val isLoggedInShaped: Boolean get() = jar.containsKey("SUB")
+
+        fun value(name: String): String = jar[name].orEmpty()
+
+        /** 把外部（例如探活返回的合并串）并进会话；同名覆盖。 */
+        fun merge(cookie: String) {
+            parseCookieString(cookie).forEach { (k, v) -> jar[k] = v }
+        }
+
+        internal fun absorb(response: Response) {
+            for (header in response.headers("set-cookie")) {
+                val kv = header.substringBefore(';')
+                val key = kv.substringBefore('=').trim()
+                val value = kv.substringAfter('=', "").trim()
+                if (key.isEmpty() || value.isEmpty()) continue
+                jar[key] = value
+                // Domain 属性只记不用于过滤（见类注释）
+                val domain = header.split(';')
+                    .map { it.trim() }
+                    .firstOrNull { it.lowercase().startsWith("domain=") }
+                    ?.substringAfter('=')
+                    ?.trim()
+                    ?.removePrefix(".")
+                    ?.lowercase()
+                if (!domain.isNullOrEmpty()) domains[key] = domain
+            }
+        }
+
+        companion object {
+            fun of(cookie: String, hints: String = ""): WeiboSession =
+                WeiboSession(parseCookieString(cookie), decodeHints(hints))
+
+            internal fun decodeHints(raw: String): MutableMap<String, String> {
+                val map = LinkedHashMap<String, String>()
+                raw.split(";").forEach { part ->
+                    val kv = part.trim()
+                    if (kv.isEmpty()) return@forEach
+                    val k = kv.substringBefore('=').trim()
+                    val v = kv.substringAfter('=', "").trim()
+                    if (k.isNotEmpty() && v.isNotEmpty()) map[k] = v
+                }
+                return map
+            }
+        }
+    }
+
+    /** 发请求并让会话吸收响应里的 Set-Cookie（业务接口统一走这个入口）。 */
+    internal fun call(url: String, session: WeiboSession, desktop: Boolean = false): Response {
+        val req = if (desktop) desktopRequest(url, session.cookie) else request(url, session.cookie)
+        return client.newCall(req).execute().also { session.absorb(it) }
+    }
+
+    /** 桌面 UA 的请求（Web 端 ajax 接口用）。 */
+    internal fun desktopRequest(url: String, cookie: String): Request =
+        Request.Builder().url(url)
+            .header("User-Agent", WEB_UA)
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Cookie", cookie)
+            .build()
 }

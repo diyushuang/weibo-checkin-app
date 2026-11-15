@@ -66,4 +66,17 @@ data class Account(
     var reloginBlocked: Boolean = false,
     var reloginLastReason: String = "",
     var reloginLastCode: String = "",
+    /**
+     * 从响应 `Set-Cookie` 里学到的 (name → domain) 映射，形如 `SUB=weibo.cn;SUBP=weibo.cn`。
+     *
+     * **只作诊断与后续域路由的原料，当前不参与过滤**（见 `WeiboHttp.WeiboSession` 类注释）。
+     * 默认空串：老数据没有它，等价于"域未知"，行为与改造前完全一致。
+     */
+    var cookieDomains: String = "",
+    /**
+     * 最近一次保存 `ALC`（SSO 长效凭证）的时刻；0 = 没存过。
+     *
+     * 只存时刻不存值：`ALC` 本身在 `AlcVault` 里加密保存，与密码同一个 Keystore。
+     */
+    var alcAt: Long = 0L,
 )

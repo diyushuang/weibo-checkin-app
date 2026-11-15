@@ -38,7 +38,23 @@ object WeiboAuthApi {
 
     @Volatile private var verifyCache: CachedVerify? = null
 
-    private data class CachedVerify(val cookie: String, val at: Long, val value: Verify)
+    /**
+     * 缓存条目**不存整串 cookie**，只存摘要与结论。
+     *
+     * 旧实现把 cookie 原文塞进静态变量当键，凭据就在内存里多躺 90 秒——
+     * 一次 heap dump 就能拿走全部账号。改成摘要后，命中时用调用方传进来的
+     * cookie 原样回填：缓存命中意味着这次没有发请求，也就不可能发生换发，
+     * 回填输入值在语义上与原值等价。
+     */
+    private data class CachedVerify(
+        val digest: String,
+        val at: Long,
+        val login: Boolean,
+        val st: String?,
+        val uid: String,
+        val serverExpiresAt: Long,
+        val loginAt: Long,
+    )
 
     /**
      * 探活 + 轮换：返回是否登录、st、uid 与合并轮换后的完整 cookie。
@@ -47,18 +63,35 @@ object WeiboAuthApi {
      * 必须看到实时状态的场景要显式传 `force = true`。
      */
     fun verify(cookie: String, force: Boolean = false): Verify {
+        val key = WeiboHttp.digest(cookie)
         if (!force) {
             val c = verifyCache
-            if (c != null && c.cookie == cookie &&
+            if (c != null && c.digest == key &&
                 System.currentTimeMillis() - c.at < VERIFY_TTL_MS
             ) {
-                return c.value
+                return Verify(
+                    login = c.login,
+                    st = c.st,
+                    cookie = cookie,
+                    uid = c.uid,
+                    serverExpiresAt = c.serverExpiresAt,
+                    loginAt = c.loginAt,
+                )
             }
         }
         val jar = WeiboHttp.parseCookieString(cookie)
         val result = WeiboHttp.client
             .newCall(WeiboHttp.request("${WeiboHttp.BASE}/api/config", cookie))
             .execute().use { resp ->
+                // 落在登录页 = 服务端明确拒绝这份 cookie（S11 信号，允许判死）
+                if (WeiboHttp.isLoginLanding(resp.request.url.toString())) {
+                    throw WeiboHttp.WeiboException(
+                        "探活被重定向到登录页（登录态已失效）",
+                        httpCode = resp.code,
+                        identitySuspect = true,
+                        loginWall = true,
+                    )
+                }
                 if (!resp.isSuccessful) {
                     throw WeiboHttp.httpFailure("探活", resp.code)
                 }
@@ -73,10 +106,12 @@ object WeiboAuthApi {
                 val payload = try {
                     JSONObject(body)
                 } catch (e: Exception) {
-                    // 风控页 / HTML 不是「未登录」：抛出去让调用方显示原因，别静默当成没登录
+                    // 风控页 / 登录页 / 访客页都是 HTML，不是「未登录」：
+                    // 抛出去让调用方显示原因，并按是否登录墙决定要不要判死。
                     throw WeiboHttp.WeiboException(
                         "探活响应不是 JSON（前 60 字：${body.trim().take(60)}）",
                         identitySuspect = true,
+                        loginWall = WeiboHttp.looksLikeLoginWall(body),
                     )
                 }
                 val data = payload.optJSONObject("data") ?: JSONObject()
@@ -93,7 +128,15 @@ object WeiboAuthApi {
             }
         // 只缓存「已登录」的结果：把 false 缓存住会让登录页卡在「等待微博确认」。
         if (result.login) {
-            verifyCache = CachedVerify(cookie, System.currentTimeMillis(), result)
+            verifyCache = CachedVerify(
+                digest = key,
+                at = System.currentTimeMillis(),
+                login = true,
+                st = result.st,
+                uid = result.uid,
+                serverExpiresAt = result.serverExpiresAt,
+                loginAt = result.loginAt,
+            )
         }
         return result
     }

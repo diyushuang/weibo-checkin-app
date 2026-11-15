@@ -16,6 +16,9 @@ object AccountStore {
     private const val KEY_AUTO_RELOGIN_MAX = "auto_relogin_max_per_day"
     private const val KEY_AUTO_RELOGIN_BACKOFF = "auto_relogin_backoff_hours"
 
+    /** 存量明文 cookie 是否已全量改写成密文（`migrateToSealed` 的一次性标记）。 */
+    private const val KEY_SEALED = "cookie_sealed_v1"
+
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -49,7 +52,10 @@ object AccountStore {
             if (raw == cacheRaw) {
                 cacheList
             } else {
-                val parsed = deserializeAccounts(raw)
+                val parsed = deserializeAccounts(raw) { token ->
+                    // 解不开就当没有：单条坏掉只影响这一个账号，不能让整表读失败
+                    SecretBox.openOrNull(token) ?: ""
+                }
                 cacheRaw = raw
                 cacheList = parsed
                 parsed
@@ -60,12 +66,89 @@ object AccountStore {
 
     fun save(ctx: Context, accounts: List<Account>) {
         synchronized(LOCK) {
-            val raw = serializeAccounts(accounts)
+            // cookie 落盘前逐条加密（失败降级明文，见 SecretBox.sealOrPlain）
+            val raw = serializeAccounts(accounts) { SecretBox.sealOrPlain(it) }
             prefs(ctx).edit { putString(KEY_ACCOUNTS, raw) }
             // 顺手把缓存对齐，省掉紧随其后的那次重新解析
             cacheRaw = raw
             cacheList = accounts
         }
+    }
+
+    /**
+     * 一次性把存量明文 cookie 全量改写成密文（升级后首次启动跑一次）。
+     *
+     * 为什么是"启动时全量"而不是"下次写入时渐进"：明文 cookie 在设备上停留的每一天
+     * 都是纯暴露面，而重写只是一次 JSON 序列化 + N 次 AES 加密（N ≤ 账号数），
+     * 冷启动多花不到 10ms。代价是**写失败会连累整表**，所以：
+     *
+     * - 只在 `sealed_v1` 标记未置位时跑；
+     * - 任何一条加密失败（[SecretBox.seal] 抛异常）就整体放弃，保持原文件不动；
+     * - **先校验再落盘**：把重写结果解析回来逐行比对（原本是明文的行必须变成可解密的密文、
+     *   原本解不开的行必须原样保留），全部通过才写入，避免"写进去才发现坏了"。
+     *
+     * @return true = 真的改写并落盘了
+     */
+    fun migrateToSealed(ctx: Context): Boolean = synchronized(LOCK) {
+        val p = prefs(ctx)
+        if (SafePrefs.bool(p, KEY_SEALED, false)) return false
+        val raw = SafePrefs.string(p, KEY_ACCOUNTS, "[]")
+
+        // 逐行看原始 cookie 串：只迁移"还是明文"的行；已经解不开的密文行不动，
+        // 否则会拿空串覆盖掉一条本来还有救的记录。
+        val before = rawCookies(raw)
+        if (before.isEmpty() || before.none { SecretBox.needsSeal(it.value) }) {
+            // 空表 / 已全部加密：置位，省掉以后每次启动的重复解析
+            p.edit { putBoolean(KEY_SEALED, true) }
+            return false
+        }
+
+        val accounts = deserializeAccounts(raw) { SecretBox.openOrNull(it) ?: "" }
+        val sealed = try {
+            serializeAccounts(accounts) { SecretBox.seal(it) }
+        } catch (e: Exception) {
+            // 加密不可用（极少数 ROM）：保持明文，下次启动再试，但不阻塞使用
+            return false
+        }
+
+        val after = rawCookies(sealed)
+        val ok = before.keys == after.keys && before.all { (uid, old) ->
+            val now = after[uid].orEmpty()
+            if (SecretBox.needsSeal(old)) {
+                SecretBox.isSealed(now) && SecretBox.openOrNull(now) == old
+            } else {
+                now == old
+            }
+        }
+        if (!ok) {
+            // 校验不过：一个字节都不写，原文件保持原样
+            return false
+        }
+
+        // 数据与标记一次提交：避免"写完了但标记没置位"导致的重复迁移窗口
+        p.edit {
+            putString(KEY_ACCOUNTS, sealed)
+            putBoolean(KEY_SEALED, true)
+        }
+        cacheRaw = sealed
+        cacheList = deserializeAccounts(sealed) { SecretBox.openOrNull(it) ?: "" }
+        true
+    }
+
+    /** 从账号表 JSON 里取 `uid → 原始 cookie 串`（不解密，用于迁移前后比对）。 */
+    private fun rawCookies(json: String): LinkedHashMap<String, String> {
+        val out = LinkedHashMap<String, String>()
+        try {
+            val arr = JSONArray(json)
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val uid = o.optString("uid", "")
+                if (uid.isNotEmpty()) out[uid] = o.optString("cookie", "")
+            }
+        } catch (e: Exception) {
+            // 解析失败返回空表：调用方会按"没有需要迁移的行"处理，不写盘
+        }
+        return out
     }
 
     // ---- 纯序列化与合并（不依赖 Android，JVM 单测覆盖） ----
@@ -77,14 +160,25 @@ object AccountStore {
     fun needsNameResolve(acc: Account): Boolean =
         acc.name.isEmpty() || acc.name == acc.uid || acc.name == placeholderName(acc.uid)
 
-    fun serializeAccounts(accounts: List<Account>): String {
+    /**
+     * 序列化账号表。
+     *
+     * @param sealCookie cookie 字段的加密函数。默认恒等（纯函数口径，JVM 单测直接用）；
+     *   生产路径由 [save] 传入 [SecretBox.sealOrPlain]，因此**磁盘上见不到明文 cookie**。
+     *   加密放在序列化这一刻而不是更上层，是为了保证"只要落盘就一定过加密"，
+     *   不依赖每个调用方记得处理。
+     */
+    fun serializeAccounts(
+        accounts: List<Account>,
+        sealCookie: (String) -> String = { it },
+    ): String {
         val arr = JSONArray()
         accounts.forEach {
             arr.put(
                 JSONObject()
                     .put("uid", it.uid)
                     .put("name", it.name)
-                    .put("cookie", it.cookie)
+                    .put("cookie", sealCookie(it.cookie))
                     .put("lastResult", it.lastResult)
                     .put("lastResultAt", it.lastResultAt)
                     .put("issuedAt", it.cookieIssuedAt)
@@ -97,6 +191,8 @@ object AccountStore {
                     .put("rotateKeys", it.cookieRotateKeys)
                     .put("lastError", it.cookieLastError)
                     .put("lastCheckAt", it.cookieLastCheckAt)
+                    .put("cookieDomains", it.cookieDomains)
+                    .put("alcAt", it.alcAt)
                     .put("autoRelogin", it.autoReloginEnabled)
                     .put("credentialAt", it.credentialAt)
                     .put("rlLast", it.reloginLastAttemptAt)
@@ -111,7 +207,16 @@ object AccountStore {
         return arr.toString()
     }
 
-    fun deserializeAccounts(raw: String): List<Account> {
+    /**
+     * 反序列化账号表。
+     *
+     * @param openCookie cookie 字段的解密函数。默认恒等（兼容明文与单测）；
+     *   生产路径由 [load] 传入 [SecretBox.openOrNull]，非密文原样返回、坏值降级为空串。
+     */
+    fun deserializeAccounts(
+        raw: String,
+        openCookie: (String) -> String = { it },
+    ): List<Account> {
         val list = ArrayList<Account>()
         try {
             val arr = JSONArray(raw)
@@ -121,7 +226,7 @@ object AccountStore {
                     Account(
                         uid = o.optString("uid", ""),
                         name = o.optString("name", "未命名账号"),
-                        cookie = o.optString("cookie", ""),
+                        cookie = openCookie(o.optString("cookie", "")),
                         lastResult = o.optString("lastResult", ""),
                         lastResultAt = o.optLong("lastResultAt", 0L),
                         // 旧版本没有这些键：时间戳落 0 = 没有锚点（界面显示「未同步」），
@@ -136,6 +241,8 @@ object AccountStore {
                         cookieRotateKeys = o.optString("rotateKeys", ""),
                         cookieLastError = o.optString("lastError", ""),
                         cookieLastCheckAt = o.optLong("lastCheckAt", 0L),
+                        cookieDomains = o.optString("cookieDomains", ""),
+                        alcAt = o.optLong("alcAt", 0L),
                         autoReloginEnabled = o.optBoolean("autoRelogin", true),
                         credentialAt = o.optLong("credentialAt", 0L),
                         reloginLastAttemptAt = o.optLong("rlLast", 0L),
@@ -285,6 +392,8 @@ object AccountStore {
         checkedAt: Long = 0L,
         lastError: String? = null,
         dead: Boolean? = null,
+        /** 本次从 Set-Cookie 学到的域映射（`SUB=weibo.cn;…`）；空串表示这次没有新信息。 */
+        domainHints: String = "",
     ): Boolean {
         synchronized(LOCK) {
             val list = load(ctx)
@@ -351,6 +460,10 @@ object AccountStore {
             }
             if (dead != null && dead != acc.cookieDead) {
                 acc = acc.copy(cookieDead = dead)
+                changed = true
+            }
+            if (domainHints.isNotEmpty() && domainHints != acc.cookieDomains) {
+                acc = acc.copy(cookieDomains = domainHints)
                 changed = true
             }
             if (changed) {
@@ -579,8 +692,21 @@ object AccountStore {
             list.removeAll { it.uid == uid }
             save(ctx, list)
         }
-        // 删账号同时销毁本机保存的账号密码密文，不给残留
+        // 删账号同时销毁本机保存的两类凭证，不给残留：
+        // 账号密码（cred_）与 ALC（alc_）都在这一个 prefs 里，必须一起清。
         CredentialVault.clear(ctx, uid)
+        AlcVault.clear(ctx, uid)
+    }
+
+    /** 记录一次 ALC 凭证的保存时刻（ALC 值本身在 [AlcVault] 里加密存）。 */
+    fun setAlcAt(ctx: Context, uid: String, at: Long) {
+        synchronized(LOCK) {
+            val list = load(ctx)
+            val index = list.indexOfFirst { it.uid == uid }
+            if (index < 0) return
+            list[index] = list[index].copy(alcAt = at)
+            save(ctx, list)
+        }
     }
 
 }

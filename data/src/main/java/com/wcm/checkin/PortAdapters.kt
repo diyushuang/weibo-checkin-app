@@ -33,6 +33,15 @@ class AccountStoreAdapter : AccountPort {
     override fun markSynced(ctx: Context, uid: String, at: Long): Boolean =
         AccountStore.markSynced(ctx, uid, at)
 
+    override fun updateCookie(
+        ctx: Context,
+        uid: String,
+        cookie: String,
+        domainHints: String,
+    ): Boolean = AccountStore.patchAccount(
+        ctx, uid, cookie = cookie, domainHints = domainHints,
+    )
+
     override fun setLastResult(ctx: Context, uid: String, result: String, at: Long) =
         AccountStore.setLastResult(ctx, uid, result, at)
 
@@ -127,4 +136,8 @@ class CredentialVaultAdapter : CredentialPort {
 
     override fun load(ctx: Context, uid: String): Pair<String, String>? =
         CredentialVault.load(ctx, uid)
+
+    override fun hasAlc(ctx: Context, uid: String): Boolean = AlcVault.has(ctx, uid)
+
+    override fun loadAlc(ctx: Context, uid: String): String? = AlcVault.load(ctx, uid)
 }

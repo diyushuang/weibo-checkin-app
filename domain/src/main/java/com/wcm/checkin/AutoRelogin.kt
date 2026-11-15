@@ -55,7 +55,10 @@ class AutoRelogin(
         val fresh = account.load(ctx).firstOrNull { it.uid == acc.uid } ?: acc
         val now = System.currentTimeMillis()
         val globalEnabled = account.autoReloginEnabled(ctx)
-        val hasCred = vault.has(ctx, fresh.uid)
+        val hasPwd = vault.has(ctx, fresh.uid)
+        // 没有密码但有 ALC 也允许自动恢复（路线 E）。两者都没有才算「无凭证」。
+        val hasAlc = vault.hasAlc(ctx, fresh.uid)
+        val hasCred = hasPwd || hasAlc
         val usable = cookieUsable(fresh, now)
         val state = account.reloginState(fresh)
         val maxPerDay = account.autoReloginMaxPerDay(ctx)
@@ -89,12 +92,8 @@ class AutoRelogin(
         val attempted = ReloginPolicy.recordAttempt(state, now)
         account.saveReloginState(ctx, fresh.uid, attempted)
 
-        val credentials = try {
-            vault.load(ctx, fresh.uid)
-        } catch (e: CredentialUnreadableException) {
-            null
-        }
-        if (credentials == null) {
+        val result = attemptLogin(ctx, fresh.uid, hasPwd)
+        if (result == null) {
             val failure = ReloginPolicy.onFailure(
                 attempted, ReloginPolicy.CODE_CREDENTIAL_UNREADABLE, "",
                 System.currentTimeMillis(), maxPerDay, baseHours,
@@ -105,15 +104,12 @@ class AutoRelogin(
             Log.w(TAG, "凭证不可用 uid=${fresh.uid}")
             return Outcome(false, true, ReloginPolicy.CODE_CREDENTIAL_UNREADABLE, failure.message)
         }
-
-        val (username, password) = credentials
-        val result = WeiboPasswordLogin.login(username, password)
         if (result.ok) {
             account.markReloginSuccess(
                 ctx, fresh.uid, result.cookie, result.loginAt, result.serverExpiresAt, at = System.currentTimeMillis(),
             )
-            Log.i(TAG, "自动重登成功 uid=${fresh.uid} trigger=$trigger")
-            return Outcome(true, true, message = "账密重登成功，已更新 Cookie 与真实登录时间")
+            Log.i(TAG, "自动重登成功 uid=${fresh.uid} trigger=$trigger via=${result.via}")
+            return Outcome(true, true, message = result.okText)
         }
 
         val failure = ReloginPolicy.onFailure(
@@ -129,7 +125,65 @@ class AutoRelogin(
             ctx, fresh.uid, failure.state, failure.message, at = System.currentTimeMillis(),
             dead = fresh.cookieDead || expired,
         )
-        Log.w(TAG, "自动重登失败 uid=${fresh.uid} trigger=$trigger code=${result.code}")
+        Log.w(TAG, "自动重登失败 uid=${fresh.uid} trigger=$trigger code=${result.code} via=${result.via}")
         return Outcome(false, true, result.code, failure.message)
+    }
+
+    /** 一次登录尝试的统一结果（账密与 ALC 两条路线收敛成同一个形状）。 */
+    private data class LoginResult(
+        val ok: Boolean,
+        val code: String = "",
+        val retcode: String = "",
+        val cookie: String = "",
+        val loginAt: Long = 0L,
+        val serverExpiresAt: Long = 0L,
+        val via: String = "",
+        val okText: String = "",
+    )
+
+    /**
+     * 按可用凭证路由登录方式。
+     *
+     * - **有密码 → 账密 SSO（路线 D）**：能力最全，能处理"SSO 要求重新验证"之外的绝大多数情况；
+     * - **没密码但有 ALC → 票据重签（路线 E）**：不碰密码，凭 `ALC` 走一遍 `sso/login.php`
+     *   换一套新凭据。见 `WeiboAlcLogin` 的类注释——这**不是续期**，是重新登录。
+     *
+     * 返回 null = 凭证存在但读不出来（Keystore 异常），调用方按 `credential_unreadable` 硬停。
+     */
+    private fun attemptLogin(ctx: Context, uid: String, hasPwd: Boolean): LoginResult? {
+        if (hasPwd) {
+            val credentials = try {
+                vault.load(ctx, uid)
+            } catch (e: CredentialUnreadableException) {
+                null
+            } ?: return null
+            val (username, password) = credentials
+            val r = WeiboPasswordLogin.login(username, password)
+            return LoginResult(
+                ok = r.ok,
+                code = r.code,
+                retcode = r.retcode,
+                cookie = r.cookie,
+                loginAt = r.loginAt,
+                serverExpiresAt = r.serverExpiresAt,
+                via = "password",
+                okText = "账密重登成功，已更新 Cookie 与真实登录时间",
+            )
+        }
+        val alc = try {
+            vault.loadAlc(ctx, uid)
+        } catch (e: CredentialUnreadableException) {
+            null
+        } ?: return null
+        val r = WeiboAlcLogin.login(alc)
+        return LoginResult(
+            ok = r.ok,
+            code = r.code,
+            cookie = r.cookie,
+            loginAt = r.loginAt,
+            serverExpiresAt = r.serverExpiresAt,
+            via = "alc",
+            okText = "ALC 重签成功，已更新 Cookie 与真实登录时间（未使用账号密码）",
+        )
     }
 }
