@@ -8,63 +8,6 @@ import org.json.JSONObject
 /** 账号与配置存储：全部放应用私有 SharedPreferences（无任何存储权限）。 */
 object AccountStore {
 
-    data class Account(
-        val uid: String,
-        val name: String,
-        var cookie: String,
-        var lastResult: String = "",
-        /**
-         * [lastResult] 的写入时刻（epoch ms；0 = 旧版本写的 / 时间未知）。
-         *
-         * 签到状态是**按天**的：只有知道小结是哪天写的，才能判断它能不能当「今天」的
-         * 结论。没有这个时间戳时，昨天 22:00 的「签到 7/7 · 22:00」会被当成今天已签。
-         */
-        var lastResultAt: Long = 0L,
-        /** 本机首次存下这份 cookie 的时刻（epoch ms；0 = 没有记录）。 */
-        var cookieIssuedAt: Long = 0L,
-        /** 最近一次观察到微博**真的换发**登录关键字段（SUB/SUBP/SCF/SSOLoginState/ALF）的时刻。 */
-        var cookieRotatedAt: Long = 0L,
-        /** 最近一次探活确认「登录有效」的时刻。只证明还活着，**不作为寿命基准**。 */
-        var cookieSeenAt: Long = 0L,
-        /** 最近一次成功推送到面板的时刻。同步只影响面板，**不作为本机寿命基准**。 */
-        var cookieSyncedAt: Long = 0L,
-        /**
-         * 探活已明确判定登录态失效（`login=false`）。
-         *
-         * 有效期是**估算**：一个已经掉登录的账号照样能算出「还剩 5 天」，
-         * 这比不给结论更糟。所以探活失败要单独记一笔，界面上直接显示「已失效」，
-         * 让用户去重新登录，而不是等那个算出来的倒计时走完。
-         * 任何一次探活成功（[markVerified]）都会清掉它。
-         */
-        var cookieDead: Boolean = false,
-        /**
-         * 真实登录时刻（来自 cookie 的 `SSOLoginState`，缺失时用本次账密登录时刻）。
-         *
-         * 与 [cookieSyncedAt] 严格分开：同步不是登录，不能把同步时刻当寿命起点。
-         */
-        var cookieLoginAt: Long = 0L,
-        /** 服务端**声明/名义**到期时间（Set-Cookie 的 Expires/Max-Age 或 ALF；0 = 未知）。 */
-        var cookieServerExpiresAt: Long = 0L,
-        /** 最近一次让寿命起算的关键字段列表（逗号分隔）；仅用于界面说明「为什么续期」。 */
-        var cookieRotateKeys: String = "",
-        /** 最近一次探测失败原因（网络/风控/失效），给用户看，成功时清空。 */
-        var cookieLastError: String = "",
-        /** 最近一次探测（无论成败）的时刻。 */
-        var cookieLastCheckAt: Long = 0L,
-        // ---- 账号密码自动重登（凭证本身在 CredentialVault 加密保存，不落在这里）----
-        var autoReloginEnabled: Boolean = true,
-        /** 最近一次保存/更新凭证的时刻。 */
-        var credentialAt: Long = 0L,
-        var reloginLastAttemptAt: Long = 0L,
-        var reloginNextAt: Long = 0L,
-        var reloginFailStreak: Int = 0,
-        /** 24 小时窗口内的尝试时刻（epoch ms）。 */
-        var reloginAttempts: List<Long> = emptyList(),
-        var reloginBlocked: Boolean = false,
-        var reloginLastReason: String = "",
-        var reloginLastCode: String = "",
-    )
-
     private const val PREFS = "wcm"
     private const val KEY_ACCOUNTS = "accounts"
 

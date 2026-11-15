@@ -18,7 +18,7 @@ import android.content.SharedPreferences
  * 口径：读不到 / 类型不符 → 当作默认值，绝不抛给调用方。写入侧保持强类型，
  * 让错误尽早暴露在开发期而不是用户设备上。
  */
-internal object SafePrefs {
+object SafePrefs {
 
     fun string(p: SharedPreferences, key: String, def: String = ""): String =
         try {

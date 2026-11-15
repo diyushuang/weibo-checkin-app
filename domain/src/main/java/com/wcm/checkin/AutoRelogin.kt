@@ -27,7 +27,7 @@ object AutoRelogin {
     )
 
     /** cookie 是否仍「可用」：非空、没被判失效、且有效期状态不是 EXPIRED/EXPIRING。 */
-    fun cookieUsable(acc: AccountStore.Account, now: Long = System.currentTimeMillis()): Boolean {
+    fun cookieUsable(acc: Account, now: Long = System.currentTimeMillis()): Boolean {
         if (acc.cookie.isEmpty() || acc.cookieDead) return false
         return CookieLife.describe(acc, now).state == CookieLife.State.OK
     }
@@ -42,7 +42,7 @@ object AutoRelogin {
      */
     fun tryAutoRelogin(
         ctx: Context,
-        acc: AccountStore.Account,
+        acc: Account,
         trigger: String,
         force: Boolean = false,
     ): Outcome {

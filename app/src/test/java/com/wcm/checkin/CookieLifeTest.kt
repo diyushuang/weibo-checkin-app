@@ -225,7 +225,7 @@ class CookieLifeTest {
     /** 便捷重载：账号行字段直接喂进来，结果应与逐个传参一致。 */
     @Test
     fun describe_accountOverloadMatchesExplicit() {
-        val acc = AccountStore.Account(
+        val acc = Account(
             uid = "42", name = "小号", cookie = "SUB=x",
             cookieIssuedAt = now - 2 * day,
             cookieSeenAt = now - 1 * day,

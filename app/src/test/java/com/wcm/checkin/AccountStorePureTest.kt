@@ -12,7 +12,7 @@ class AccountStorePureTest {
         name: String = "账号$uid",
         cookie: String = "SUB=$uid",
         lastResult: String = "",
-    ) = AccountStore.Account(uid, name, cookie, lastResult)
+    ) = Account(uid, name, cookie, lastResult)
 
     // ---------- 序列化往返 ----------
 
@@ -34,7 +34,7 @@ class AccountStorePureTest {
 
     @Test
     fun deserialize_emptyAndMissingFields() {
-        assertEquals(emptyList<AccountStore.Account>(), AccountStore.deserializeAccounts("[]"))
+        assertEquals(emptyList<Account>(), AccountStore.deserializeAccounts("[]"))
 
         val parsed = AccountStore.deserializeAccounts("""[{"uid":"1001","cookie":"SUB=a"}]""")
         assertEquals(1, parsed.size)
@@ -46,8 +46,8 @@ class AccountStorePureTest {
     @Test
     fun deserialize_malformed_fallsBackToEmpty() {
         // 存储损坏时静默降级为空列表，宁可丢账号也不能让 App 起不来
-        assertEquals(emptyList<AccountStore.Account>(), AccountStore.deserializeAccounts("not-json"))
-        assertEquals(emptyList<AccountStore.Account>(), AccountStore.deserializeAccounts("{}"))
+        assertEquals(emptyList<Account>(), AccountStore.deserializeAccounts("not-json"))
+        assertEquals(emptyList<Account>(), AccountStore.deserializeAccounts("{}"))
     }
 
     // ---------- 合并式写回语义（Worker 与前台共用的防丢/防复活逻辑） ----------
@@ -162,7 +162,7 @@ class AccountStorePureTest {
 
     @Test
     fun serialize_deserialize_keepsCookieAnchors() {
-        val acc = AccountStore.Account(
+        val acc = Account(
             uid = "1001",
             name = "小号",
             cookie = "SUB=a",

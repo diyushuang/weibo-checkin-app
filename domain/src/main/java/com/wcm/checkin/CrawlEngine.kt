@@ -21,7 +21,7 @@ object CrawlEngine {
     /** 选**时间线模式**抓图用的 cookie（依次探活取第一个还活着的账号）。 */
     fun pickCrawlCookie(
         ctx: Context,
-        accounts: List<AccountStore.Account>,
+        accounts: List<Account>,
         log: (String) -> Unit,
     ): String? {
         if (accounts.isEmpty()) {

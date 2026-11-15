@@ -144,7 +144,7 @@ class TopicViewModel @Inject constructor(
     }
 
     /** 拉一个账号的超话列表并落缓存；失败只写错误，不清掉上次的数据。 */
-    private suspend fun loadAccount(acc: AccountStore.Account) {
+    private suspend fun loadAccount(acc: Account) {
         try {
             val verify = WeiboAuthApi.verify(acc.cookie)
             if (!verify.login) {
@@ -358,7 +358,7 @@ class TopicViewModel @Inject constructor(
         }
 
     private fun anyStaleDay(
-        accounts: List<AccountStore.Account>,
+        accounts: List<Account>,
         snaps: Map<String, TopicStore.Snapshot>,
     ): Boolean {
         val picked = if (currentUid.isNotEmpty()) listOf(currentUid) else accounts.map { it.uid }
@@ -369,7 +369,7 @@ class TopicViewModel @Inject constructor(
     }
 
     private fun buildRows(
-        accounts: List<AccountStore.Account>,
+        accounts: List<Account>,
         snaps: Map<String, TopicStore.Snapshot>,
     ): List<TopicRow> {
         val nameOf = accounts.associate { it.uid to (it.name.ifEmpty { it.uid }) }

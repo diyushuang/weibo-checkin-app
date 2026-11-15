@@ -36,7 +36,7 @@ object CheckinService {
     }
 
     /** 只写一行「上次结果」，不整表覆盖（整表写会把并发轮换的 cookie 顶掉）。 */
-    fun noteResult(ctx: Context, acc: AccountStore.Account, text: String) {
+    fun noteResult(ctx: Context, acc: Account, text: String) {
         val at = System.currentTimeMillis()
         acc.lastResult = text
         acc.lastResultAt = at
@@ -53,7 +53,7 @@ object CheckinService {
      */
     suspend fun runAll(
         ctx: Context,
-        accounts: List<AccountStore.Account>,
+        accounts: List<Account>,
         log: (String) -> Unit,
         onTopics: (uid: String, topics: List<WeiboTopicApi.Topic>) -> Unit = { _, _ -> },
         onAccountDone: () -> Unit = {},
@@ -78,7 +78,7 @@ object CheckinService {
      */
     suspend fun runAccount(
         ctx: Context,
-        acc: AccountStore.Account,
+        acc: Account,
         log: (String) -> Unit,
         onTopics: (uid: String, topics: List<WeiboTopicApi.Topic>) -> Unit = { _, _ -> },
         cookieDeadText: String = "Cookie 已失效，请删除后重新添加账号",

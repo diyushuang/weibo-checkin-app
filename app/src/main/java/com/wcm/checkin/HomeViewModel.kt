@@ -245,7 +245,7 @@ class HomeViewModel @Inject constructor(
 
     // ========================= Cookie 卡 =========================
 
-    private fun renderCookieValidity(accounts: List<AccountStore.Account>, panelReady: Boolean) {
+    private fun renderCookieValidity(accounts: List<Account>, panelReady: Boolean) {
         val hint = ctx.getString(
             if (panelReady) R.string.sync_card_hint else R.string.sync_card_hint_off,
         )
@@ -380,7 +380,7 @@ class HomeViewModel @Inject constructor(
     private fun dateLabel(): String =
         SimpleDateFormat("M月d日 · EEE", Locale.CHINA).format(Date())
 
-    private fun renderTopicProgress(accounts: List<AccountStore.Account>, panelReady: Boolean) {
+    private fun renderTopicProgress(accounts: List<Account>, panelReady: Boolean) {
         val known = topicStates.value.values.filter {
             !it.loading && it.error.isEmpty() && it.total > 0 && it.freshToday
         }
@@ -412,17 +412,17 @@ class HomeViewModel @Inject constructor(
         _badge.value = if (zero) null else total - done
     }
 
-    private fun avatarInitial(acc: AccountStore.Account): String {
+    private fun avatarInitial(acc: Account): String {
         if (AccountStore.needsNameResolve(acc)) return "微"
         val name = acc.name.trim().trimStart('@', '＠')
         if (name.isEmpty()) return "微"
         return String(Character.toChars(name.codePointAt(0)))
     }
 
-    private fun displayName(acc: AccountStore.Account): String =
+    private fun displayName(acc: Account): String =
         if (AccountStore.needsNameResolve(acc)) ctx.getString(R.string.home_name_unknown) else acc.name
 
-    private fun buildAccountRow(acc: AccountStore.Account): AccountRowUi {
+    private fun buildAccountRow(acc: Account): AccountRowUi {
         val st = topicStates.value[acc.uid]
         val loaded = st != null && !st.loading && st.error.isEmpty() && st.total > 0 && st.freshToday
         val chips = if (st != null && loaded) {
@@ -601,7 +601,7 @@ class HomeViewModel @Inject constructor(
         render()
     }
 
-    private fun runManualRelogin(acc: AccountStore.Account) {
+    private fun runManualRelogin(acc: Account) {
         toast(ctx.getString(R.string.relogin_running))
         AppScope.launch {
             val outcome = AutoRelogin.tryAutoRelogin(ctx, acc, "manual", force = true)
@@ -814,7 +814,7 @@ class HomeViewModel @Inject constructor(
         return true
     }
 
-    private suspend fun syncToPanel(acc: AccountStore.Account): Boolean {
+    private suspend fun syncToPanel(acc: Account): Boolean {
         val r = AccountMaintenanceService.syncToPanel(ctx, acc)
         if (r.ok) {
             log("  📲 已同步面板：${r.detail}")

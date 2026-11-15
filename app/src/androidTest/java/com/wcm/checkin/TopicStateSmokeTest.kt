@@ -47,7 +47,7 @@ class TopicStateSmokeTest {
             AccountStore.save(
                 ctx,
                 listOf(
-                    AccountStore.Account(
+                    Account(
                         uid = uid,
                         name = "测试账号",
                         cookie = "SUB=test",

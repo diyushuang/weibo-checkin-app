@@ -154,7 +154,7 @@ object AlbumCrawler {
     private suspend fun crawlAlbumTarget(
         ctx: Context,
         target: CrawlTarget,
-        accounts: List<AccountStore.Account>,
+        accounts: List<Account>,
         state: CrawlContext,
         log: (String) -> Unit,
         onEvent: (CrawlEvent) -> Unit,

@@ -44,7 +44,7 @@ class CheckInWorker @AssistedInject constructor(
              * → 推面板。cookie 是这次探活拿到的最新一份（可能已经轮换）。
              */
             fun markAlive(
-                account: AccountStore.Account,
+                account: Account,
                 cookie: String,
                 loginAt: Long,
                 serverExpiresAt: Long,

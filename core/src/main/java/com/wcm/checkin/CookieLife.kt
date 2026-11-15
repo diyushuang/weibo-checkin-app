@@ -148,7 +148,7 @@ object CookieLife {
     }
 
     /** 便捷重载：直接按账号行算（界面与日志共用同一口径）。 */
-    fun describe(acc: AccountStore.Account, now: Long = System.currentTimeMillis()): View =
+    fun describe(acc: Account, now: Long = System.currentTimeMillis()): View =
         describe(
             cookie = acc.cookie,
             issuedAt = acc.cookieIssuedAt,

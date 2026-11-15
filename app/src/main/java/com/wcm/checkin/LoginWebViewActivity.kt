@@ -354,7 +354,7 @@ class LoginWebViewActivity : AppCompatActivity() {
                         ?: CookieLife.serverExpiryOf(verify.cookie)
                     AccountStore.upsert(
                         this@LoginWebViewActivity,
-                        AccountStore.Account(
+                        Account(
                             uid = uid,
                             name = name,
                             cookie = verify.cookie,

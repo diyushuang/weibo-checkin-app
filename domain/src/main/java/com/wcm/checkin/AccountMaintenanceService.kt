@@ -14,11 +14,11 @@ object AccountMaintenanceService {
      * 探活成功后的统一收尾：更新内存快照 → 落库。
      *
      * 不发起网络探活，调用方已经把 verify 结果拿到手。`name` 非空时顺带补昵称，
-     * 并同步到内存里的 [AccountStore.Account]（面板同步会用到最新昵称）。
+     * 并同步到内存里的 [Account]（面板同步会用到最新昵称）。
      */
     fun persistVerified(
         ctx: Context,
-        acc: AccountStore.Account,
+        acc: Account,
         cookie: String,
         loginAt: Long = 0L,
         serverExpiresAt: Long = 0L,
@@ -42,7 +42,7 @@ object AccountMaintenanceService {
     }
 
     /** 昵称仍是占位值时补拉；拿不到返回空串，不影响主流程。 */
-    fun resolveNameIfNeeded(acc: AccountStore.Account, cookie: String): String {
+    fun resolveNameIfNeeded(acc: Account, cookie: String): String {
         if (!AccountStore.needsNameResolve(acc)) return ""
         return try {
             WeiboAuthApi.fetchProfile(cookie, acc.uid).first
@@ -59,7 +59,7 @@ object AccountMaintenanceService {
      */
     fun probeAndPersist(
         ctx: Context,
-        acc: AccountStore.Account,
+        acc: Account,
         force: Boolean = false,
         resolveName: Boolean = false,
     ): WeiboAuthApi.Verify {
@@ -84,7 +84,7 @@ object AccountMaintenanceService {
      */
     fun syncToPanel(
         ctx: Context,
-        acc: AccountStore.Account,
+        acc: Account,
         name: String = "",
     ): SyncResult {
         val url = PanelSettings.panelUrl(ctx)
