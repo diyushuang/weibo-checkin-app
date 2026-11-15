@@ -16,7 +16,14 @@ import kotlin.random.Random
  * 日志通过 [log] 回调输出；UI 状态通过 [onTopics] / [onAccountDone] 通知，
  * 服务本身不碰 View。
  */
-object CheckinService {
+class CheckinService(
+    /** 账号表：签到小结与失效标记的唯一写入点。 */
+    private val account: AccountPort,
+    /** 探活 / 补昵称 / 面板同步。 */
+    private val maintenance: AccountMaintenanceService,
+    /** 超话快照缓存。 */
+    private val topicCache: TopicCachePort,
+) {
 
     data class AccountOutcome(
         val uid: String,
@@ -40,7 +47,7 @@ object CheckinService {
         val at = System.currentTimeMillis()
         acc.lastResult = text
         acc.lastResultAt = at
-        AccountStore.setLastResult(ctx, acc.uid, text, at)
+        account.setLastResult(ctx, acc.uid, text, at)
     }
 
     /**
@@ -87,7 +94,7 @@ object CheckinService {
         val name = acc.name.ifEmpty { acc.uid }
         log("── $name ──")
         val verify = try {
-            AccountMaintenanceService.probeAndPersist(ctx, acc)
+            maintenance.probeAndPersist(ctx, acc)
         } catch (e: Exception) {
             noteResult(ctx, acc, "探活失败：${e.message}")
             log("  ✗ 探活失败：${e.message}")
@@ -96,7 +103,7 @@ object CheckinService {
         if (!verify.login) {
             val text = cookieDeadText
             noteResult(ctx, acc, text)
-            AccountStore.markDead(ctx, acc.uid)
+            account.markDead(ctx, acc.uid, "", System.currentTimeMillis())
             log("  ✗ $text")
             return AccountOutcome(acc.uid, error = text)
         }
@@ -105,7 +112,7 @@ object CheckinService {
             val pending = topics.filter { !it.done }
             log("  ${topics.size} 个超话，${topics.size - pending.size} 已签，待签 ${pending.size}")
             onTopics(acc.uid, topics)
-            TopicStore.save(ctx, acc.uid, topics)
+            topicCache.save(ctx, acc.uid, topics, System.currentTimeMillis())
             var ok = 0
             var fail = 0
             for (topic in pending) {

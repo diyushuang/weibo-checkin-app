@@ -8,7 +8,12 @@ import android.content.Context
  * 首页「Cookie 同步」与后台 [CheckInWorker] 共用这一份实现：
  * 以前两边各写一套 markAlive，补昵称/同步/内存快照的细节已经开始分叉。
  */
-object AccountMaintenanceService {
+class AccountMaintenanceService(
+    /** 账号表的定点写回（探活结果/同步时刻）。 */
+    private val account: AccountPort,
+    /** 面板地址与令牌。 */
+    private val panel: PanelPort,
+) {
 
     /**
      * 探活成功后的统一收尾：更新内存快照 → 落库。
@@ -32,7 +37,7 @@ object AccountMaintenanceService {
         acc.cookieLastError = ""
         if (loginAt > 0L) acc.cookieLoginAt = loginAt
         if (serverExpiresAt > 0L) acc.cookieServerExpiresAt = serverExpiresAt
-        AccountStore.markVerified(
+        account.markVerified(
             ctx, acc.uid, cookie,
             name = name,
             at = at,
@@ -43,7 +48,7 @@ object AccountMaintenanceService {
 
     /** 昵称仍是占位值时补拉；拿不到返回空串，不影响主流程。 */
     fun resolveNameIfNeeded(acc: Account, cookie: String): String {
-        if (!AccountStore.needsNameResolve(acc)) return ""
+        if (!account.needsNameResolve(acc)) return ""
         return try {
             WeiboAuthApi.fetchProfile(cookie, acc.uid).first
         } catch (e: Exception) {
@@ -87,14 +92,14 @@ object AccountMaintenanceService {
         acc: Account,
         name: String = "",
     ): SyncResult {
-        val url = PanelSettings.panelUrl(ctx)
-        val token = PanelSettings.panelToken(ctx)
+        val url = panel.panelUrl(ctx)
+        val token = panel.panelToken(ctx)
         if (url.isEmpty() || token.isEmpty()) return SyncResult(false, "未配置面板")
         val displayName = name.ifEmpty { acc.name }
         return try {
             val r = PanelApi.sync(url, token, acc.cookie, acc.uid, displayName)
             if (r.ok) {
-                AccountStore.markSynced(ctx, acc.uid)
+                account.markSynced(ctx, acc.uid, System.currentTimeMillis())
                 acc.cookieSyncedAt = System.currentTimeMillis()
                 SyncResult(true, if (r.updated) "覆盖 ${r.name}" else "新建 ${r.name}")
             } else {

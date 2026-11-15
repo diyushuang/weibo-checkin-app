@@ -40,6 +40,8 @@ sealed interface GalleryEvent {
 class GalleryViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val crawlService: CrawlService,
+    /** 勾选/单帖抓取要按当前模式挑身份（游客 or 账号）。 */
+    private val crawlEngine: CrawlEngine,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(GalleryUiState())
@@ -286,7 +288,7 @@ class GalleryViewModel @Inject constructor(
             }
             // 昵称走游客身份也能拿到：没有登录账号时依然能把博主名显示出来
             val accounts = AccountStore.load(ctx)
-            val cookie = if (accounts.isEmpty()) null else CrawlEngine.pickCrawlCookie(ctx, accounts, ::log)
+            val cookie = if (accounts.isEmpty()) null else crawlEngine.pickCrawlCookie(ctx, accounts, ::log)
             val name = WeiboAuthApi.fetchUserName(cookie, uid)
             CrawlSettings.addCrawlTarget(ctx, CrawlTarget(uid, name))
             withContext(Dispatchers.Main) {
@@ -577,7 +579,7 @@ class GalleryViewModel @Inject constructor(
                 log("✗ 无法识别输入：$input")
                 return@launch
             }
-            val cookie = CrawlEngine.pickCrawlCookie(ctx, AccountStore.load(ctx), ::log)
+            val cookie = crawlEngine.pickCrawlCookie(ctx, AccountStore.load(ctx), ::log)
                 ?: return@launch
             log("正在拉取博主 $uid 的最近微博…")
             val posts = ArrayList<WeiboPostApi.RawPost>()

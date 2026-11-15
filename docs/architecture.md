@@ -7,16 +7,21 @@
 ## 1. Gradle 模块与依赖方向
 
 ```
-:app            Compose UI + Navigation 壳、WorkManager、Hilt 入口
- ├── :domain    签到 / 保活 / 抓取 / 重登的服务编排
- ├── :data      微博与面板网络、SharedPreferences、NDJSON 索引、SAF、Keystore
- └── :core      领域模型、纯算法、应用级协程作用域
+:app            Compose UI + Navigation 壳、WorkManager、Hilt 入口（组合根 DomainModule）
+ ├── :domain    签到 / 保活 / 抓取 / 重登的服务编排（只认端口，不认实现）
+ ├── :data      需要 Context 的本地状态：账号表、抓取设置、超话缓存、面板设置、
+ │              凭证库（Keystore）、目录授权自检
+ └── :core      共享内核：模型、纯算法、端口接口、微博客户端（HTTP/接口/解析）、
+                文件与媒体原语（NDJSON 索引 / SAF / GIF）
 ```
 
 依赖规则：
 
 - `:app -> :domain, :data, :core`
-- `:domain -> :data, :core`（已知偏差：domain 直接使用 data 的网络/存储实现，尚未反转为 data 实现 domain 端口；新功能立项时再拆）
+- `:domain -> :core` —— **不再依赖 `:data`**。业务层只认 `:core` 里的端口
+  （`AccountPort` / `CrawlSettingsPort` / `TopicCachePort` / `PanelPort` / `CredentialPort`），
+  实现在 `:data` 的 `PortAdapters.kt`，由 `:app` 的 `DomainModule` 注入。
+  CI 里有一道 `grep 'project(":data")' domain/build.gradle.kts` 门禁，防止被加回来。
 - `:data -> :core`
 - `:core` 不依赖任何上层模块；`domain` 不得引用 Android UI；`data` 不得引用 UI/domain。
 
@@ -28,8 +33,8 @@
 
 | 模块 | 放什么 | 不放什么 |
 | --- | --- | --- |
-| `:core` | `AssetName`、`Hashing`、`CrawlCursor`/`Budget`/`Phase`/`StopReason`、`ReloginPolicy`、`AccountStatusHead`、`AppScope` | Android UI、SharedPreferences、OkHttp 业务 |
-| `:data` | `WeiboHttp/Auth/Topic/Post/ImageUrl`、`PanelApi`、`GuestSession`、`WeiboPasswordLogin`、`AccountStore`、`PanelSettings`、`CrawlSettings`、`CrawlIndex`、`SafTreeStore`、`GalleryFiles`、`TopicStore`、`CredentialVault`、`GifEncoder`、`LivePhotoConverter` | View/Fragment、签到/抓取编排 |
+| `:core` | 模型（`Account`/`CrawlTarget`/`CrawlIndex` 记录…）、端口（`AccountPort` 等 5 个）、纯算法（`AssetName`/`Hashing`/`CrawlCursor`/`ReloginPolicy`/`AccountStatusHead`/`AppScope`）、微博客户端（`WeiboHttp/Auth/Topic/Post/ImageUrl`/`WebAjax`/`GuestSession`/`PasswordLogin`）、文件与媒体原语（`CrawlIndex`/`SafTreeStore`/`GalleryFiles`/`Takeover`/`GifEncoder`/`LivePhotoConverter`/`RemoteBytes`） | 需要 `Context` 的状态、Android UI |
+| `:data` | `AccountStore`、`CrawlSettings`、`PanelSettings`、`TopicStore`、`CredentialVault`、`CrawlMarks`、`SafAccess`、`StorePrefs`、端口适配器 `PortAdapters.kt` | View、网络与纯算法（已上移 `:core`） |
 | `:domain` | `CheckinService`、`AccountMaintenanceService`、`CrawlEngine`、`AlbumCrawler`、`TimelineCrawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`CrawlService`、`PostAssets`、`AutoRelogin` | Android UI、资源 `R.*` |
 | `:app` | `MainActivity`（ComponentActivity + Navigation 壳，全部页面为 route）、`LoginWebViewActivity`、四个 Tab 的 Screen/ViewModel、`ZoomPager`、`CheckInWorker`、`WcmApp` | 业务规则、网络/存储实现 |
 
@@ -64,8 +69,10 @@
   `CheckInWorker` 是 `@HiltWorker`，`Home/Topic/Gallery/SettingsViewModel` 都是
   `@HiltViewModel`（Activity 作用域），`CrawlService` 由 `DomainModule` 以 `@Singleton`
   提供并注入 `HomeViewModel` / `GalleryViewModel` / 浏览 / 选图入口。
-  `CheckinService` / `AccountMaintenanceService` / `AutoRelogin` 仍是 `object`，
-  后续再逐步改为构造注入的类（见“待办”）。
+  `CheckinService` / `AccountMaintenanceService` / `AutoRelogin` / `CrawlEngine` /
+  `CrawlSaver` / `TimelineCrawler` / `AlbumCrawler` 均已从 `object` 改为构造注入的类，
+  依赖全部来自 `:core` 的端口，由 `DomainModule` 手工装配（`:domain` 刻意不引入 Hilt）。
+  `CrawlSaver.slotsForPics` 等三个纯函数留在 `companion object`，单测调用点零改动。
 - 版本：Hilt `2.51.1`、KSP `1.9.24-1.0.20`（与 Kotlin `1.9.24` 对齐）。
 
 ## 5. 构建与门禁
@@ -194,9 +201,10 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 待办（按建议顺序）：
 
 1. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路（其余项都以此为最终判据）。
-2. 架构债务：把 `domain -> data` 反转为端口/实现（端口放 `:core`，适配器放 `:data`），
-   并把 `CheckinService` / `AccountMaintenanceService` / `AutoRelogin` 从 `object` 改为
-   构造注入。完整分步方案见 `docs/review/refactor-audit-2026-11-15.md` 与项目计划文件。
+2. ~~架构债务：`domain -> data` 反转~~ **已完成**：端口在 `:core`、实现在 `:data`、
+   装配在 `:app` 的 `DomainModule`；八个服务全部由 `object` 改为构造注入。
+   CI 已加依赖门禁。遗留可选项：把重复的 `Context` 形参从端口签名里去掉
+   （改成适配器持有 `applicationContext`，会牵动约 30 个调用点，收益是 domain 可脱离 Android 单测）。
 3. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
    `:feature` 模块（需先把 `R.*` 资源迁移到 feature）。
 

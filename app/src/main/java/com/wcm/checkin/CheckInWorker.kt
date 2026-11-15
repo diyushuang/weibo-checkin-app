@@ -27,6 +27,10 @@ import java.util.concurrent.TimeUnit
 class CheckInWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
+    /** 探活 / 补昵称 / 面板同步。 */
+    private val maintenance: AccountMaintenanceService,
+    /** 账号密码自动重登。 */
+    private val autoRelogin: AutoRelogin,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -51,8 +55,8 @@ class CheckInWorker @AssistedInject constructor(
             ) {
                 // 昵称兜底 + 探活成功立即落盘时间锚点：
                 // 整轮跑完再落会有几分钟窗口，期间首页那张 Cookie 卡显示的仍是旧值。
-                val name = AccountMaintenanceService.resolveNameIfNeeded(account, cookie)
-                AccountMaintenanceService.persistVerified(
+                val name = maintenance.resolveNameIfNeeded(account, cookie)
+                maintenance.persistVerified(
                     ctx, account, cookie,
                     loginAt = loginAt,
                     serverExpiresAt = serverExpiresAt,
@@ -60,7 +64,7 @@ class CheckInWorker @AssistedInject constructor(
                 )
                 alive++
                 // 面板同步失败不影响本地保活；未配置面板时内部直接返回 false。
-                AccountMaintenanceService.syncToPanel(ctx, account, name)
+                maintenance.syncToPanel(ctx, account, name)
             }
 
             for (acc in accounts) {
@@ -70,7 +74,7 @@ class CheckInWorker @AssistedInject constructor(
                     if (acc.cookieDead || acc.cookie.isEmpty() ||
                         life.state == CookieLife.State.EXPIRING
                     ) {
-                        val outcome = AutoRelogin.tryAutoRelogin(ctx, acc, "keepalive_expiring")
+                        val outcome = autoRelogin.tryAutoRelogin(ctx, acc, "keepalive_expiring")
                         if (outcome.ok) {
                             val fresh = AccountStore.load(ctx)
                                 .firstOrNull { it.uid == acc.uid } ?: acc
@@ -85,7 +89,7 @@ class CheckInWorker @AssistedInject constructor(
                         markAlive(acc, verify.cookie, verify.loginAt, verify.serverExpiresAt)
                     } else {
                         // 探活明确判未登录：先自动重登；不行再记失效，首页 Cookie 卡标红
-                        val outcome = AutoRelogin.tryAutoRelogin(ctx, acc, "keepalive_invalid")
+                        val outcome = autoRelogin.tryAutoRelogin(ctx, acc, "keepalive_invalid")
                         val fresh = if (outcome.ok) {
                             AccountStore.load(ctx).firstOrNull { it.uid == acc.uid } ?: acc
                         } else {

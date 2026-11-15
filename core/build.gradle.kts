@@ -39,4 +39,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     // core-ktx 会传递 lifecycle-runtime 2.6.2，本地缓存只有 2.8.7（与其他模块对齐）
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    // 同理：core-ktx 传递 profileinstaller 1.3.1，与 data/domain 的 1.4.0 对齐
+    implementation("androidx.profileinstaller:profileinstaller:1.4.0")
 }

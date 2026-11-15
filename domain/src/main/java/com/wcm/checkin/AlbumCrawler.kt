@@ -8,15 +8,20 @@ import org.json.JSONObject
  *
  * 从原 `Crawler` 拆出；时间线链路见 [TimelineCrawler]。
  */
-object AlbumCrawler {
+class AlbumCrawler(
+    private val settings: CrawlSettingsPort,
+    private val account: AccountPort,
+    private val engine: CrawlEngine,
+    private val saver: CrawlSaver,
+) {
 
     // ========================= 相册抓图模式（v0.9.8） =========================
 
     /** 每轮「补新」最多翻几页相册墙（每页约 20 张图）。 */
-    private const val ALBUM_NEW_PAGES = 2
+    private val ALBUM_NEW_PAGES = 2
 
     /** 每轮「补历史」最多翻几页相册墙。 */
-    private const val ALBUM_HISTORY_PAGES = 8
+    private val ALBUM_HISTORY_PAGES = 8
 
     /**
      * 全量（v0.9.12）每轮最多翻几页相册墙。
@@ -25,13 +30,13 @@ object AlbumCrawler {
      * 「覆盖区间」概念：全量与增量的唯一区别就是每轮走多深。已抓过的帖在索引里
      * 是终态，只花列表请求、不拉详情，20 页很便宜。
      */
-    private const val ALBUM_FULL_PAGES = 20
+    private val ALBUM_FULL_PAGES = 20
 
     /** 每轮每目标最多处理几帖（一帖可能带 18 张图，按帖计数比按图更可控）。 */
-    private const val ALBUM_MAX_POSTS = 40
+    private val ALBUM_MAX_POSTS = 40
 
     /** 单轮时间上限：一帖最多 18 张图，没有时间墙的话自动抓图会跑很久。 */
-    private const val ALBUM_MAX_MILLIS = 20 * 60 * 1000L
+    private val ALBUM_MAX_MILLIS = 20 * 60 * 1000L
 
     /**
      * 相册墙一轮的结果。
@@ -79,8 +84,8 @@ object AlbumCrawler {
         onlyUids: Set<String> = emptySet(),
         full: Boolean = false,
     ): Boolean {
-        val targets = CrawlSettings.selectTargets(CrawlSettings.crawlTargets(ctx), onlyUids)
-        val treeUriRaw = CrawlSettings.crawlTreeUri(ctx)
+        val targets = settings.selectTargets(settings.crawlTargets(ctx), onlyUids)
+        val treeUriRaw = settings.crawlTreeUri(ctx)
         if (targets.isEmpty() || treeUriRaw.isEmpty()) {
             if (!autoMode) {
                 log(
@@ -91,7 +96,7 @@ object AlbumCrawler {
             // 没有目标不算「相册模式失败」，不需要上层回退到时间线
             return true
         }
-        val accounts = AccountStore.load(ctx)
+        val accounts = account.load(ctx)
         var anyEnumerated = false
         var downloaded = 0
         val startedAt = System.currentTimeMillis()
@@ -100,7 +105,7 @@ object AlbumCrawler {
         if (onlyUids.isNotEmpty()) {
             log("范围：只抓 ${targets.joinToString("、") { it.name.ifEmpty { it.uid } }}")
         }
-        CrawlEngine.withCrawlContext(ctx, treeUriRaw, log) { state ->
+        engine.withCrawlContext(ctx, treeUriRaw, log) { state ->
             for ((index, target) in targets.withIndex()) {
                 if (isStopped()) break
                 if (System.currentTimeMillis() - startedAt > ALBUM_MAX_MILLIS) {
@@ -163,14 +168,14 @@ object AlbumCrawler {
         full: Boolean = false,
     ): AlbumTargetResult {
         val uid = target.uid
-        val sinceDate = CrawlSettings.crawlSince(ctx, uid)
-        val savedCursor = CrawlSettings.albumSince(ctx, state.treeTag, uid)
+        val sinceDate = settings.crawlSince(ctx, uid)
+        val savedCursor = settings.albumSince(ctx, state.treeTag, uid)
         // 全量只是「每轮走得更深」，不需要新的断点字段：相册墙游标本身就是位置
         val historyPages = if (full) ALBUM_FULL_PAGES else ALBUM_HISTORY_PAGES
 
         // 「上次抓到哪条微博」的记忆（v0.9.17）。全量刻意不用它：全量的语义就是
         // 从头重新枚举一遍，拿记忆去提前收工会把它变成「增量」。
-        val memoRaw = if (full) "" else CrawlSettings.albumLastPost(ctx, state.treeTag, uid)
+        val memoRaw = if (full) "" else settings.albumLastPost(ctx, state.treeTag, uid)
         val memoMid = AlbumMemo.midOf(memoRaw)
         val memoYm = AlbumMemo.ymOf(memoRaw)
         if (memoMid.isNotEmpty()) {
@@ -184,7 +189,7 @@ object AlbumCrawler {
         fun account(): String? {
             if (!accountResolved) {
                 accountResolved = true
-                accountCookie = CrawlEngine.pickCrawlCookie(ctx, accounts, log)
+                accountCookie = engine.pickCrawlCookie(ctx, accounts, log)
             }
             return accountCookie
         }
@@ -297,7 +302,7 @@ object AlbumCrawler {
 
         // 记忆推进：命中旧记忆（说明本轮没往下走）或本轮中断在页中（lastMid 为空）都不动
         if (!newPass.hitWatermark && newPass.lastMid.isNotEmpty() && newPass.lastMid != memoMid) {
-            CrawlSettings.setAlbumLastPost(
+            settings.setAlbumLastPost(
                 ctx, state.treeTag, uid, AlbumMemo.encode(newPass.lastMid, newPass.lastYm),
             )
         }
@@ -323,7 +328,7 @@ object AlbumCrawler {
         }
         if (reachedBottom) nextCursor = ""
 
-        CrawlSettings.setAlbumSince(ctx, state.treeTag, uid, nextCursor)
+        settings.setAlbumSince(ctx, state.treeTag, uid, nextCursor)
         return AlbumTargetResult(true, saved)
     }
 
@@ -403,7 +408,7 @@ object AlbumCrawler {
             onEvent(CrawlEvent.Post(saved = 0, failed = 0))
             return 0
         }
-        val at = CrawlEngine.epochOf(d.optString("created_at", ""))
+        val at = engine.epochOf(d.optString("created_at", ""))
         val a = assets
         if (a == null || a.picIds.isEmpty()) {
             state.index.onVoid(mid, at)
@@ -416,9 +421,9 @@ object AlbumCrawler {
 
         val authorUid = d.optJSONObject("user")?.optString("id", "").orEmpty().ifEmpty { uid }
         val authorName = d.optJSONObject("user")?.optString("screen_name", "").orEmpty()
-        val label = CrawlEngine.resolveLabel(state.index, authorUid, authorName.ifEmpty { target.name.ifEmpty { target.uid } })
-        val prefix = CrawlEngine.prefixOf(at, label)
-        val outcome = CrawlSaver.savePost(ctx, state.store, state.index, prefix, mid, at, a, null, log)
+        val label = engine.resolveLabel(state.index, authorUid, authorName.ifEmpty { target.name.ifEmpty { target.uid } })
+        val prefix = engine.prefixOf(at, label)
+        val outcome = saver.savePost(ctx, state.store, state.index, prefix, mid, at, a, null, log)
         if (outcome.saved > 0) {
             log("  ✓ $prefix…（+${outcome.saved}${if (outcome.failed.isEmpty()) "" else "，缺 ${outcome.failed.size}"}）")
         }

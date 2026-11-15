@@ -138,6 +138,14 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      # 与 build-apk.yml 同一条守门规则：:domain 不得依赖 :data
+      - name: Architecture gate
+        run: |
+          if grep -q 'project(":data")' domain/build.gradle.kts; then
+            echo '::error file=domain/build.gradle.kts::domain 依赖了 data：依赖倒置被破坏'
+            exit 1
+          fi
+
       - name: Unit tests & Build signed release APK
         env:
           WCM_KEYSTORE_PASSWORD: ${{ secrets.WCM_KEYSTORE_PASSWORD }}

@@ -28,6 +28,8 @@ sealed interface PostPickEvent {
 class PostPickViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val crawlService: CrawlService,
+    /** 勾选/单帖抓取要按当前模式挑身份（游客 or 账号）。 */
+    private val crawlEngine: CrawlEngine,
 ) : ViewModel() {
 
     private data class PicItem(
@@ -74,7 +76,7 @@ class PostPickViewModel @Inject constructor(
         render()
         viewModelScope.launch(Dispatchers.IO) {
             val result = runCatching {
-                val cookie = CrawlEngine.pickCrawlCookie(ctx, AccountStore.load(ctx)) { }
+                val cookie = crawlEngine.pickCrawlCookie(ctx, AccountStore.load(ctx)) { }
                     ?: throw IllegalStateException(ctx.getString(R.string.browse_need_cookie))
                 WeiboPostApi.fetchPostDetail(cookie, bid)
             }

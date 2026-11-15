@@ -19,7 +19,7 @@
 | UI 文案 | ✅ 严格子集 | 字符串资源 378 → 362，**新增 0 条**，删除 16 条（12 条旧版即死资源），不存在"偷偷新增未验证功能" |
 | 行为不变量 | ✅ 保留 | 6 小时自动签到去重、签到不顺带同步面板、抓取单闸门、三层去重、https + 域名白名单、`allowBackup=false` |
 | 覆盖安装 | ✅ 可行 | 同 `applicationId`、同签名配置、同 `versionCode`（已递增到 33）；数据零迁移；无新增运行时权限 |
-| 架构落地 | ⚠️ 分区完成 | 4 模块 + Hilt + 全量 Compose 已落地；但 `domain -> data` 反向依赖仍在，无端口/Repository 抽象 |
+| 架构落地 | ✅ 完成 | 4 模块 + Hilt + 全量 Compose；`domain -> data` 反向依赖已消除（端口在 `:core`、实现在 `:data`、装配在 `:app`），CI 有依赖门禁 |
 | 回归验证 | ⚠️ 不完整 | 322 个自动化用例全绿；**签到 / 自动重登 / 浏览博主 / 单条抓取 四条依赖真实登录态的链路从未跑过** |
 
 **能否无缝升级：可以，前提是签名指纹一致（见 §五）。**
@@ -103,7 +103,7 @@
 | 长任务 | 绑在 Fragment `viewLifecycle` 上 | `AppScope`（进程级 SupervisorJob） |
 | 跨组件状态 | Fragment 字段 + 手写回调 | ViewModel + `StateFlow` / `SharedFlow`，4 个 Tab 的 VM 挂在 Activity 作用域 |
 | DI | 无 | Hilt（`@HiltAndroidApp` / `@HiltWorker` / `@HiltViewModel`），仅 1 个 Module |
-| 业务单例 | 全部 `object` | 大部分仍是 `object`（`CheckinService` / `AccountStore` / `TopicStore` …），只有 `CrawlService` 是注入的 class |
+| 业务单例 | 全部 `object` | 八个编排服务改为构造注入的 class（`CheckinService` / `AccountMaintenanceService` / `AutoRelogin` / `CrawlEngine` / `CrawlSaver` / `TimelineCrawler` / `AlbumCrawler` / `CrawlService`）；存储层仍是 `object` + 端口适配器 |
 
 ### 3.4 构建
 
@@ -139,11 +139,17 @@
 1. **真实账号 E2E 未做**：签到、自动重登、浏览博主、单条抓取四条链路依赖登录态，从未在重构后跑过。`docs/architecture.md` 的"登录态 E2E 7 步"仍未勾选。这是唯一可能推翻"功能完整"结论的地方。
 2. **签名指纹未核对**：`app/keystore/wcm-release.p12` 与 CI Secret 是否同一把钥匙，决定用户能否覆盖安装。本次因安全策略无法读取签名口令，未验证。
 
-### P2 — 架构债务（不影响功能，影响可维护性）
+### P2 — 架构债务（本次已还）
 
-3. `domain -> data` 反向依赖：11 个 domain 文件引用 24 个 data 类型（约 115 处调用），端口只有 1 个（`CrawlPlanner.IndexView`）。
-4. 无 Repository / 用例层：9 个 ViewModel 直接调 data，`HomeViewModel` 有 12 个协作者、1025 行。
-5. `object` 单例仍是主流，测试替身只能靠纯函数。
+3. ~~`domain -> data` 反向依赖~~ **已消除**：`domain/build.gradle.kts` 不再有
+   `project(":data")`；端口定义在 `:core`（`AccountPort` 13 项 / `CrawlSettingsPort` 14 项 /
+   `TopicCachePort` 1 项 / `PanelPort` 2 项 / `CredentialPort` 2 项），实现在 `:data` 的
+   `PortAdapters.kt`，由 `:app` 的 `DomainModule` 装配。CI 加 `grep project(":data")` 门禁。
+4. ~~`object` 单例~~ **八个服务已改为构造注入**；`CrawlSaver` 的三个纯函数留在
+   `companion object`，单测调用点零改动。
+5. **仍然保留**：9 个 ViewModel 直接调 `:data`（`app -> data` 是合法方向，不是债）。
+   若要继续收敛，建议只对 `HomeViewModel`（1025 行 / 12 个协作者）与 `TopicViewModel`
+   抽用例层，其余 7 个抽了只会多一层转发。
 
 ### P3 — 文档漂移
 

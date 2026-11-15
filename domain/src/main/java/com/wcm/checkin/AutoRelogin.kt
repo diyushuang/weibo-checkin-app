@@ -14,10 +14,15 @@ import android.util.Log
  *
  * 日志只记 uid / 触发点 / 结果码，不记账号、密码、cookie。
  */
-object AutoRelogin {
+class AutoRelogin(
+    /** 账号表读写（含重登状态机落库）。 */
+    private val account: AccountPort,
+    /** Keystore 加密凭证。 */
+    private val vault: CredentialPort,
+) {
 
-    private const val TAG = "AutoRelogin"
-    private const val DAY_MS = 86_400_000L
+    private val TAG = "AutoRelogin"
+    private val DAY_MS = 86_400_000L
 
     data class Outcome(
         val ok: Boolean,
@@ -32,7 +37,7 @@ object AutoRelogin {
         return CookieLife.describe(acc, now).state == CookieLife.State.OK
     }
 
-    fun hasCredential(ctx: Context, uid: String): Boolean = CredentialVault.has(ctx, uid)
+    fun hasCredential(ctx: Context, uid: String): Boolean = vault.has(ctx, uid)
 
     /**
      * 尝试自动重登。
@@ -47,14 +52,14 @@ object AutoRelogin {
         force: Boolean = false,
     ): Outcome {
         // 重新读库：调用方手里的对象可能已经过期（后台线程/前台动作并发）
-        val fresh = AccountStore.load(ctx).firstOrNull { it.uid == acc.uid } ?: acc
+        val fresh = account.load(ctx).firstOrNull { it.uid == acc.uid } ?: acc
         val now = System.currentTimeMillis()
-        val globalEnabled = AccountStore.autoReloginEnabled(ctx)
-        val hasCred = CredentialVault.has(ctx, fresh.uid)
+        val globalEnabled = account.autoReloginEnabled(ctx)
+        val hasCred = vault.has(ctx, fresh.uid)
         val usable = cookieUsable(fresh, now)
-        val state = AccountStore.reloginState(fresh)
-        val maxPerDay = AccountStore.autoReloginMaxPerDay(ctx)
-        val baseHours = AccountStore.autoReloginBackoffHours(ctx)
+        val state = account.reloginState(fresh)
+        val maxPerDay = account.autoReloginMaxPerDay(ctx)
+        val baseHours = account.autoReloginBackoffHours(ctx)
 
         val decision = ReloginPolicy.shouldAttempt(
             globalEnabled = globalEnabled,
@@ -71,7 +76,7 @@ object AutoRelogin {
             if (decision.skipCode == "daily_cap" && !force) {
                 val recent = ReloginPolicy.recentAttempts(state, now)
                 if (recent.isNotEmpty()) {
-                    AccountStore.saveReloginState(
+                    account.saveReloginState(
                         ctx, fresh.uid, state.copy(nextAt = recent.first() + DAY_MS),
                     )
                 }
@@ -82,11 +87,11 @@ object AutoRelogin {
 
         // 先记账再登录：进程在登录途中被杀，这次尝试也计入 24 小时上限
         val attempted = ReloginPolicy.recordAttempt(state, now)
-        AccountStore.saveReloginState(ctx, fresh.uid, attempted)
+        account.saveReloginState(ctx, fresh.uid, attempted)
 
         val credentials = try {
-            CredentialVault.load(ctx, fresh.uid)
-        } catch (e: CredentialVault.UnreadableException) {
+            vault.load(ctx, fresh.uid)
+        } catch (e: CredentialUnreadableException) {
             null
         }
         if (credentials == null) {
@@ -94,8 +99,8 @@ object AutoRelogin {
                 attempted, ReloginPolicy.CODE_CREDENTIAL_UNREADABLE, "",
                 System.currentTimeMillis(), maxPerDay, baseHours,
             )
-            AccountStore.markReloginFailure(
-                ctx, fresh.uid, failure.state, failure.message, dead = fresh.cookieDead,
+            account.markReloginFailure(
+                ctx, fresh.uid, failure.state, failure.message, at = System.currentTimeMillis(), dead = fresh.cookieDead,
             )
             Log.w(TAG, "凭证不可用 uid=${fresh.uid}")
             return Outcome(false, true, ReloginPolicy.CODE_CREDENTIAL_UNREADABLE, failure.message)
@@ -104,8 +109,8 @@ object AutoRelogin {
         val (username, password) = credentials
         val result = WeiboPasswordLogin.login(username, password)
         if (result.ok) {
-            AccountStore.markReloginSuccess(
-                ctx, fresh.uid, result.cookie, result.loginAt, result.serverExpiresAt,
+            account.markReloginSuccess(
+                ctx, fresh.uid, result.cookie, result.loginAt, result.serverExpiresAt, at = System.currentTimeMillis(),
             )
             Log.i(TAG, "自动重登成功 uid=${fresh.uid} trigger=$trigger")
             return Outcome(true, true, message = "账密重登成功，已更新 Cookie 与真实登录时间")
@@ -120,8 +125,8 @@ object AutoRelogin {
         // 会让一个还能正常用的账号因为一次网络抖动就被标成「已失效」。
         val expired = CookieLife.describe(fresh, System.currentTimeMillis()).state ==
             CookieLife.State.EXPIRED
-        AccountStore.markReloginFailure(
-            ctx, fresh.uid, failure.state, failure.message,
+        account.markReloginFailure(
+            ctx, fresh.uid, failure.state, failure.message, at = System.currentTimeMillis(),
             dead = fresh.cookieDead || expired,
         )
         Log.w(TAG, "自动重登失败 uid=${fresh.uid} trigger=$trigger code=${result.code}")

@@ -23,7 +23,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  * - 新增 [requestStop]：停止信号由闸门本身持有，**首页自动触发的抓取也能停**
  *   （旧版只取消当前页面的协程，自动抓取根本停不下来）。
  */
-class CrawlService {
+class CrawlService(
+    /** 抓取设置（模式、目录）。 */
+    private val settings: CrawlSettingsPort,
+    private val timeline: TimelineCrawler,
+    private val albumCrawler: AlbumCrawler,
+    private val engine: CrawlEngine,
+) {
 
     sealed interface RunState {
         data object Idle : RunState
@@ -35,8 +41,8 @@ class CrawlService {
         data object Busy : RunResult
     }
 
-    private val gate = Mutex()
-    private val stopFlag = AtomicBoolean(false)
+    private val gate = GATE
+    private val stopFlag = STOP
     private val _state = MutableStateFlow<RunState>(RunState.Idle)
     val state: StateFlow<RunState> = _state.asStateFlow()
 
@@ -61,7 +67,7 @@ class CrawlService {
         onlyUids: Set<String> = emptySet(),
         full: Boolean = false,
     ): RunResult {
-        val album = CrawlSettings.crawlMode(ctx) == CrawlSettings.MODE_ALBUM
+        val album = settings.crawlMode(ctx) == CrawlModes.ALBUM
         val what = when {
             full && album -> "相册全量"
             full -> "全量抓取"
@@ -70,7 +76,7 @@ class CrawlService {
         }
         return guarded(what) { emit, stopped ->
             if (!album) {
-                TimelineCrawler.runIncremental(
+                timeline.runIncremental(
                     ctx = ctx,
                     log = log,
                     autoMode = auto,
@@ -81,7 +87,7 @@ class CrawlService {
                 )
                 return@guarded
             }
-            val ok = AlbumCrawler.runAlbum(
+            val ok = albumCrawler.runAlbum(
                 ctx = ctx,
                 log = log,
                 autoMode = auto,
@@ -92,7 +98,7 @@ class CrawlService {
             )
             if (!ok) {
                 log("相册模式没跑起来（游客身份不可用或相册为空），回退到时间线模式")
-                TimelineCrawler.runIncremental(
+                timeline.runIncremental(
                     ctx = ctx,
                     log = log,
                     autoMode = auto,
@@ -110,7 +116,7 @@ class CrawlService {
         ctx: Context,
         log: (String) -> Unit,
     ): RunResult = guarded("补抓失败") { emit, stopped ->
-        TimelineCrawler.runIncremental(
+        timeline.runIncremental(
             ctx = ctx,
             log = log,
             retryOnly = true,
@@ -125,7 +131,7 @@ class CrawlService {
         bid: String,
         log: (String) -> Unit,
     ): RunResult = guarded("单条抓取") { _, _ ->
-        CrawlEngine.crawlSinglePost(ctx, bid, log)
+        engine.crawlSinglePost(ctx, bid, log)
     }
 
     /**
@@ -153,7 +159,7 @@ class CrawlService {
             )
         )
         try {
-            return CrawlEngine.crawlPicked(
+            return engine.crawlPicked(
                 ctx, tasks, log,
                 onEvent = ::emit,
                 isStopped = { stopFlag.get() },
@@ -205,5 +211,17 @@ class CrawlService {
             stopFlag.set(false)
             gate.unlock()
         }
+    }
+
+    private companion object {
+        /**
+         * 进程级闸门与停止标志。
+         *
+         * 做成 companion 而不是实例字段：这个类的「同一时刻只允许一轮抓取」是**全应用**
+         * 的约束，不该依赖「装配时别漏了 @Singleton」。真要多造一个实例（测试、未来某个
+         * 新入口），共享同一把锁也不会出现两轮同时写同一 SAF 目录的情况。
+         */
+        val GATE = Mutex()
+        val STOP = AtomicBoolean(false)
     }
 }

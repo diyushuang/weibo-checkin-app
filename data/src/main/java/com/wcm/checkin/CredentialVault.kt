@@ -19,7 +19,7 @@ import javax.crypto.spec.GCMParameterSpec
  * - 明文**永不**落盘：账号密码序列化后立刻用 Android Keystore 里的 AES-256-GCM 密钥加密，
  *   SharedPreferences 里只有 `v1:<iv>:<ciphertext>`；
  * - 密钥不可导出，只存在于系统 Keystore；本 App 被卸载 / 数据被清除时一并失效；
- * - 解密失败（换机恢复、Keystore 异常）抛 [UnreadableException]，调用方据此暂停自动重登，
+ * - 解密失败（换机恢复、Keystore 异常）抛 [CredentialUnreadableException]，调用方据此暂停自动重登，
  *   **绝不降级成明文**；
  * - 日志只记录 uid 与密文长度，不记录账号、密码或密文内容。
  */
@@ -32,9 +32,6 @@ object CredentialVault {
     private const val ALIAS = "wcm_credential_key_v1"
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val VERSION = "v1"
-
-    /** 本机凭证存在但无法解密（Keystore 被重置 / 数据迁移 / 密文损坏）。 */
-    class UnreadableException : Exception("credential unreadable")
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -57,7 +54,7 @@ object CredentialVault {
     }
 
     /**
-     * 读取并解密凭证。返回 null = 没保存过；解密失败抛 [UnreadableException]。
+     * 读取并解密凭证。返回 null = 没保存过；解密失败抛 [CredentialUnreadableException]。
      */
     fun load(ctx: Context, uid: String): Pair<String, String>? {
         val token = SafePrefs.string(prefs(ctx), KEY_PREFIX + uid)
@@ -66,19 +63,19 @@ object CredentialVault {
             decrypt(token)
         } catch (e: Exception) {
             Log.w(TAG, "凭证解密失败 uid=$uid")
-            throw UnreadableException()
+            throw CredentialUnreadableException()
         }
         return try {
             val obj = JSONObject(plain)
             val u = obj.optString("u", "")
             val p = obj.optString("p", "")
-            if (u.isBlank() || p.isEmpty()) throw UnreadableException()
+            if (u.isBlank() || p.isEmpty()) throw CredentialUnreadableException()
             u to p
-        } catch (e: UnreadableException) {
+        } catch (e: CredentialUnreadableException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "凭证内容格式异常 uid=$uid")
-            throw UnreadableException()
+            throw CredentialUnreadableException()
         }
     }
 

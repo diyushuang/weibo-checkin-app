@@ -29,6 +29,8 @@ sealed interface BrowsingEvent {
 class BrowsingViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val crawlService: CrawlService,
+    /** 勾选/单帖抓取要按当前模式挑身份（游客 or 账号）。 */
+    private val crawlEngine: CrawlEngine,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(BrowsingUiState())
@@ -198,7 +200,7 @@ class BrowsingViewModel @Inject constructor(
         listBusy = true
         viewModelScope.launch {
             try {
-                val cookie = CrawlEngine.pickCrawlCookie(ctx, AccountStore.load(ctx)) { }
+                val cookie = crawlEngine.pickCrawlCookie(ctx, AccountStore.load(ctx)) { }
                 if (cookie == null) {
                     failList(ctx.getString(R.string.browse_need_cookie))
                     return@launch
@@ -246,7 +248,7 @@ class BrowsingViewModel @Inject constructor(
                     failList(ctx.getString(R.string.browse_need_cookie))
                     return@launch
                 }
-                val cookie = CrawlEngine.pickCrawlCookie(ctx, accounts) { }
+                val cookie = crawlEngine.pickCrawlCookie(ctx, accounts) { }
                     ?: run {
                         failList(ctx.getString(R.string.browse_need_cookie))
                         return@launch

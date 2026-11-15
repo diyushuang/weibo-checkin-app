@@ -25,6 +25,15 @@
 ### 工程
 
 - 版本号 `versionCode 32 → 33`、`versionName 0.9.18 → 0.10.0`（覆盖安装需要递增）。
+- **依赖倒置完成**：`:domain` 不再依赖 `:data`。端口（`AccountPort` / `CrawlSettingsPort` /
+  `TopicCachePort` / `PanelPort` / `CredentialPort`）定义在 `:core`，实现在 `:data` 的
+  `PortAdapters.kt`，由 `:app` 的 `DomainModule` 装配；`CheckinService` /
+  `AccountMaintenanceService` / `AutoRelogin` / `CrawlEngine` / `CrawlSaver` /
+  `TimelineCrawler` / `AlbumCrawler` 全部由 `object` 改为构造注入。CI 增加依赖门禁，
+  防止 `project(":data")` 被加回 `domain`。
+- **无状态代码下沉 `:core`**：微博客户端（HTTP / 接口 / 解析 / 游客身份 / 账密登录）、
+  NDJSON 索引、SAF 目录、Live→GIF、图片地址构造、Cookie 有效期全部移到共享内核。
+  `:data` 只保留需要 `Context` 的本地状态（账号表、抓取设置、超话缓存、面板设置、凭证库）。
 - `proguard-rules.pro` 补 `-keep class com.wcm.checkin.CheckInWorker`：WorkManager 把
   worker 类名以字符串存进 `work.db`，升级后要按类名反射实例化旧任务。已用 release 包的
   `mapping.txt` 验证该类名确实未被混淆（`HomeViewModel` 等同批类已正常改名为 `n6.c8`）。

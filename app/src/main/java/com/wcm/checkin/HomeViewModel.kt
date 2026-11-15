@@ -80,6 +80,12 @@ sealed interface HomeEvent {
 class HomeViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val crawlService: CrawlService,
+    /** 签到编排（首页「立即签到」与补签共用）。 */
+    private val checkinService: CheckinService,
+    /** 探活 / 补昵称 / 面板同步。 */
+    private val maintenance: AccountMaintenanceService,
+    /** 账号密码自动重登。 */
+    private val autoRelogin: AutoRelogin,
 ) : ViewModel() {
 
     private val _hero = MutableStateFlow(HomeHeroUiState())
@@ -604,7 +610,7 @@ class HomeViewModel @Inject constructor(
     private fun runManualRelogin(acc: Account) {
         toast(ctx.getString(R.string.relogin_running))
         AppScope.launch {
-            val outcome = AutoRelogin.tryAutoRelogin(ctx, acc, "manual", force = true)
+            val outcome = autoRelogin.tryAutoRelogin(ctx, acc, "manual", force = true)
             withContext(Dispatchers.Main + NonCancellable) {
                 toast(
                     if (outcome.ok) ctx.getString(R.string.relogin_success)
@@ -628,11 +634,11 @@ class HomeViewModel @Inject constructor(
             var fixed = 0
             pending.forEach { acc ->
                 try {
-                    val verify = AccountMaintenanceService.probeAndPersist(ctx, acc)
+                    val verify = maintenance.probeAndPersist(ctx, acc)
                     if (!verify.login) return@forEach
-                    val name = AccountMaintenanceService.resolveNameIfNeeded(acc, verify.cookie)
+                    val name = maintenance.resolveNameIfNeeded(acc, verify.cookie)
                     if (name.isEmpty()) return@forEach
-                    AccountMaintenanceService.persistVerified(
+                    maintenance.persistVerified(
                         ctx, acc, verify.cookie, name = name,
                     )
                     fixed++
@@ -646,8 +652,8 @@ class HomeViewModel @Inject constructor(
 
     private fun updateCookieAndName(uid: String, cookie: String) {
         val current = AccountStore.load(ctx).firstOrNull { it.uid == uid } ?: return
-        val name = AccountMaintenanceService.resolveNameIfNeeded(current, cookie)
-        AccountMaintenanceService.persistVerified(ctx, current, cookie, name = name)
+        val name = maintenance.resolveNameIfNeeded(current, cookie)
+        maintenance.persistVerified(ctx, current, cookie, name = name)
     }
 
     // ========================= 超话状态刷新 =========================
@@ -770,7 +776,7 @@ class HomeViewModel @Inject constructor(
         taskJob = AppScope.launch {
             try {
                 log("==== ${if (auto) "打开自动" else "手动"}签到 · ${now()} ====")
-                CheckinService.runAll(
+                checkinService.runAll(
                     ctx = ctx,
                     accounts = accounts,
                     log = ::log,
@@ -815,7 +821,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun syncToPanel(acc: Account): Boolean {
-        val r = AccountMaintenanceService.syncToPanel(ctx, acc)
+        val r = maintenance.syncToPanel(ctx, acc)
         if (r.ok) {
             log("  📲 已同步面板：${r.detail}")
             return true
@@ -854,9 +860,9 @@ class HomeViewModel @Inject constructor(
                 for (acc in accounts) {
                     log("── ${acc.name.ifEmpty { acc.uid }} ──")
                     try {
-                        val verify = AccountMaintenanceService.probeAndPersist(ctx, acc)
+                        val verify = maintenance.probeAndPersist(ctx, acc)
                         if (!verify.login) {
-                            CheckinService.noteResult(
+                            checkinService.noteResult(
                                 ctx, acc, ctx.getString(R.string.home_cookie_dead),
                             )
                             AccountStore.markDead(ctx, acc.uid)
@@ -979,7 +985,7 @@ class HomeViewModel @Inject constructor(
                 var cookie = acc.cookie
                 var freshSt = st
                 try {
-                    val v = AccountMaintenanceService.probeAndPersist(ctx, acc)
+                    val v = maintenance.probeAndPersist(ctx, acc)
                     if (v.login) {
                         cookie = v.cookie
                         if (!v.st.isNullOrEmpty()) freshSt = v.st

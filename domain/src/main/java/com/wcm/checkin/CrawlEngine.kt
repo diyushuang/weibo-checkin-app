@@ -16,7 +16,14 @@ class CrawlContext(
     val treeTag: String,
 )
 
-object CrawlEngine {
+class CrawlEngine(
+    /** 抓取设置（目录、模式、游标）。 */
+    private val settings: CrawlSettingsPort,
+    /** 账号表（勾选抓取要用账号 cookie）。 */
+    private val account: AccountPort,
+    /** 逐槽位落盘。 */
+    private val saver: CrawlSaver,
+) {
 
     /** 选**时间线模式**抓图用的 cookie（依次探活取第一个还活着的账号）。 */
     fun pickCrawlCookie(
@@ -37,8 +44,9 @@ object CrawlEngine {
                     // 探活已经证明这个 cookie 可用、也顺手拿到了轮换后的新 cookie：
                     // 不回写的话下一个阶段（相册 → 时间线回退）会再 verify 一遍，
                     // 白耗一次请求，也继续用着旧 cookie。
-                    AccountStore.markVerified(
+                    account.markVerified(
                         ctx, acc.uid, v.cookie, acc.name,
+                        at = System.currentTimeMillis(),
                         serverExpiresAt = v.serverExpiresAt,
                         loginAt = v.loginAt,
                     )
@@ -57,8 +65,8 @@ object CrawlEngine {
 
     /** 抓取一条微博的全部原图与 Live。幂等：三层去重，不占用增量进度。 */
     suspend fun crawlSinglePost(ctx: Context, bid: String, log: (String) -> Unit) {
-        val cookie = pickCrawlCookie(ctx, AccountStore.load(ctx), log) ?: return
-        val treeUriRaw = CrawlSettings.crawlTreeUri(ctx)
+        val cookie = pickCrawlCookie(ctx, account.load(ctx), log) ?: return
+        val treeUriRaw = settings.crawlTreeUri(ctx)
         if (treeUriRaw.isEmpty()) {
             log("✗ 请先选择相册目录")
             return
@@ -84,7 +92,7 @@ object CrawlEngine {
 
             val liveCount = assets.liveByIndex.size + assets.liveExtras.size
             log("── 单条抓取 $prefix（${assets.picIds.size} 图 / $liveCount Live）──")
-            val outcome = CrawlSaver.savePost(ctx, state.store, state.index, prefix, postId, at, assets, null, log)
+            val outcome = saver.savePost(ctx, state.store, state.index, prefix, postId, at, assets, null, log)
             log(
                 if (outcome.saved > 0) "✓ 完成，新增 ${outcome.saved} 个文件（目录累计 ${state.store.count()}）"
                 else "✓ 完成（文件均已存在，无新增）"
@@ -125,8 +133,8 @@ object CrawlEngine {
         onEvent: (CrawlEvent) -> Unit = {},
         isStopped: () -> Boolean = { false },
     ): PickedSummary {
-        val cookie = pickCrawlCookie(ctx, AccountStore.load(ctx), log) ?: return PickedSummary()
-        val treeUriRaw = CrawlSettings.crawlTreeUri(ctx)
+        val cookie = pickCrawlCookie(ctx, account.load(ctx), log) ?: return PickedSummary()
+        val treeUriRaw = settings.crawlTreeUri(ctx)
         if (treeUriRaw.isEmpty()) {
             log("✗ 请先选择相册目录")
             return PickedSummary()
@@ -178,7 +186,7 @@ object CrawlEngine {
                 log("── 勾选抓取 $prefix（${assets.picIds.size} 图，选 ${want} 张）──")
                 // 这是唯一一次「只抓勾选的几张」：没勾的槽位要记成待补，
                 // 否则 failed 为空会判 DONE，其余图再也补不回来。
-                val outcome = CrawlSaver.savePost(
+                val outcome = saver.savePost(
                     ctx, state.store, state.index, prefix, postId, at, assets, slots, log,
                     countNotPicked = true,
                 )
@@ -218,10 +226,10 @@ object CrawlEngine {
             if (report.degraded) log("⚠ 索引有 ${report.skipped} 行损坏，已降级为「仅文件名去重」")
 
             // 旧版 crawl_done 一次性迁移（反向不可逆：失败槽位无法从旧数据还原）
-            val legacy = CrawlSettings.crawlDoneLegacy(ctx)
+            val legacy = settings.crawlDoneLegacy(ctx)
             if (legacy.isNotEmpty()) {
                 val n = idx.migrateLegacy(legacy)
-                CrawlSettings.clearCrawlDoneLegacy(ctx)
+                settings.clearCrawlDoneLegacy(ctx)
                 if (n > 0) log("索引迁移：$n 帖从旧进度接管")
             }
 

@@ -9,10 +9,10 @@ import org.json.JSONObject
 object CrawlSettings {
 
     /** 相册抓图模式（游客身份，默认）。 */
-    const val MODE_ALBUM = "album"
+    const val MODE_ALBUM = CrawlModes.ALBUM
 
     /** 时间线抓图模式（原实现，兜底）。 */
-    const val MODE_TIMELINE = "timeline"
+    const val MODE_TIMELINE = CrawlModes.TIMELINE
 
     private const val KEY_CRAWL_TARGETS = "crawl_targets"   // [{"uid","name"}]
     private const val KEY_CRAWL_TREE = "crawl_tree_uri"     // SAF 相册目录持久授权

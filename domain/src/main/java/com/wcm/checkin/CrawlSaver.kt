@@ -12,12 +12,15 @@ import kotlin.random.Random
  * 从 `Crawler` 拆出。抓取编排只负责「枚举哪些帖、帖里有哪些图」，
  * 「怎么把一张图安全地写进相册目录」集中在这里，便于单独测试与复用。
  */
-object CrawlSaver {
+class CrawlSaver(
+    /** 抓取设置（GIF 开关等）。 */
+    private val settings: CrawlSettingsPort,
+) {
 
-    private const val DOWNLOAD_ATTEMPTS = 3    // 单文件下载尝试次数（CDN 偶发 403/超时自动重试）
+    private val DOWNLOAD_ATTEMPTS = 3    // 单文件下载尝试次数（CDN 偶发 403/超时自动重试）
 
     /** 单文件大小上限：Live mov 正常在 64MB 以内，超过直接放弃而不是撑爆内存。 */
-    private const val MAX_FILE_BYTES = 64L * 1024 * 1024
+    private val MAX_FILE_BYTES = 64L * 1024 * 1024
 
     /** 大文件下载专用 client：Live mov 可达 64MB，放宽全局 client 的 25s callTimeout。 */
     private val downloadClient = WeiboHttp.client.newBuilder()
@@ -28,6 +31,11 @@ object CrawlSaver {
     data class SaveOutcome(val saved: Int = 0, val failed: Set<Int> = emptySet())
 
     // ========================= 槽位选择（纯函数，JVM 单测） =========================
+    //
+    // 这三个放在 companion 里：它们是纯函数，单测直接 `CrawlSaver.slotsForPics(...)`，
+    // 类化之后调用点零改动。
+
+    companion object {
 
     /** picId 勾选 → 槽位集合。`null` = 不筛选（抓全部）；空集 = 一张都不抓。 */
     fun slotsForPics(assets: PostAssets, picked: Set<String>?): Set<Int>? {
@@ -61,6 +69,8 @@ object CrawlSaver {
      */
     fun retainExistingSlots(failed: MutableSet<Int>, allSlots: Set<Int>) {
         failed.retainAll(allSlots)
+    }
+
     }
 
     // ========================= 逐槽位落盘（三层去重） =========================
@@ -209,7 +219,7 @@ object CrawlSaver {
         isExtra: Boolean,
         ctx: Context,
     ): String? {
-        val gifOn = CrawlSettings.crawlGif(ctx)
+        val gifOn = settings.crawlGif(ctx)
         val a = if (isExtra) AssetName.extraLiveName(prefix, seq - 1, gifOn)
         else AssetName.pairedLiveName(prefix, seq, gifOn)
         val b = if (isExtra) AssetName.extraLiveName(prefix, seq - 1, !gifOn)
@@ -290,9 +300,9 @@ object CrawlSaver {
         log: (String) -> Unit,
     ): LiveResult {
         val kind = when {
-            isExtra && CrawlSettings.crawlGif(ctx) -> CrawlIndex.Kind.LIVE_EXTRA_GIF
+            isExtra && settings.crawlGif(ctx) -> CrawlIndex.Kind.LIVE_EXTRA_GIF
             isExtra -> CrawlIndex.Kind.LIVE_EXTRA_MOV
-            CrawlSettings.crawlGif(ctx) -> CrawlIndex.Kind.LIVE_PAIRED_GIF
+            settings.crawlGif(ctx) -> CrawlIndex.Kind.LIVE_PAIRED_GIF
             else -> CrawlIndex.Kind.LIVE_PAIRED_MOV
         }
         val movName = if (isExtra) AssetName.extraLiveName(prefix, index1 - 1, false)
@@ -304,7 +314,7 @@ object CrawlSaver {
         }
         val gifName = if (isExtra) AssetName.extraLiveName(prefix, index1 - 1, true)
         else AssetName.pairedLiveName(prefix, index1, true)
-        if (CrawlSettings.crawlGif(ctx)) {
+        if (settings.crawlGif(ctx)) {
             val gif = LivePhotoConverter.movBytesToGif(ctx, mov)
             if (gif != null && store.save(gifName, "image/gif", gif)) {
                 index.onFileSaved(postId, slot, kind, picId, Hashing.sha256Hex128(gif), gif.size.toLong(), gifName)

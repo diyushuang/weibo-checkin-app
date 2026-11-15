@@ -130,6 +130,6 @@ interface CredentialPort {
 
     fun has(ctx: Context, uid: String): Boolean
 
-    /** 返回 (账号, 密码)；解不开时抛 `CredentialVault.UnreadableException`。 */
+    /** 返回 (账号, 密码)；解不开时抛 `CredentialUnreadableException`。 */
     fun load(ctx: Context, uid: String): Pair<String, String>?
 }

@@ -49,6 +49,15 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      # 依赖倒置的守门员：:domain 只认 :core 的端口，实现在 :data、装配在 :app。
+      # 这条依赖一旦被加回来，端口层就等于白做，而且不会有任何测试变红。
+      - name: Architecture gate
+        run: |
+          if grep -q 'project(":data")' domain/build.gradle.kts; then
+            echo '::error file=domain/build.gradle.kts::domain 依赖了 data：依赖倒置被破坏（端口在 :core，实现在 :data，装配在 :app）'
+            exit 1
+          fi
+
       - name: Unit tests & Build debug APK
         env:
           WCM_KEYSTORE_PASSWORD: ${{ secrets.WCM_KEYSTORE_PASSWORD }}

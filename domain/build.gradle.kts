@@ -28,7 +28,10 @@ android {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":data"))
+    // 注意：这里**不能**再出现 project(":data")。
+    // domain 只认 :core 里的模型与端口（AccountPort / CrawlSettingsPort / ...），
+    // 实现由 :data 提供、在 :app 的 DomainModule 里注入。
+    // 一旦有人把这条依赖加回来，依赖倒置就等于没做 —— CI 里有一道 grep 门禁盯着。
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     implementation("androidx.core:core-ktx:1.15.0")

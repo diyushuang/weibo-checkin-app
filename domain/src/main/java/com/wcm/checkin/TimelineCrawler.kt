@@ -8,7 +8,12 @@ import org.json.JSONObject
  *
  * 从原 `Crawler` 拆出；相册链路见 [AlbumCrawler]。
  */
-object TimelineCrawler {
+class TimelineCrawler(
+    private val settings: CrawlSettingsPort,
+    private val account: AccountPort,
+    private val engine: CrawlEngine,
+    private val saver: CrawlSaver,
+) {
 
     suspend fun runIncremental(
         ctx: Context,
@@ -21,9 +26,9 @@ object TimelineCrawler {
         full: Boolean = false,
     ) {
         // 单博主抓取：先按 UID 收窄，再走完全相同的链路（顺序仍是用户看到的顺序）
-        val targets = CrawlSettings.selectTargets(CrawlSettings.crawlTargets(ctx), onlyUids)
-        val treeUriRaw = CrawlSettings.crawlTreeUri(ctx)
-        val accounts = AccountStore.load(ctx)
+        val targets = settings.selectTargets(settings.crawlTargets(ctx), onlyUids)
+        val treeUriRaw = settings.crawlTreeUri(ctx)
+        val accounts = account.load(ctx)
         if (accounts.isEmpty()) {
             log("✗ 没有登录账号，先在首页添加账号")
             return
@@ -37,7 +42,7 @@ object TimelineCrawler {
             }
             return
         }
-        val cookie = CrawlEngine.pickCrawlCookie(ctx, accounts, log) ?: return
+        val cookie = engine.pickCrawlCookie(ctx, accounts, log) ?: return
         // 索引是按目录共享的：pendingRetry 没有 uid 维度，单博主跑重试会把别人的失败一起补掉。
         // 与其偷偷扩大范围，不如跳过并把入口指给「待重试」——用户点哪个范围就只跑哪个范围。
         val scoped = onlyUids.isNotEmpty()
@@ -55,7 +60,7 @@ object TimelineCrawler {
             log("范围：只抓 ${targets.joinToString("、") { it.name.ifEmpty { it.uid } }}")
             if (!allowRetry) log("提示：单博主 / 全量不跑共享的「待重试」队列，需要时用「待重试」入口")
         }
-        CrawlEngine.withCrawlContext(ctx, treeUriRaw, log) { state ->
+        engine.withCrawlContext(ctx, treeUriRaw, log) { state ->
             var downloaded = 0
             for ((index, target) in targets.withIndex()) {
                 if (isStopped()) break
@@ -92,8 +97,8 @@ object TimelineCrawler {
         allowRetry: Boolean = true,
     ): Int {
         val uid = target.uid
-        val sinceDate = CrawlSettings.crawlSince(ctx, uid)
-        var cursor = CrawlSettings.crawlCursor(ctx, state.treeTag, uid)
+        val sinceDate = settings.crawlSince(ctx, uid)
+        var cursor = settings.crawlCursor(ctx, state.treeTag, uid)
         var downloaded = 0
         val started = System.currentTimeMillis()
         var details = 0
@@ -131,8 +136,8 @@ object TimelineCrawler {
         if (retryOnly) return downloaded
 
         // ---- Phase A：补新帖 ----
-        val fetch = CrawlEngine.pageFetcher(cookie, uid, log)
-        val planA = CrawlPlanner.planNew(cursor, CrawlEngine.indexView(state.index), sinceDate, fetch, Budget.NEW)
+        val fetch = engine.pageFetcher(cookie, uid, log)
+        val planA = CrawlPlanner.planNew(cursor, engine.indexView(state.index), sinceDate, fetch, Budget.NEW)
         if (planA.batch.isNotEmpty()) log("  A 补新：${planA.batch.size} 帖（索引命中 ${planA.skippedTerminal}）")
         onEvent(CrawlEvent.Phase(CrawlPhase.NEW, planA.batch.size, planA.skippedTerminal))
         var processedA = 0
@@ -163,12 +168,12 @@ object TimelineCrawler {
             log("  A 预算耗尽（${processedA}/${planA.batch.size}），覆盖边界本轮不推进")
         }
         if (planA.stop == StopReason.PAGE_EXHAUSTED) cursor = cursor.copy(reachedBottom = true)
-        CrawlSettings.saveCrawlCursor(ctx, state.treeTag, cursor)
-        CrawlEngine.logPlan("A", planA, cursor, log)
+        settings.saveCrawlCursor(ctx, state.treeTag, cursor)
+        engine.logPlan("A", planA, cursor, log)
 
         // ---- Phase B：从断点锚点继续补历史 ----
         if (!exhausted() && CrawlPlanner.shouldRunHistory(cursor, sinceDate)) {
-            val planB = CrawlPlanner.planHistory(cursor, CrawlEngine.indexView(state.index), sinceDate, fetch, Budget.HISTORY)
+            val planB = CrawlPlanner.planHistory(cursor, engine.indexView(state.index), sinceDate, fetch, Budget.HISTORY)
             if (planB.batch.isNotEmpty()) log("  B 补历史：${planB.batch.size} 帖（索引命中 ${planB.skippedTerminal}）")
             onEvent(CrawlEvent.Phase(CrawlPhase.HISTORY, planB.batch.size, planB.skippedTerminal))
             var processedB = 0
@@ -190,8 +195,8 @@ object TimelineCrawler {
                 if (planB.reachedBottom) cursor = cursor.copy(reachedBottom = true)
             }
             state.index.flush()
-            CrawlSettings.saveCrawlCursor(ctx, state.treeTag, cursor)
-            CrawlEngine.logPlan("B", planB, cursor, log)
+            settings.saveCrawlCursor(ctx, state.treeTag, cursor)
+            engine.logPlan("B", planB, cursor, log)
         }
         return downloaded
     }
@@ -218,8 +223,8 @@ object TimelineCrawler {
         isStopped: () -> Boolean,
     ): Int {
         val uid = target.uid
-        val sinceDate = CrawlSettings.crawlSince(ctx, uid)
-        var cursor = CrawlSettings.crawlCursor(ctx, state.treeTag, uid)
+        val sinceDate = settings.crawlSince(ctx, uid)
+        var cursor = settings.crawlCursor(ctx, state.treeTag, uid)
         var downloaded = 0
         var details = 0
         val started = System.currentTimeMillis()
@@ -227,8 +232,8 @@ object TimelineCrawler {
         fun exhausted() = downloaded >= Budget.FULL.maxFiles || details >= Budget.FULL.maxDetails ||
             System.currentTimeMillis() - started > Budget.FULL.maxWallClockMs
 
-        val fetch = CrawlEngine.pageFetcher(cookie, uid, log)
-        val plan = CrawlPlanner.planScan(cursor, CrawlEngine.indexView(state.index), sinceDate, fetch, Budget.FULL)
+        val fetch = engine.pageFetcher(cookie, uid, log)
+        val plan = CrawlPlanner.planScan(cursor, engine.indexView(state.index), sinceDate, fetch, Budget.FULL)
         log("  全量扫描：第 ${plan.startPage} 页起，${plan.batch.size} 帖（索引命中 ${plan.skippedTerminal}）")
         onEvent(CrawlEvent.Phase(CrawlPhase.SCAN, plan.batch.size, plan.skippedTerminal))
 
@@ -260,8 +265,8 @@ object TimelineCrawler {
             log("  全量预算耗尽（$processed/${plan.batch.size}），断点留在第 ${plan.startPage} 页，下轮重试")
         }
         state.index.flush()
-        CrawlSettings.saveCrawlCursor(ctx, state.treeTag, cursor)
-        CrawlEngine.logPlan("全量", plan, cursor, log)
+        settings.saveCrawlCursor(ctx, state.treeTag, cursor)
+        engine.logPlan("全量", plan, cursor, log)
         return downloaded
     }
 
@@ -289,7 +294,7 @@ object TimelineCrawler {
             onEvent(CrawlEvent.Post(saved = 0, failed = 0))
             return 0
         }
-        val at = CrawlEngine.epochOf(detail.optString("created_at", ""))
+        val at = engine.epochOf(detail.optString("created_at", ""))
         val assets = PostAssetsParser.fromDetail(detail)
         if (assets.picIds.isEmpty()) {
             state.index.onVoid(postId, at)
@@ -297,9 +302,9 @@ object TimelineCrawler {
             return 0
         }
         val authorUid = detail.optJSONObject("user")?.optString("id", "").orEmpty().ifEmpty { uid }
-        val label = CrawlEngine.resolveLabel(state.index, authorUid, target.name.ifEmpty { target.uid })
-        val prefix = CrawlEngine.prefixOf(at, label)
-        val outcome = CrawlSaver.savePost(ctx, state.store, state.index, prefix, postId, at, assets, onlySlots, log)
+        val label = engine.resolveLabel(state.index, authorUid, target.name.ifEmpty { target.uid })
+        val prefix = engine.prefixOf(at, label)
+        val outcome = saver.savePost(ctx, state.store, state.index, prefix, postId, at, assets, onlySlots, log)
         if (outcome.saved > 0) log("  ✓ $prefix…（+${outcome.saved}${if (outcome.failed.isEmpty()) "" else "，缺 ${outcome.failed.size}"}）")
         onEvent(CrawlEvent.Post(saved = outcome.saved, failed = outcome.failed.size))
         return outcome.saved
