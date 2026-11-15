@@ -69,6 +69,20 @@ class GalleryBrowseViewModel @Inject constructor(
     private var scrollIndex = 0
     private var loadingNow = false
 
+    /**
+     * 上一次离开本页时网格的首可见项下标。
+     *
+     * 与 [scrollRequest] 分开：那个是「立刻滚到某处」的一次性命令（批量删除后回顶、
+     * 搜索命中后定位），这个是「重新进入页面时的起始位置」，由
+     * `rememberLazyGridState(initialFirstVisibleItemIndex = ...)` 只读一次。
+     */
+    private var initialScrollIndex = 0
+
+    /** 记录网格首可见项下标（只写字段，不重发 UiState，避免滑动时反复重组）。 */
+    fun onVisibleIndex(index: Int) {
+        initialScrollIndex = index
+    }
+
     fun start(tree: String) {
         if (started) return
         started = true
@@ -326,6 +340,7 @@ class GalleryBrowseViewModel @Inject constructor(
             },
             scrollRequest = scrollRequest,
             scrollIndex = scrollIndex,
+            initialScrollIndex = initialScrollIndex,
         )
     }
 

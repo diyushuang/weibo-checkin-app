@@ -148,6 +148,8 @@
     <!-- 已抓取标记（v0.9.18）：元信息里说「这一帖的可见图里有几张已经在相册里」 -->
     <string name="browse_meta_done_fmt">已抓 %1$d 张</string>
     <string name="browse_pic_desc_fmt">第 %1$d 张缩略图</string>
+    <!-- 已抓过的缩略图：TalkBack 必须把那枚小勾念出来，否则「已抓取」只对有视力的人可见 -->
+    <string name="browse_pic_desc_done_fmt">第 %1$d 张缩略图，已抓取</string>
     <string name="browse_select_hint">点小图看大图 · 点卡片选图抓取 · 长按勾选整帖</string>
     <string name="browse_select_mode_hint">多选：点按勾选整帖，取消请再点一次</string>
     <string name="browse_selected_fmt">已选 %1$d 帖</string>
@@ -175,6 +177,7 @@
     <string name="pick_only_this">只下这张</string>
     <string name="pick_close">关闭</string>
     <string name="pick_preview_desc">全屏预览</string>
+    <string name="pick_full_fail">大图加载失败</string>
 
     <!-- 设置页 -->
     <string name="settings_panel_title">面板同步</string>
@@ -260,6 +263,10 @@
     <string name="cd_log_expanded">运行日志，已展开，点按收起</string>
     <string name="cd_crawl_log_collapsed">抓取日志，已收起，点按展开</string>
     <string name="cd_crawl_log_expanded">抓取日志，已展开，点按收起</string>
+    <!-- 超话行：等级徽章与展开态同样要能被播报 -->
+    <string name="cd_level_badge">超话等级 %1$s</string>
+    <string name="cd_topic_expanded">已展开详情</string>
+    <string name="cd_topic_collapsed">已收起详情</string>
 
     <!-- ===== v0.6 UI 刷新：图片页 ===== -->
     <string name="crawl_targets_count_fmt">抓取目标 (%1$d)</string>

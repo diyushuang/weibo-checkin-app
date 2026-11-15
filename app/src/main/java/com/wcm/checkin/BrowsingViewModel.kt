@@ -224,6 +224,8 @@ class BrowsingViewModel @Inject constructor(
         listBusy = true
         loadingNow = true
         emptyText = ""
+        // 换博主 = 换一整份列表，滚动位置必须归零。
+        initialScrollIndex = 0
         posts.clear()
         visible.clear()
         selectedBids.clear()
@@ -305,6 +307,8 @@ class BrowsingViewModel @Inject constructor(
     }
 
     private fun applyFilter() {
+        // 换了筛选条件就是一份新列表：必须回到顶部，否则会停在上一次列表的旧位置。
+        initialScrollIndex = 0
         visible.clear()
         for (p in posts) {
             if (filterOriginal && p.isRetweet) continue
@@ -350,6 +354,18 @@ class BrowsingViewModel @Inject constructor(
         return "$whenStr · ${tags.joinToString(" · ")}"
     }
 
+    /**
+     * 记录列表当前首可见项下标，供下次进入本页时恢复滚动位置。
+     *
+     * 只写字段、**不在这里 render**：滑动时每换一行就会回调一次，每次都重发一份
+     * UiState 属于白做功，还会让列表在滑动过程中被重组。
+     * 消费点在 [render]：它把该下标塞进 `BrowsingUi.initialScrollIndex`，
+     * 页面（重新）进入组合时由 `rememberLazyListState` 只读一次作为起始位置。
+     */
+    fun onVisibleIndex(index: Int) {
+        initialScrollIndex = index
+    }
+
     private fun render() {
         val targets = CrawlSettings.crawlTargets(ctx).map {
             BrowseAuthorChipUi(it.uid, it.name.ifEmpty { "UID ${it.uid}" })
@@ -388,7 +404,6 @@ class BrowsingViewModel @Inject constructor(
             emptyText = emptyText.ifEmpty { ctx.getString(R.string.browse_empty) },
             initialScrollIndex = initialScrollIndex,
         )
-        initialScrollIndex = 0
     }
 
     private fun toast(text: String) {

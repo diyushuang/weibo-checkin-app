@@ -1,6 +1,7 @@
 package com.wcm.checkin
 
 import android.graphics.Bitmap
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -263,6 +264,11 @@ fun FullPickPreviewDialog(
                     runCatching { RemoteThumb.loadFull(fullUrl) }.getOrNull()
                 }
                 zoom.setImageDrawable(bmp?.let { android.graphics.drawable.BitmapDrawable(null, it) })
+                // 大图取不回来（风控 / 超 12MB 上限 / 断网）时，黑屏必须给个说法，
+                // 否则用户以为「全屏预览坏了」——旧版同样是 Toast「大图加载失败」。
+                if (bmp == null) {
+                    Toast.makeText(context, R.string.pick_full_fail, Toast.LENGTH_SHORT).show()
+                }
                 value = false
             }
             AndroidView(

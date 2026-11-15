@@ -268,7 +268,7 @@ private fun AppShell(
                         onExitSelect = vm::exitSelectMode,
                         onDownload = vm::submitSelected,
                         onLoadMore = vm::loadMore,
-                        onVisibleIndex = {},
+                        onVisibleIndex = vm::onVisibleIndex,
                     )
                 }
                 composable(
@@ -302,7 +302,7 @@ private fun AppShell(
                         onItemClick = vm::toggle,
                         onItemLongClick = vm::requestFullPreview,
                         onDownload = vm::submitSelected,
-                        onVisibleIndex = {},
+                        onVisibleIndex = vm::onVisibleIndex,
                     )
                     fullPreview?.let { (url, picId) ->
                         FullPickPreviewDialog(
@@ -418,7 +418,7 @@ private fun AppShell(
                         onShare = vm::shareSelected,
                         onDelete = { confirmDelete = true },
                         onEmptyAction = { nav.popBackStack() },
-                        onVisibleIndex = {},
+                        onVisibleIndex = vm::onVisibleIndex,
                     )
                     if (confirmDelete) {
                         AlertDialog(
@@ -599,7 +599,7 @@ private fun RowScope.NavItem(
                         Badge(
                             containerColor = colorResource(R.color.brand),
                             contentColor = colorResource(R.color.brand_on),
-                        ) { Text(badge.toString()) }
+                        ) { Text(if (badge > 99) "99+" else badge.toString()) }
                     },
                 ) {
                     Icon(painterResource(icon), contentDescription = null)

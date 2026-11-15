@@ -54,6 +54,9 @@ class PostPickViewModel @Inject constructor(
     private var loaded = false
     private var submitting = false
 
+    /** 上一次离开本页时列表的首可见项下标；重新进入组合时用它恢复位置。 */
+    private var initialScrollIndex = 0
+
     init {
         emptyText = ctx.getString(R.string.pick_no_pics)
         CrawlMarks.ensure(ctx) { if (loaded) render() }
@@ -208,6 +211,14 @@ class PostPickViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 记录选图网格当前首可见项下标（只写字段，不重发 UiState —— 见
+     * `BrowsingViewModel.onVisibleIndex` 的同类说明）。
+     */
+    fun onVisibleIndex(index: Int) {
+        initialScrollIndex = index
+    }
+
     private fun render() {
         val itemsUi = items.map { item ->
             PickItemUi(
@@ -227,6 +238,7 @@ class PostPickViewModel @Inject constructor(
             selectedCount = selected.size,
             allSelected = items.isNotEmpty() && selected.size == items.size,
             submitting = submitting,
+            initialScrollIndex = initialScrollIndex,
         )
     }
 

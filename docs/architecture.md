@@ -52,7 +52,7 @@
 - **超话快照**在 `:data` 的 `TopicStore`，`StateFlow<Map<String, Snapshot>>`；
   跨天失效由快照时间判断。
 - 纯函数/纯模型（`CrawlPlanner`、`CursorLogic`、`CrawlProgress.reduce`、`AssetName`、
-  `ReloginPolicy` 等）保持 JVM 可测，是当前 315 个单测的主体。
+  `ReloginPolicy` 等）保持 JVM 可测，是当前 322 个单测的主体。
 
 ## 4. 依赖注入（Hilt）
 
@@ -84,7 +84,7 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 
 当前基线（2026-11-14）：
 
-- 315 个 JVM 单测，0 failures
+- 322 个单测（315 JVM + 7 instrumented），0 failures
 - `assembleDebug` / `assembleRelease` 通过；2026-11-14 `clean` 后四模块全量重建 + 单测 + lint + debug/release 一次通过
 - release APK ≈ 3.63MB（R8 开启前 6.55MB；lint 清理后 3.627MB）
 - `:app:lintDebug` 已在 2026-11-14 跑通（约 40s，**0 warnings / 0 errors**）；
@@ -193,11 +193,12 @@ JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 
 待办（按建议顺序）：
 
-1. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路。
-2. Phase 7 清理：清理迁移后无引用的 drawable/style；`grep` 复核 UI→data 直接依赖。
+1. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路（其余项都以此为最终判据）。
+2. 架构债务：把 `domain -> data` 反转为端口/实现（端口放 `:core`，适配器放 `:data`），
+   并把 `CheckinService` / `AccountMaintenanceService` / `AutoRelogin` 从 `object` 改为
+   构造注入。完整分步方案见 `docs/review/refactor-audit-2026-11-15.md` 与项目计划文件。
 3. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
    `:feature` 模块（需先把 `R.*` 资源迁移到 feature）。
-4. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路。
 
 ## 7. 不变量（改动时必须保留）
 

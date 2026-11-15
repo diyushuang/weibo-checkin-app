@@ -37,4 +37,6 @@ data class GalleryBrowseUiState(
     val emptyText: String = "",
     val scrollRequest: Int = 0,
     val scrollIndex: Int = 0,
+    /** 上一次离开本页时网格的首可见项下标；重新进入组合时作为起始位置。 */
+    val initialScrollIndex: Int = 0,
 )

@@ -336,7 +336,7 @@ private fun Grid(
     onVisibleIndex: (Int) -> Unit,
 ) {
     val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
-    val gridState = rememberLazyGridState()
+    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = state.initialScrollIndex)
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.firstVisibleItemIndex }.collect { onVisibleIndex(it) }
     }

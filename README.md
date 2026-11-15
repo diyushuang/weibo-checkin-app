@@ -252,7 +252,7 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
 
 ```
 微博签到app/
-├── settings.gradle.kts      # rootProject.name = "wcm-checkin"，include(":app")
+├── settings.gradle.kts      # rootProject.name = "wcm-checkin"，include(":app", ":core", ":data", ":domain")
 ├── build.gradle.kts         # AGP 8.13.2 + Kotlin 1.9.24
 ├── gradle.properties
 ├── gradlew / gradlew.bat

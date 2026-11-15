@@ -374,7 +374,12 @@ private fun PostCard(
 
 @Composable
 private fun ThumbTile(thumb: BrowseThumbUi, index: Int, onClick: () -> Unit) {
-    val desc = stringResource(R.string.browse_pic_desc_fmt, index + 1)
+    // 已抓过的小勾是纯装饰：把它并进容器的描述里，TalkBack 才会念出来。
+    val desc = if (thumb.done) {
+        stringResource(R.string.browse_pic_desc_done_fmt, index + 1)
+    } else {
+        stringResource(R.string.browse_pic_desc_fmt, index + 1)
+    }
     Box(
         modifier = Modifier
             .size(56.dp)

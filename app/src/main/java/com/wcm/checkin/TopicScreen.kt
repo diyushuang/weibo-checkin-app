@@ -44,6 +44,7 @@ import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -279,7 +280,15 @@ private fun TopicRowCard(
     onJson: (TopicRowUi) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
-    WcmTopicCard(onClick = { onClick(row) }) {
+    // 整张卡是可点的（点一下展开/收起详情），展开态必须能被 TalkBack 播报出来，
+    // 否则读屏用户点完之后听不到任何变化。
+    val expandState = stringResource(
+        if (row.expanded) R.string.cd_topic_expanded else R.string.cd_topic_collapsed,
+    )
+    WcmTopicCard(
+        onClick = { onClick(row) },
+        modifier = Modifier.semantics { stateDescription = expandState },
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (row.levelTier > 0) {
                 LevelBadge(row.levelLabel, row.levelTier)
@@ -390,7 +399,12 @@ private fun LevelBadge(label: String, tier: Int) {
         3 -> colorResource(R.color.level_purple_bg) to colorResource(R.color.level_purple_fg)
         else -> colorResource(R.color.level_gold_bg) to colorResource(R.color.level_gold_fg)
     }
-    Surface(shape = RoundedCornerShape(6.dp), color = bg) {
+    val desc = stringResource(R.string.cd_level_badge, label)
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = bg,
+        modifier = Modifier.semantics { contentDescription = desc },
+    ) {
         Text(
             text = label,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -433,17 +447,18 @@ private fun MessageCard(text: String, action: String?, onAction: () -> Unit) {
 
 @Composable
 private fun WcmTopicCard(
+    modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
-    val modifier = Modifier.fillMaxWidth()
+    val baseModifier = modifier.fillMaxWidth()
     val colors = CardDefaults.cardColors(containerColor = colorResource(R.color.surface))
     val border = BorderStroke(1.dp, colorResource(R.color.line))
     val shape = RoundedCornerShape(14.dp)
     if (onClick != null) {
         Card(
             onClick = onClick,
-            modifier = modifier,
+            modifier = baseModifier,
             shape = shape,
             colors = colors,
             border = border,
@@ -453,7 +468,7 @@ private fun WcmTopicCard(
         }
     } else {
         Card(
-            modifier = modifier,
+            modifier = baseModifier,
             shape = shape,
             colors = colors,
             border = border,

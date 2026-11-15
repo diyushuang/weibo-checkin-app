@@ -83,8 +83,13 @@ android {
         // 碰到它就停，不再每轮把前面已抓过的帖重新枚举一遍。
         // 0.9.18：预览（浏览页小图 / 大图 / 选图页）标出「这张已经抓过」——
         // 索引读一份只含 picId 与终态帖 id 的快照，按需加载、按 mtime 失效。
-        versionCode = 32
-        versionName = "0.9.18"
+        // 0.10.0：架构现代化落版（4 模块 + Hilt + 全量 Compose + R8）。**无新增功能、
+        // 数据格式零迁移**，可直接覆盖安装 0.9.18；版本号跳过 0.9.19 是为了区分
+        // 「行为等价但工程结构已变」的两条线。附带的可用性修复：已抓勾 / 超话等级与
+        // 展开详情的无障碍播报、九宫格「+N」溢出标记、待签角标 3 位上限、
+        // 全屏大图加载失败提示。
+        versionCode = 33
+        versionName = "0.10.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
