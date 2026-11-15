@@ -50,7 +50,13 @@ class BrowsingViewModel @Inject constructor(
     private var initialScrollIndex = 0
     private var started = false
 
-    private var uid = ""
+    /**
+     * 已解析出的博主 UID。
+     *
+     * 写在 IO 协程里（解析/翻页都在 IO），读却在主线程（[loadMore] 的闸门判断），
+     * 所以标 `@Volatile`：不加的话主线程可能仍看到空值，触底翻页会静默不生效。
+     */
+    @Volatile private var uid = ""
     private var page = 0
     private var hasMore = true
     private var listBusy = false
@@ -198,7 +204,11 @@ class BrowsingViewModel @Inject constructor(
     fun loadMore() {
         if (listBusy || !hasMore || uid.isEmpty()) return
         listBusy = true
-        viewModelScope.launch {
+        // 必须显式 Dispatchers.IO：viewModelScope 默认 Main.immediate，
+        // 而 pickCrawlCookie → verify / fetchUserPosts 都是 OkHttp 的同步 execute()。
+        // 跑在主线程上会被 Android 直接抛 NetworkOnMainThreadException ——
+        // 用户看到的就是「列表请求失败：NetworkOnMainThreadException」且列表永远空白。
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val cookie = crawlEngine.pickCrawlCookie(ctx, AccountStore.load(ctx)) { }
                 if (cookie == null) {
@@ -207,6 +217,9 @@ class BrowsingViewModel @Inject constructor(
                 }
                 fetchOnePage(cookie)
                 withContext(Dispatchers.Main) { onListArrived() }
+            } catch (e: CancellationException) {
+                // 离开页面 = 正常取消，不该当成「列表请求失败」写进 toast
+                throw e
             } catch (e: Exception) {
                 failList(e.message ?: e.javaClass.simpleName)
             }
@@ -235,7 +248,7 @@ class BrowsingViewModel @Inject constructor(
         hasMore = true
         render()
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val resolved = WeiboAuthApi.resolveUid(input)
                 if (resolved.isEmpty()) {
@@ -266,6 +279,9 @@ class BrowsingViewModel @Inject constructor(
                     fetched++
                 }
                 withContext(Dispatchers.Main) { onListArrived() }
+            } catch (e: CancellationException) {
+                // 离开页面 = 正常取消，不该当成「列表请求失败」写进 toast
+                throw e
             } catch (e: Exception) {
                 failList(e.message ?: e.javaClass.simpleName)
             }

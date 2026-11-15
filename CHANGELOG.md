@@ -7,6 +7,41 @@
 
 ---
 
+## [0.10.1] - 2026-11-15 — 修「浏览博主」列表一直报 NetworkOnMainThreadException
+
+### 缺陷
+
+- **症状**：进入「浏览博主」，点「载入」（或换博主、触底翻页）后底部弹
+  「列表请求失败：NetworkOnMainThreadException」，页面中间停在
+  「没有拉到微博（UID 是否正确？）」—— 无论 UID 对不对、账号是否登录，永远拉不到列表。
+- **根因**：`BrowsingViewModel` 的两处编排（`startBrowse` / `loadMore`）用
+  `viewModelScope.launch { }` 启动，而 `viewModelScope` 默认调度器是
+  `Dispatchers.Main.immediate`；`resolveUid` / `pickCrawlCookie → verify` /
+  `fetchUserName` / `fetchUserPosts` 全是 OkHttp 的同步 `execute()`，
+  Android 在主线程发网络会直接抛 `NetworkOnMainThreadException`。
+  异常被外层 `catch` 接住后按 `e.message ?: simpleName` 显示，于是就有了这条提示。
+  探活结果有 90 秒缓存，所以这个异常**看起来只在列表请求上出现**：
+  `pickCrawlCookie` 命中缓存时不发请求，真正撞上主线程限制的是第一次翻页。
+  `GalleryViewModel` / `PostPickViewModel` / `TopicViewModel` 等其它编排都写了
+  `Dispatchers.IO`，只有这一页漏了。
+- **修复**：两处启动点显式指定 `Dispatchers.IO`；coroutine 内部的 UI 更新本来就
+  全部经 `withContext(Dispatchers.Main)`，因此不需要额外搬家。
+
+### 工程
+
+- **全仓同类排查**：把 app/domain/core 三层的网络与磁盘调用点逐个对了一遍线程上下文 ——
+  `HomeViewModel` / `TopicViewModel` / `GalleryViewModel` / `GalleryBrowseViewModel` /
+  `PostPickViewModel` / `ImagePreviewViewModel` / `RemotePreviewViewModel` /
+  `LoginWebViewActivity` 全部走 `AppScope`（IO 作用域）或显式 `launch(Dispatchers.IO)`；
+  三处 Compose 缩略图 `produceState` 也都包了 `withContext(Dispatchers.IO)`；
+  缩略图/大图下载（`RemoteThumb`）与图片解码都在 `io` 分派器里。**只此一处遗漏**。
+- 顺带把两处 `catch (e: Exception)` 补上 `CancellationException` 先行重抛：离开页面
+  属于正常取消，不该被记成一条「列表请求失败」。
+- 版本号 `versionCode 33 → 34`、`versionName 0.10.0 → 0.10.1`（覆盖安装需要递增）。
+- 无数据格式变更：抓取索引、账号表、抓取设置、已抓标记全部沿用，可直接覆盖安装。
+
+---
+
 ## [0.10.0] — 架构现代化落版（行为不变）
 
 > 从 0.9.18 覆盖安装即可，**不需要重登、不需要重设目录、抓取索引与「已抓」标记全部保留**。

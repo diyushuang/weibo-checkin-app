@@ -88,8 +88,11 @@ android {
         // 「行为等价但工程结构已变」的两条线。附带的可用性修复：已抓勾 / 超话等级与
         // 展开详情的无障碍播报、九宫格「+N」溢出标记、待签角标 3 位上限、
         // 全屏大图加载失败提示。
-        versionCode = 33
-        versionName = "0.10.0"
+        // 0.10.1：修「浏览博主 → 载入」必弹「列表请求失败：NetworkOnMainThreadException」、
+        // 列表永远空白 —— 该页是唯一没把网络调用切到 IO 的编排（viewModelScope 默认
+        // Main.immediate，OkHttp 的同步 execute() 在主线程直接抛这个异常）。
+        versionCode = 34
+        versionName = "0.10.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
