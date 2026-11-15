@@ -5,9 +5,6 @@ import androidx.core.content.edit
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 一个抓取目标：微博 UID + 展示名。 */
-data class CrawlTarget(val uid: String, val name: String)
-
 /** 抓取目标、目录、游标、模式与 Live/GIF 开关。 */
 object CrawlSettings {
 
