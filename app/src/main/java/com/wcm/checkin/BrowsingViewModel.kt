@@ -25,6 +25,12 @@ sealed interface BrowsingEvent {
 }
 
 /** 浏览博主页状态与编排（route 版）。 */
+
+/**
+ * **所有网络调用必须切到 IO**。`viewModelScope` 默认是 `Main.immediate`，而 OkHttp 的同步
+ * `execute()` 在主线程会直接抛 `NetworkOnMainThreadException` —— 0.10.1 修的
+ * 「列表请求失败」就是这个原因，新增入口时别再踩。
+ */
 @HiltViewModel
 class BrowsingViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,

@@ -79,6 +79,12 @@ import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * 图库浏览页：网格、分组头、搜索、筛选 chip、五种排序、多选批处理、缩放预览入口。
+ *
+ * 用 `LazyVerticalGrid` + 采样解码 + `LruCache` 渲染。旧实现是 RecyclerView + 手写 DiffUtil，
+ * 曾在主线程算 diff 导致 ANR —— 现在差异对比交给 Compose，不要再引入手写 diff。
+ */
 @Composable
 fun GalleryBrowseScreen(
     state: GalleryBrowseUiState,

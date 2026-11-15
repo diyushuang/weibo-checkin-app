@@ -69,6 +69,17 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * 浏览博主页：博主内容摘要 + 一排小图，「只看原创 / 只看有图」筛选，触底翻页。
+ *
+ * 三个必须守住的点：
+ * 1. **列表里是小图，点开才是大图**：小图按原比例缩进格子（不裁成色带），大图走 CDN 的 `large` 段。
+ * 2. **进可见区才加载**：卡片滑进视口才按顺序一格一格拉，滑出即取消。整页几十上百个
+ *    请求一起压出去会把连接池和内存同时打满。
+ * 3. **下载必须带 Referer**：新浪图床有热链保护，少这个头会 403。
+ *
+ * 抓过的图在缩略图右下角打勾，判定依据是抓取索引里的落盘记录（不是文件名猜的）。
+ */
 @Composable
 fun BrowsingScreen(
     state: BrowsingUiState,

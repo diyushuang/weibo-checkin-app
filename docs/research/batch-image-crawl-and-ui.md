@@ -3,6 +3,11 @@
 > 调研对象：`com.wcm.checkin`（微博超话签到 + 按博主批量抓原图 + 图库浏览，Kotlin/View，minSdk 23 / targetSdk 36）
 > 调研时间：2026-10-27　调研方式：GitHub API（star 数为当日快照）+ 官方文档原文抓取 + 关键仓库源码抽查
 > 说明：所有条目均给出可点开的 URL；标注「二手」的是基于源码的第三方整理（DeepWiki），未逐行复核的会明确写「未验证」。
+>
+> **现状对照（v0.11.0）**：§一 的存储与 SAF 结论已全部落地（索引为权威、目录扫描降级为兜底）；
+> **UI 部分已被 [`../design/ui-system-v2.0.md`](../design/ui-system-v2.0.md) 取代**，
+> 且界面自 0.10.0 起改为 Compose，文中提到的 `*Fragment` / 布局 XML 均已不存在。
+> 保留本文是为了记录当时的调研依据与取舍。
 
 ---
 
@@ -112,7 +117,7 @@
 | 主题令牌 | design-system 层统一 token，页面零魔法数 | `styles.xml`（卡片三级、**按钮三档 Primary/Secondary/Text** + 48dp 图标按钮、列表行、chip、日志头）+ `dimens.xml`（4dp 栅格、`touch_min=48dp`）**已建立，三页已全覆盖** | 无（已达标） |
 | 设置页令牌化 | 同上级 | 调研起始时 `fragment_settings.xml` 未令牌化（硬编码 dp/sp、`materialCardViewFilledStyle` ×3）—— **本轮已修复**，现 grep 裸 dp / `textSize=` / `@color/text_secondary` / `materialCardViewFilledStyle` 均零命中 | 无（已修复） |
 | 对比度 | 正文 ≥4.5:1，大字号 ≥3:1 | 调研起始 `colorPrimary=#F54868` 白字 **3.49:1**（不达标）—— **本轮已按「日夜分离」修复**：浅色 `brand_dark #C4344E`（白字 **5.32:1**），深色保持 `brand` + `colorOnPrimary=#1C1B1F`（亮红压深底 **4.90:1**）。深色**不能**改深红：`#C4344E` 压 `#1C1B1F` 仅 **3.22:1**，TextButton 文字会糊 | 无（已修复，且修正了「两态都压深」的初版判断） |
-| 动态取色 | Android 12+ 可选开关，默认关 | **调研起始即已无条件启用**（`WcmApp.onCreate` → `DynamicColors.applyToActivitiesIfAvailable`）。改为「开关 + 默认关」需新增偏好项 + Application 装配 + 4 个 Activity 主题重建，成本大于收益，**本轮不做**（理由见 `docs/design/ui-refresh-rationale.md` §7） | 小（有意保留现状） |
+| 动态取色 | Android 12+ 可选开关，默认关 | **调研起始即已无条件启用**（`WcmApp.onCreate` → `DynamicColors.applyToActivitiesIfAvailable`）。改为「开关 + 默认关」需新增偏好项 + Application 装配 + 4 个 Activity 主题重建，成本大于收益，**本轮不做**（v0.6 改造时的取舍记录已随重构清理，现行规范见 `../design/ui-system-v2.0.md`） | 小（有意保留现状） |
 | 按钮层级 | 一页一个高强调主行动，其余降级 | 首页已达标（filled 签到 + outlined 同步 + text 刷新）；**图库页**有 3 个 TextButton + 「开始/停止」同权重横排竞争 | 中 |
 | 空态/加载态 | 空态给「下一步行动」，加载给骨架/占位 | 有 `Widget.Wcm.Text.Empty` 文本空态，无图标+行动、无加载骨架 | 小 |
 
@@ -172,7 +177,7 @@
 
 ### 4.6 本轮实施状态（v0.6 UI 刷新回填，2026-10-27）
 
-上表 S17–S22 中与主题/按钮层级相关的 4 条已在 v0.6 UI 刷新中落地并通过构建与 lint，详细改动说明见 `docs/design/ui-refresh-rationale.md`：
+上表 S17–S22 中与主题/按钮层级相关的 4 条已在 v0.6 UI 刷新中落地并通过构建与 lint，现行规范见 `../design/ui-system-v2.0.md`：
 
 | 条目 | 状态 | 验收实测 |
 |---|---|---|

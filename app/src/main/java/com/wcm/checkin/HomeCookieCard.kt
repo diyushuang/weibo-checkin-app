@@ -28,6 +28,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
+/**
+ * 首页 Cookie 有效期卡：逐账号展示登录态还剩几天，剩余 ≤2 天 / 已过期 / 已判失效整行标红。
+ *
+ * 寿命只从真实登录时刻或微博真正换发关键凭据起算，同步与探活只更新「登录于 / 同步于」，
+ * 不再按同步时间续命 —— 早先按同步时间估算，导致长期不登录的账号一直显示「还剩 7 天」。
+ */
 enum class PillTone { OK, WARN, DANGER, NEUTRAL }
 
 data class CookieRowUi(

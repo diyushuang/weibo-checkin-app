@@ -33,7 +33,8 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.Locale
 
-/** 图库抓取 Tab：只渲染 [GalleryViewModel]，目录选择器由 Fragment 壳注入。 */
+/** 图库抓取 Tab：只渲染 [GalleryViewModel]；SAF 目录选择器由外层 route 用
+ *  `rememberLauncherForActivityResult` 发起，再把选中的目录回传给 ViewModel。 */
 @Composable
 fun GalleryTab(
     viewModel: GalleryViewModel,

@@ -33,6 +33,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * 首页运行日志卡：收起时是一行摘要，展开是深色等宽终端，自动贴底跟随。
+ *
+ * 贴底只在用户本来就停在底部时生效；用户手动往上翻看历史时不要抢回底部。
+ */
 data class LogCardUi(
     val expanded: Boolean = false,
     val lines: List<String> = emptyList(),

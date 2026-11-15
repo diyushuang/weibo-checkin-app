@@ -40,6 +40,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
+/**
+ * 首页账号列表卡：三行式账号行（用户名 / UID / 状态）、头像、点数 chip、⋮ 菜单与空态。
+ *
+ * 状态第一行回答「**今天**签了吗」，优先用今日超话快照；快照不可用时才退回本机上一次小结
+ * 并标注「上次」。这个口径的判定在 `AccountStatusHead` 里，本文件只负责显示。
+ */
 enum class AvatarTone { OK, WARN, BRAND }
 
 data class AccountChipsUi(val level: String?, val done: String?, val pending: String?)

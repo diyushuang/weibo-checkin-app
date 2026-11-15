@@ -13,6 +13,11 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
+/**
+ * 远程大图预览：直接看 CDN 上的原图，不落盘。
+ *
+ * 与本地预览共用 `ZoomPager` / `ZoomableImageView`，只是图片来源换成网络。
+ */
 @Composable
 fun RemotePreviewScreen(
     state: RemotePreviewUiState,

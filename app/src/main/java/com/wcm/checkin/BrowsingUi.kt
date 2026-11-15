@@ -1,5 +1,10 @@
 package com.wcm.checkin
 
+/**
+ * 浏览博主页的 UI 状态模型（帖子、缩略图、博主 chip、整页状态）。
+ *
+ * `BrowseThumbUi.done` 就是「这张已经抓过」的小勾来源，由 `CrawlMarks` 的快照填充。
+ */
 data class BrowseThumbUi(val url: String, val done: Boolean)
 
 data class BrowsePostUi(

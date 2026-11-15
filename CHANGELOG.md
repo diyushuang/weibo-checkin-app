@@ -5,6 +5,10 @@
 
 版本号三处同步：`app/build.gradle.kts` 的 `versionName`、本文件小节标题、README 的功能标注。
 
+> 历史条目里引用的文档可能已在后续版本整理中删除（尤其 `0.11.0` 清理的一批
+> 重构前设计稿与旧代码审查报告）。文件内容仍可从 git 历史取回：
+> `git show <该条目发布时的 tag>:docs/<路径>`。
+
 ---
 
 ## [0.11.0] - 2026-11-15 — 持久登录加固：Cookie 加密落盘、登录墙判死、ALC 免密码重登
@@ -59,6 +63,30 @@
   加密序列化契约（含明文/密文混表、解密失败降级）。
 - 明确写入代码注释：**永不调用** `sso/updatetgt.php` + `sso/crossdomain.php` 那条
   "续期链"——社区认证态实测显示调用后 5 秒原凭证即失效，且不会换回新 SUB。
+- **文档与注释整理**（重构后收口）：
+  - 删除 6 份描述已被重构推翻的文档：`ui-system-v0.7.md`（自述废弃）、
+    `ui-refresh-rationale.md` / `qa-report-ui-refresh.md`（按已删除的 `*Fragment.kt`
+    与布局 XML 出结论）、`ui-preview.html`（Compose 前的「三屏」对照稿）、
+    `code-review-2026-10-30.md` / `code-review-2026-11-01.md`（重构前代码的审查，
+    由 `refactor-audit-2026-11-15.md` 取代）。
+  - `docs/architecture.md` 重写为「当前结构说明」：模块划分、依赖门禁、状态与并发、DI、
+    **不变量清单**、「加新功能往哪放」。原混在里面的构建基线与真机验证流水账
+    拆到新增的 `docs/verification.md`。
+  - `README.md`：依赖方向更正为 `app -> domain -> core` / `app -> data -> core`；
+    文件清单删掉 5 个已不存在的 `*Activity.kt`，改按 `Tab/Screen/Ui/ViewModel`
+    四类命名约定组织；新增「文档索引」。
+  - `app/build.gradle.kts`：`defaultConfig` 里 0.9.1→0.10.1 的巨型版本注释收缩为
+    按大版本分组的三行摘要（详情指向本文件），过期注释（"Phase 0 先验证 R8 再引入 Compose"、
+    "后续逐屏替换 findViewById"）按现状改写。
+  - `:app` 层 24 个此前没有文件头注释的文件补上说明；修正 6 处指向已不存在的
+    `*Fragment` 的注释。
+  - 设计/调研文档补「代码位置已随 0.10.0 迁移」的对照表，不再让人按旧路径找代码。
+- **核查了三个"看起来没人用"的依赖，结论是都删不掉**：`androidx.fragment:fragment-ktx`、
+  `androidx.recyclerview:recyclerview`、`androidx.viewpager2:viewpager2` 在全量 Compose 化后
+  源码零引用，但 material / appcompat 的 POM 里声明的传递版本分别是 fragment 1.5.4 /
+  recyclerview 1.0.0 / viewpager2 1.0.0 —— 删掉它们不会从 APK 里消失，只会把版本退回 2018–2022
+  年的老版本。三者已在 `app/build.gradle.kts` 上标注为**版本钉并说明不可删的原因**，
+  避免下次清理时又被当成死依赖删掉。
 
 ### 已知边界
 

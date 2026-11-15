@@ -3,7 +3,12 @@
 > 范围：**不需要登录微博账号**就能访问的接口，即各客户端端（Web / H5 / 超话 / 卡片 / 护照 / CDN）的游客态接口。
 > 不含微博开放平台（`open.weibo.com` / `api.weibo.com`）的 OAuth 接口 —— 那套是另一条线，与本项目核心功能（超话签到、原图抓取）没有交集。
 >
-> 审计日期：2026-10-30　｜　对应代码：本仓库 `app/src/main`（v0.9.0+）
+> 审计日期：2026-10-30　｜　对应代码：v0.9.0+
+>
+> **现状对照（v0.11.0）**：本文的**接口结论与档位划分仍然有效**，文中出现的代码位置
+> 已随 0.10.0 重构迁移 —— `WeiboApi.kt` 拆成 `:core` 的 `WeiboHttp` / `WeiboAuthApi` /
+> `WeiboTopicApi` / `WeiboPostApi` / `WeiboImageUrl`，游客身份在 `GuestSession`，
+> 具体功能实现见 [`../architecture.md`](../architecture.md)。
 
 ---
 

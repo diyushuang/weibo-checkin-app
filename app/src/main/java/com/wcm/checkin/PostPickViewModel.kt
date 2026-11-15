@@ -24,6 +24,11 @@ sealed interface PostPickEvent {
 }
 
 /** 选图页状态与编排（route 版）。 */
+
+/**
+ * 图清单以详情里的 `pic_ids` 为准（权威保序），`pics` 只用来补 URL 与类型 ——
+ * 列表卡片里的张数会被截断到 9，照它往下抓会漏图。
+ */
 @HiltViewModel
 class PostPickViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,

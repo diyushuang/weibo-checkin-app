@@ -57,6 +57,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * 选图页：按详情给的权威图清单铺格子，勾选任意几张、全选、长按看大图。
+ *
+ * 格子按原比例显示（不裁切），LIVE / GIF 有类型徽标；大图页「只下这张」等于单图抓取。
+ */
 @Composable
 fun PostPickScreen(
     state: PickUiState,

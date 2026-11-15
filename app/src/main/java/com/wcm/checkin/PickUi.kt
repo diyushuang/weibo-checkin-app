@@ -1,5 +1,8 @@
 package com.wcm.checkin
 
+/**
+ * 选图页的 UI 状态模型（图项、整页状态）。
+ */
 data class PickItemUi(
     val picId: String,
     val thumbUrl: String,

@@ -4,6 +4,12 @@
 > 前置：`docs/design/interactive-crawl-design.md`（v0.9.11 浏览/选图）之后的抓取内核。
 > 起草日期：2026-10-31　｜　状态：**已实施（v0.9.12，2026-10-31）**
 
+> **代码位置已随 0.10.0 重构迁移**（本文正文写的是重构前的单模块路径）：
+> 规划逻辑仍在 `:domain` 的 `CrawlPlanner.planScan`，执行链路在 `CrawlEngine` +
+> `TimelineCrawler`，闸门是 `:domain` 的 `CrawlService`，入口在
+> `:app` 的 `GalleryViewModel`（目标行 ⋮ 菜单与运行卡）。现行结构见
+> [`../architecture.md`](../architecture.md)。
+
 ## 实施回填（v0.9.12）
 
 | 计划项 | 落地情况 |

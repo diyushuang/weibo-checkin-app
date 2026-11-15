@@ -23,6 +23,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
+/**
+ * 本地图库全屏预览：左右翻页器 + 底部工具条（计数 / 文件名 / 分享 / 打开 / 删除）。
+ *
+ * 图片复用 `ZoomableImageView`，与远程预览共用同一套翻页与缩放行为。
+ */
 @Composable
 fun ImagePreviewScreen(
     state: ImagePreviewUiState,

@@ -49,6 +49,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
+/**
+ * 超话页渲染：账号切换、三列概览、等级徽章、筛选与排序、逐条展开详情、行菜单、字段说明。
+ *
+ * 详情是懒加载的（点开才拉），行菜单可单独签到 / 复制签到链接 / 查看原始 JSON。
+ */
 @Composable
 fun TopicScreen(
     state: TopicUiState,

@@ -1,220 +1,180 @@
-# 架构说明（架构现代化进行中）
+# 架构说明
 
-> 状态：2026-11 架构现代化 **Phase 0–6 已完成**：四个 Tab + 浏览/选图/预览全部是
-> NavHost route；仅登录 WebView 保留独立 Activity。
-> 本文描述当前真实结构，不描述最终目标态的想象结构。
+> 适用版本：`0.11.0`（versionCode 35）
+> 本文描述**当前真实结构**。迁移过程中的取舍与历史包袱不在这里叙述，见
+> [`docs/review/refactor-audit-2026-11-15.md`](review/refactor-audit-2026-11-15.md)；
+> 构建结果、运行时验证与待执行的端到端清单见 [`docs/verification.md`](verification.md)。
 
-## 1. Gradle 模块与依赖方向
+## 1. 模块划分
 
-```
-:app            Compose UI + Navigation 壳、WorkManager、Hilt 入口（组合根 DomainModule）
- ├── :domain    签到 / 保活 / 抓取 / 重登的服务编排（只认端口，不认实现）
- ├── :data      需要 Context 的本地状态：账号表、抓取设置、超话缓存、面板设置、
- │              凭证库（Keystore）、目录授权自检
- └── :core      共享内核：模型、纯算法、端口接口、微博客户端（HTTP/接口/解析）、
-                文件与媒体原语（NDJSON 索引 / SAF / GIF）
-```
+四个 Gradle 模块，包名全部是 `com.wcm.checkin`。
 
-依赖规则：
-
-- `:app -> :domain, :data, :core`
-- `:domain -> :core` —— **不再依赖 `:data`**。业务层只认 `:core` 里的端口
-  （`AccountPort` / `CrawlSettingsPort` / `TopicCachePort` / `PanelPort` / `CredentialPort`），
-  实现在 `:data` 的 `PortAdapters.kt`，由 `:app` 的 `DomainModule` 注入。
-  CI 里有一道 `grep 'project(":data")' domain/build.gradle.kts` 门禁，防止被加回来。
-- `:data -> :core`
-- `:core` 不依赖任何上层模块；`domain` 不得引用 Android UI；`data` 不得引用 UI/domain。
-
-> **包名仍全部是 `com.wcm.checkin`**：这是为了模块化迁移时零 import 改动。
-> 模块边界目前由 Gradle 依赖强制，而不是由 package 强制。后续可把包名拆成
-> `com.wcm.checkin.core/data/domain`，那是一次独立的机械迁移。
-
-## 2. 各模块职责
-
-| 模块 | 放什么 | 不放什么 |
+| 模块 | 规模 | 职责一句话 |
 | --- | --- | --- |
-| `:core` | 模型（`Account`/`CrawlTarget`/`CrawlIndex` 记录…）、端口（`AccountPort` 等 5 个）、纯算法（`AssetName`/`Hashing`/`CrawlCursor`/`ReloginPolicy`/`AccountStatusHead`/`AppScope`）、微博客户端（`WeiboHttp/Auth/Topic/Post/ImageUrl`/`WebAjax`/`GuestSession`/`PasswordLogin`）、文件与媒体原语（`CrawlIndex`/`SafTreeStore`/`GalleryFiles`/`Takeover`/`GifEncoder`/`LivePhotoConverter`/`RemoteBytes`） | 需要 `Context` 的状态、Android UI |
-| `:data` | `AccountStore`、`CrawlSettings`、`PanelSettings`、`TopicStore`、`CredentialVault`、`SecretBox` / `AlcVault`（v0.11.0：cookie 与 ALC 的字段级加密）、`CrawlMarks`、`SafAccess`、`StorePrefs`、端口适配器 `PortAdapters.kt` | View、网络与纯算法（已上移 `:core`） |
-| `:domain` | `CheckinService`、`AccountMaintenanceService`、`CrawlEngine`、`AlbumCrawler`、`TimelineCrawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`CrawlService`、`PostAssets`、`AutoRelogin` | Android UI、资源 `R.*` |
-| `:app` | `MainActivity`（ComponentActivity + Navigation 壳，全部页面为 route）、`LoginWebViewActivity`、四个 Tab 的 Screen/ViewModel、`ZoomPager`、`CheckInWorker`、`WcmApp` | 业务规则、网络/存储实现 |
+| `:core` | 32 文件 / 约 5.4k 行 | 共享内核：模型、端口接口、纯算法、微博客户端、文件与媒体原语 |
+| `:data` | 10 文件 / 约 2.0k 行 | 需要 `Context` 的本地状态：账号表、抓取设置、超话缓存、凭证库、端口适配器 |
+| `:domain` | 11 文件 / 约 2.9k 行 | 服务编排：签到、保活、抓取、自动重登。只认端口，不认实现 |
+| `:app` | 43 文件 / 约 10.4k 行 | Compose UI、Navigation 壳、WorkManager、Hilt 组合根 |
 
-## 3. 状态与并发
+```
+:app
+ ├── :domain ──▶ :core
+ ├── :data   ──▶ :core
+ └── :core
+```
 
-- **应用级长任务**挂在 `:core` 的 `AppScope`（`SupervisorJob + Dispatchers.IO`），
-  不随页面销毁；ViewModel/页面只观察状态，不拥有任务。
-- **首页 UI 状态与编排**：签到/同步/重登/超话清单/日志全部在 Hilt `HomeViewModel`；
-  长任务仍挂 `AppScope`。`TopicViewModel` / `GalleryViewModel` 同理，切 Tab 不丢状态。
-- **导航**：`MainActivity` 用 Navigation Compose + `NavigationBar`，四个目的地都是
-  Compose；ViewModel 挂在 Activity 上，路由 `saveState/restoreState` 保留滚动与筛选。
-- **超话快照**：`HomeViewModel.topicStates` 是 `StateFlow<Map<String, TopicState>>`，
-  不可变 Map 整体替换；IO 线程写、主线程读，不会在遍历时被并发扩容打断。
-- **抓取单闸门**仍在 `CrawlService`：全应用同一时刻只允许一个抓取任务，
-  `StateFlow<RunState>` 向图库页/首页暴露进度；`requestStop` 对自动抓取同样生效。
-- **签到编排**在 `CheckinService`：账号循环、探活、列超话、逐条签到、记账；
-  `CheckinService.noteResult` 是唯一的“上次结果”写入口。
-- **账号维护**在 `AccountMaintenanceService`：探活落库、补昵称、面板同步；
-  首页“Cookie 同步”与 `CheckInWorker` 共用这一份实现。
-- **超话快照**在 `:data` 的 `TopicStore`，`StateFlow<Map<String, Snapshot>>`；
-  跨天失效由快照时间判断。
-- 纯函数/纯模型（`CrawlPlanner`、`CursorLogic`、`CrawlProgress.reduce`、`AssetName`、
-  `ReloginPolicy` 等）保持 JVM 可测，是当前 322 个单测的主体。
+### 1.1 依赖规则（CI 有门禁）
 
-## 4. 依赖注入（Hilt）
+| 规则 | 检查方式 |
+| --- | --- |
+| `:domain` 不得依赖 `:data` | `grep 'project(":data")' domain/build.gradle.kts` 必须零命中 |
+| `:core` 不依赖任何上层模块 | `core/build.gradle.kts` 只允许 AndroidX 基础库 |
+| `:domain` 不引用 Android UI | 无 `androidx.compose.*` / `android.app.Activity` |
+| `:data` 不引用 UI 与 `:domain` | `data/build.gradle.kts` 无 `project(":app")` / `project(":domain")` |
 
-- `WcmApp` 标注 `@HiltAndroidApp`，并实现 `Configuration.Provider`；
-  `HiltWorkerFactory` 通过 `@Inject` 注入。
-- `CheckInWorker` 标注 `@HiltWorker` + `@AssistedInject`；
-  manifest 关闭 WorkManager 默认初始化，避免自定义 WorkerFactory 被覆盖。
-- 现阶段 Hilt 已覆盖 **Application / Worker / ViewModel / 抓取单闸门**：
-  `CheckInWorker` 是 `@HiltWorker`，`Home/Topic/Gallery/SettingsViewModel` 都是
-  `@HiltViewModel`（Activity 作用域），`CrawlService` 由 `DomainModule` 以 `@Singleton`
-  提供并注入 `HomeViewModel` / `GalleryViewModel` / 浏览 / 选图入口。
-  `CheckinService` / `AccountMaintenanceService` / `AutoRelogin` / `CrawlEngine` /
-  `CrawlSaver` / `TimelineCrawler` / `AlbumCrawler` 均已从 `object` 改为构造注入的类，
-  依赖全部来自 `:core` 的端口，由 `DomainModule` 手工装配（`:domain` 刻意不引入 Hilt）。
-  `CrawlSaver.slotsForPics` 等三个纯函数留在 `companion object`，单测调用点零改动。
-- 版本：Hilt `2.51.1`、KSP `1.9.24-1.0.20`（与 Kotlin `1.9.24` 对齐）。
+依赖倒置的落法：**端口接口在 `:core`**（`Ports.kt`），实现在 `:data` 的 `PortAdapters.kt`，
+由 `:app` 的 `DomainModule` 装配。`:domain` 只 import 接口。
 
-## 5. 构建与门禁
+> 包名仍是同一个 `com.wcm.checkin`，这是迁移期刻意的选择——零 import 改动。
+> 因此**模块边界靠 Gradle 强制，不靠 package 强制**，读代码时不要以为同名包就是同模块。
+> 拆包是一次独立的机械迁移，收益是工具能自动告警越界，成本是全仓 import 重排。
+
+## 2. 各模块放什么、不放什么
+
+### `:core` — 共享内核
+
+| 类别 | 内容 |
+| --- | --- |
+| 模型 | `Account`、`CrawlTarget`、`CrawlIndex` 记录、`AccountStatusHead` |
+| 端口 | `AccountPort`（账号表读写）／`CrawlSettingsPort`／`TopicCachePort`／`PanelPort`／`CredentialPort` |
+| 纯算法 | `AssetName`、`Hashing`、`CrawlCursor`、`ReloginPolicy`、`CookieLife`、`PanelUrl` |
+| 微博客户端 | `WeiboHttp`（出站基座 + 域名白名单）、`WeiboAuthApi`、`WeiboTopicApi`、`WeiboPostApi`、`WeiboImageUrl`、`WeiboThrottle`、`WebAjax`、`GuestSession`、`WeiboPasswordLogin`、`WeiboAlcLogin` |
+| 文件与媒体 | `CrawlIndex`、`SafTreeStore`、`GalleryFiles`、`Takeover`、`RemoteBytes`、`GifEncoder`、`LivePhotoConverter` |
+| 进程级资源 | `AppScope`（应用级协程作用域） |
+
+不放：需要 `Context` 持久化的状态、任何 Android UI 依赖。
+
+### `:data` — 本地状态实现
+
+`AccountStore`、`CrawlSettings`、`PanelSettings`、`TopicStore`、`CrawlMarks`、`SafAccess`、
+`StorePrefs`、`SecretBox`（字段级加密）、`CredentialVault`（Keystore 凭证库）、
+`PortAdapters.kt`（5 个端口 32 个方法的转发）。
+
+不放：View、网络客户端与纯算法（已在 `:core`）。
+
+### `:domain` — 服务编排
+
+| 服务 | 职责 |
+| --- | --- |
+| `CheckinService` | 账号循环 → 探活 → 列超话 → 逐条签到（3–8s 随机间隔）→ 写小结 |
+| `AccountMaintenanceService` | 探活落库、补昵称、面板同步。首页「Cookie 同步」与 `CheckInWorker` 共用这一份 |
+| `AutoRelogin` | 账密 / ALC 重签、退避与硬停策略 |
+| `CrawlService` | 抓取**单闸门**：全应用同一时刻只允许一个抓取任务 |
+| `CrawlEngine` | 单轮抓取的总装；按 `CrawlPlanner` 的规划派发 |
+| `CrawlPlanner` / `CrawlProgress` | 规划（增量 / 全量 / 重试）与进度归约，纯函数 |
+| `AlbumCrawler` / `TimelineCrawler` | 两条枚举链路的实现 |
+| `CrawlSaver` / `PostAssets` | 落盘、三层去重、索引写入 |
+
+不放：Android UI、资源 `R.*`、任何对 `:data` 的 import。
+
+### `:app` — UI 与装配
+
+`WcmApp`（`@HiltAndroidApp`）、`MainActivity`（ComponentActivity + NavHost 壳）、
+`LoginWebViewActivity`（唯一保留 ViewBinding 的页面）、四个 Tab 的 Screen/ViewModel、
+浏览/选图/预览 route、`CheckInWorker`、`DomainModule`。
+
+## 3. 运行时结构
+
+### 3.1 导航
+
+`MainActivity` 用 Navigation Compose + `NavigationBar`，9 条 route：
+
+```
+home ─┐
+topic ─┼─ 四个 Tab（saveState/restoreState，切回保留滚动与筛选）
+gallery ┤
+settings ┘
+        └─ galleryBrowse / browsing / postPick / imagePreview / remotePreview（入栈子页）
+```
+
+四个 Tab 的 ViewModel 挂在 **Activity 作用域**，切 Tab 不丢状态；子页各用自己的
+ViewModel。只有一个 Activity，只有登录页例外。
+
+### 3.2 状态与并发
+
+| 主题 | 约定 |
+| --- | --- |
+| 长任务 | 挂 `:core` 的 `AppScope`（`SupervisorJob + Dispatchers.IO`），不随页面销毁。ViewModel 只观察，不拥有任务 |
+| 跨组件状态 | `StateFlow`（不可变快照，整体替换）/ `SharedFlow`（一次性事件）。不写回 `MutableState` 字段 |
+| 超话快照 | `HomeViewModel.topicStates: StateFlow<Map<String, TopicState>>`，IO 写、主线程读，避免遍历时并发扩容 |
+| 抓取闸门 | `CrawlService` 单实例 + companion 里的 `GATE` / `STOP`，即使误配两个实例也不会出现两个闸门 |
+| 账号表并发 | `AccountStore` 的读改写在 `LOCK` 内；抓取设置由 `CrawlSettings.LOCK` 保护 |
+| 可测性 | 纯函数（`CrawlPlanner` / `CrawlCursor` / `CrawlProgress.reduce` / `AssetName` / `ReloginPolicy` / `CookieLife`）保持 JVM 可测，是 331 个 JVM 单测的主体 |
+
+### 3.3 依赖注入
+
+`WcmApp` 标注 `@HiltAndroidApp` 并实现 `Configuration.Provider`；
+manifest 关闭 WorkManager 默认初始化，避免自定义 `HiltWorkerFactory` 被覆盖。
+
+| 注入点 | 注解 |
+| --- | --- |
+| Application | `@HiltAndroidApp` |
+| `CheckInWorker` | `@HiltWorker` + `@AssistedInject` |
+| 9 个 ViewModel | `@HiltViewModel` |
+| 服务与端口 | `DomainModule` 的 13 条 `@Provides`，全部 `@Singleton` |
+
+`:domain` **刻意不引入 Hilt**：它只有构造函数注入，装配集中在 `:app` 的 `DomainModule`。
+好处是 `:domain` 不依赖 DI 框架，将来抽 `:feature` 或换框架不用动业务代码。
+
+`CrawlSaver` 的三个纯函数（如 `slotsForPics`）留在 `companion object`，单测调用点零改动。
+
+版本：Hilt `2.51.1`、KSP `1.9.24-1.0.20`，与 Kotlin `1.9.24` 对齐。
+
+## 4. 不变量：改动时必须保留
+
+违反任意一条都会造成线上数据损坏或行为回归，**没有例外**。
+
+1. **抓取单闸门**：任何新增入口（定时、通知、快捷方式、后台）都必须经 `CrawlService`。
+   绕过它会同时出现两条抓取任务写同一个 SAF 目录。
+2. **三层去重与索引终态语义**：不要绕过 `CrawlSaver` 直接写文件或索引。
+   索引的终态记录是「这帖抓完了」的唯一判据。
+3. **数据兼容**：SharedPreferences 文件仍叫 `wcm`，索引仍是
+   `filesDir/crawl/index/<treeTag>.ndjson`，抓取模式常量仍是 `album` / `timeline`，
+   keystore 与签名不变。改任何一个都会让老用户升级后丢账号或重抓。
+4. **安全口径**：出站 URL 只允许 https + 微博域名白名单；面板地址公网必须 https。
+   登录 WebView 的白名单与出站白名单是两套，不要把 `isLoginHost` 用到出站请求上。
+5. **凭据不落地明文**：cookie、账号密码、ALC 一律经 `SecretBox` / `CredentialVault`
+   用 Keystore 加密；日志与错误信息不得包含凭据本身。
+6. **签到与面板同步解耦**：签到成功不因面板 5xx 被判失败。两件事的失败语义分开。
+7. **不调用 `sso/updatetgt.php`**：那条旧「更新链」会让原凭证在 5 秒内作废，
+   是「续期变自杀」，见 `WeiboAlcLogin` 类注释。
+
+## 5. 加新功能时往哪放
+
+| 你要加的东西 | 放哪 | 注意 |
+| --- | --- | --- |
+| 新的微博接口 | `:core` 的 `WeiboTopicApi` / `WeiboPostApi` 等 | 出站走 `WeiboHttp`，不要自己 new OkHttpClient |
+| 新的纯计算逻辑 | `:core`，写成顶层纯函数 | 配套 JVM 单测，别塞进 ViewModel |
+| 新的持久化字段 | `:data` 的 `StorePrefs` 键集 + `:core` 的模型 | 必须给默认值，老数据要能读 |
+| 新的业务编排 | `:domain` 的新服务 | 依赖只允许是 `:core` 的端口 |
+| 新服务要读的本地状态 | 先在 `:core` 的 `Ports.kt` 加接口，再在 `:data` 的 `PortAdapters.kt` 实现 | 端口**不声明默认值**，默认值留实现类 |
+| 新页面 | `:app` 的 Screen + ViewModel + 一条 route | 长任务仍挂 `AppScope` |
+| 新的一次性后台任务 | `:app` 的 `@HiltWorker` + `DomainModule` | Worker 类名要进 `proguard-rules.pro` 的 keep 列表 |
+
+## 6. 构建入口
+
+本机 JDK 需显式指定（机器上没有全局 `java`）：
 
 ```bash
-# 本地（JDK17 必须显式指定，机器上没有全局 java）
 JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline \
   :app:testDebugUnitTest :app:assembleDebug
 
 # release（R8 + 资源收缩 + 固定签名）
 JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
 
-# 真机/模拟器冒烟（需要已连接的设备或模拟器）
+# 真机/模拟器冒烟（需连接设备）
 JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
 ```
 
-当前基线（2026-11-14）：
-
-- 322 个单测（315 JVM + 7 instrumented），0 failures
-- `assembleDebug` / `assembleRelease` 通过；2026-11-14 `clean` 后四模块全量重建 + 单测 + lint + debug/release 一次通过
-- release APK ≈ 3.63MB（R8 开启前 6.55MB；lint 清理后 3.627MB）
-- `:app:lintDebug` 已在 2026-11-14 跑通（约 40s，**0 warnings / 0 errors**）；
-  CI 的 `build-apk.yml` 仍只跑单测 + assembleDebug，paths 已覆盖 `core/`、`data/`、`domain/`。
-  已在本机用与 CI 相同的根命令（`testDebugUnitTest assembleDebug` / `assembleRelease --no-daemon`）验证通过
-
-## 6. 迁移状态与待办
-
-### 自动化冒烟
-
-`app/src/androidTest/.../AppSmokeTest.kt`（UiAutomator）覆盖：
-- 冷启动 + 首页渲染；
-- 通过 `MainActivity.selectSettingsTab()` 打开设置页，断言面板同步/行为/关于；
-- Compose 壳导航：首页→超话→图片→浏览博主 route→返回图片，断言各页关键文案；
-- 超话 ViewModel 用假账号+本地快照验证「已签」筛选；测试结束兜底清理假账号；
-- 首页无账号时点「立即签到」：展开日志并提示「没有账号，请先添加账号」；
-- 设置页输入公网 `http://` 面板地址：保存被拒绝并出现 https 错误文案；
-- 首页 Cookie 卡「去设置配置面板」与 Hero 卡分别跳转设置/超话；
-- 切换「打开 App 即自动签到」，断言 `shared_prefs/wcm.xml` 持久化并恢复原值。
-
-运行：`./gradlew :app:connectedDebugAndroidTest`（7 tests，需要设备/模拟器；CI 未接入 emulator）。
-
-### 运行时验证（2026-11-14，Android 14 模拟器 `see-audit`）
-
-- 冷启动、首页/超话/图库/设置四 Tab 渲染正常，无 `FATAL EXCEPTION`。
-- 设置页 Compose：浅色/深色都正常（深色标题已修正为 onBackground）；品牌玫红与 XML 页面一致；
-- 四档宽度：模拟 800dp 平板后 Compose 页左右留白切到 24dp，布局无溢出；
-  开关切换后 `shared_prefs/wcm.xml` 即时落盘（`auto_on_open=false/true`）；
-  公网 `http://` 面板地址被拒绝并显示红色错误文案。
-- 登录页打开微博官方登录 WebView；浏览博主页打开空态页。
-- WorkManager 周期任务已注册；`cmd jobscheduler run -f -n androidx.work.systemjobscheduler
-  com.wcm.checkin 1` 强制触发后，`CheckInWorker` 由 Hilt 实例化并返回 SUCCESS。
-- 首页 Compose Hero：白卡视觉与 XML 一致，点击可跳转「超话」页。
-- 首页账号列表：空态、假账号行（头像/UID/状态）、⋮ 菜单（查看超话/重登/删除）均正常。
-- 首页 Cookie 卡：假账号失效态（红字/「已失效」pill）与面板未配置提示正常。
-- 首页日志卡：收起摘要与展开终端窗口（深色/等宽/贴底）正常。
-- 首页删除确认：Compose AlertDialog 正常（假账号，未实际删除）。
-- 超话清单 Compose 对话框：编译通过；需要有效微博账号才能触发运行时验证。
-- 重登凭证 Compose 对话框：状态/账号/密码/说明/保存/删除渲染正常（未实际保存凭证）。
-- 超话页 Compose：用假账号 + 本地快照验证 3 条超话的指标/筛选/排序/展开详情/
-  行菜单/原始 JSON/字段说明；展开详情在假 cookie 下正确落到「加载失败，点按重试」。
-- 图库抓取页 Compose：目录选择（SAF 授权 wcmtest）后计数 6 张、模式开关落盘、
-  日志卡展开终端、空目标态正常。
-- 图库浏览 Compose：`LazyVerticalGrid` 3 列正方形格子 + 分组头「更早 · 6 张」；
-  长按进入多选（已选 1/分享/删除/取消）、排序菜单 5 项、筛选 chip 正常。
-  真实图库（104 张）验证：单图删除 106→105、返回浏览页自动刷新；批量删除
-  105→104 且退出多选；批量分享拉起系统 chooser 并显示图片预览。
-- 浏览博主页 Compose：输入行/目标 chip/筛选/空态正常（假账号无网络时走空态）。
-- 全屏预览 Compose：本地图库点图打开 `HorizontalPager`，底部计数/文件名/分享/
-  打开/删除工具条正常，图片复用 `ZoomableImageView`；远程预览共用同一翻页器。
-- 超话编排迁入 Hilt `TopicViewModel`：切 Tab 后筛选/排序/展开态保留；
-  只读弹窗改 Compose AlertDialog，字段说明渲染正常。
-- 图库编排迁入 Hilt `GalleryViewModel`：添加目标/全量确认/删除/重试/单条抓取
-  均为 Compose 对话框；实测添加目标弹窗与运行开关正常。
-- Navigation Compose 壳：四 Tab 切换、底部 Badge、主题色与旧底栏一致；
-  超话筛选切 Tab 往返后仍保持（Activity 作用域 ViewModel）；设置页输入时
-  底栏隐藏且内容被 IME 顶起。
-- 叶子 route：图库抓取页 → 图库浏览（6 张网格）→ 本地预览（1/6 翻页、底栏隐藏）
-  整条链路跑通；浏览博主 → 选图/远程预览已切路由（无有效 cookie/网络时只验证空态）。
-- **抓取/图库端到端（游客态）**：release APK 全新安装，添加公开目标「人民日报」，
-  相册模式增量抓取下载 29 张，图库显示 36 张、按日期分组 28 张，预览 1/55 正常（翻到 2/104 后旋转仍停在 2/104）；
-  继续增量后图库 106 张；`CheckInWorker` 强制触发返回 SUCCESS。
-- **同签名覆盖安装**：release APK `install -r` 后目录授权、抓取目标、图库 106 张全部保留；
-  release 冷启动 864ms（热安装）/ 3195ms（全新安装）。
-- UI→data：Compose 页已无 `CrawlSettings`/`PanelUrl`/`GalleryFiles` 等 data 直接引用，
-  浏览/超话清单均改为 UI 模型映射；仅登录 Activity 直接调认证与账号存储（刻意保留）。
-- 未覆盖：签到/自动重登/浏览博主/单条抓取需要真实登录账号（当前无可用的授权凭据）；
-
-### 登录态 E2E 待执行（需要本人登录，凭据不导出）
-
-1. 打开 App → 首页右上「＋」→ 在微博官方页完成登录；确认首页出现账号行。
-2. 打开「打开 App 即自动签到」后重启 App，观察日志卡完成探活→超话→签到；
-   再点「立即签到」「Cookie 同步」各一次。
-3. 超话页刷新、筛选/排序、展开详情、勾选补签；回首页确认状态 chip 更新。
-4. 图库页添加目标 → 浏览博主 → 点卡片进选图 → 长按看大图 → 勾选下载；
-   图库浏览确认新图出现，单条抓取一条公开链接。
-5. 删除一张已抓图片，确认图库计数与抓取索引同步回退。
-6. `cmd jobscheduler run -f -n androidx.work.systemjobscheduler com.wcm.checkin 1`
-   确认 `CheckInWorker` 返回 SUCCESS。
-7. 以上通过后再 bump `versionName` 并打 `v1.0.0`。
-  单条抓取在无账号时正确提示「没有登录账号，先在首页添加账号」。
-
-已完成：
-
-- `WeiboApi` 1114 行 → `WeiboHttp/Auth/Topic/Post/ImageUrl`
-- `Crawler` 1681 行 → `CrawlEngine` + `CrawlSaver` + `AlbumCrawler`（428 行）+
-  `TimelineCrawler`（307 行）+ `PostAssets`
-- `AccountStore` 933 行 → `AccountStore`（643 行）+ `PanelSettings` + `CrawlSettings`
-- 签到编排/保活/重登从 UI 与 Worker 收敛到 `:domain` 服务
-- 4 模块 + Hilt + R8；所有改动行为保持，数据格式零迁移
-- **抓取单闸门类化**：`CrawlRunner` object → `CrawlService`，由 Hilt `@Singleton` 提供
-- **四个 Tab 纯 Compose**：设置/首页/超话/图库全部由 Compose 渲染，
-  `MainActivity` 使用 Navigation Compose + `NavigationBar`，旧 Fragment 与
-  `activity_main.xml`/`bottom_nav.xml` 已删除
-- **首页编排 ViewModel 化**：签到/同步/重登/超话清单/日志/昵称补拉全部在
-  `HomeViewModel`；对话框由 Compose 渲染，页面跳转走事件
-- **超话/图库编排 ViewModel 化**：`TopicViewModel` / `GalleryViewModel` 持有筛选/
-  展开/日志/进度/任务状态；Fragment 壳与 `LogPanel` 已删除
-- **全部业务界面 Compose**：超话/图库网格/图库浏览/浏览博主/选图/本地与远程预览；
-  RecyclerView 适配器与旧布局全部删除
-- **全部页面 route 化**：浏览/选图/本地预览/远程预览从 Activity 改为 NavHost route，
-  对应 ViewModel 接管编排；`activity_*.xml` 只剩登录页
-- **Phase 7 清理**：删除迁移后无引用的 18 个 drawable、14 个 string、2 个 color、
-  23 个 dimen；Compose 页与 data 模型解耦；release APK 3.63MB
-- ViewBinding：仅剩登录页 `LoginWebViewActivity` 使用
-
-待办（按建议顺序）：
-
-1. 端到端：用真实微博账号验证签到/自动重登/抓取/图库全链路（其余项都以此为最终判据）。
-2. ~~架构债务：`domain -> data` 反转~~ **已完成**：端口在 `:core`、实现在 `:data`、
-   装配在 `:app` 的 `DomainModule`；八个服务全部由 `object` 改为构造注入。
-   CI 已加依赖门禁。遗留可选项：把重复的 `Context` 形参从端口签名里去掉
-   （改成适配器持有 `applicationContext`，会牵动约 30 个调用点，收益是 domain 可脱离 Android 单测）。
-3. 可选：Room（签到历史/统计）、kotlinx.serialization（新 DTO）、
-   `:feature` 模块（需先把 `R.*` 资源迁移到 feature）。
-
-## 7. 不变量（改动时必须保留）
-
-- 抓取单闸门：任何新增入口（定时、通知、快捷方式）都必须经 `CrawlService`。
-- 三层去重与 `CrawlIndex` 的终态语义：不要绕过 `CrawlSaver` 直接写文件。
-- 账号表并发：`AccountStore` 的读改写仍在 `LOCK` 内；设置/账号分离后，
-  抓取设置由 `CrawlSettings.LOCK` 保护。
-- 安全口径：出站 URL 只允许 https + 微博域名白名单；登录 WebView 白名单
-  与出站白名单分开。
-- 数据兼容：SharedPreferences 文件仍叫 `wcm`，索引仍是
-  `filesDir/crawl/index/<treeTag>.ndjson`，keystore 与签名不变。
+环境版本、CI 流水线与产物指标见 README 的「环境要求」「构建」「发版」三节；
+最近一次全量门禁结果与待执行的真机清单见 [`docs/verification.md`](verification.md)。

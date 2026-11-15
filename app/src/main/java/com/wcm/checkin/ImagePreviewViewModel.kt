@@ -30,6 +30,11 @@ sealed interface ImagePreviewEvent {
 }
 
 /** 本地图库全屏预览状态与删除/分享（route 版）。 */
+
+/**
+ * 删除有顺序铁律：**先物理删除成功，再回退抓取索引**。反过来会出现「索引说没抓过、
+ * 文件其实还在」或「索引说抓过、文件已经没了」两种脏状态。
+ */
 @HiltViewModel
 class ImagePreviewViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,

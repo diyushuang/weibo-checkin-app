@@ -33,8 +33,8 @@ sealed interface TopicEvent {
 /**
  * 超话页状态与编排。
  *
- * Fragment 现在只剩 ComposeView 壳；刷新/签到/详情/筛选全部在这里，
- * 页面隐藏（切 Tab）不会丢掉展开态与筛选。
+ * 页面只做渲染；刷新/签到/详情/筛选全部在这里，
+ * 页面对应的 route 因 `saveState/restoreState` 被移出组合时，展开态与筛选也不会丢。
  */
 @HiltViewModel
 class TopicViewModel @Inject constructor(
@@ -83,7 +83,7 @@ class TopicViewModel @Inject constructor(
         if (_state.value.rows.isNotEmpty() || _state.value.filters.isNotEmpty()) render()
     }
 
-    /** Fragment 显示时调用：先渲染缓存，再判断是否要自动刷新。 */
+    /** 页面进入组合时调用：先渲染缓存，再判断是否要自动刷新。 */
     fun onShown() {
         TopicStore.ensureLoaded(ctx)
         render()

@@ -24,6 +24,10 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
+/**
+ * 单账号的超话清单与补签对话框：列出该账号关注的全部超话并逐条标已签/待签，
+ * 勾选漏签的一键补签，「查看全部」跳到超话页。
+ */
 data class TopicChoiceUi(
     val key: String,
     val name: String,

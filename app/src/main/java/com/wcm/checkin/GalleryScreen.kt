@@ -47,6 +47,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
+/**
+ * 图库抓取页：目录选择、抓取目标列表、运行卡（阶段/进度/停止/重试）、模式开关。
+ *
+ * 本页只渲染 `GalleryUiState` 并把用户意图转成事件；真正跑抓取的是 `CrawlService`
+ * （单闸门），页面不持有任务。
+ */
 @Composable
 fun GalleryScreen(
     state: GalleryUiState,

@@ -1,5 +1,11 @@
 package com.wcm.checkin
 
+/**
+ * 超话页的 UI 状态模型（筛选、排序、账号 chip、行、整页状态）。
+ *
+ * 筛选口径是「待签 / 已签 / Lv7+」，排序是「待签优先 / 等级 / 名称」，
+ * 这些枚举与 `TopicViewModel` 的过滤实现必须一一对应。
+ */
 enum class TopicFilter { ALL, PENDING, DONE, LEVEL7 }
 
 enum class TopicSort { PENDING_FIRST, LEVEL_DESC, NAME }

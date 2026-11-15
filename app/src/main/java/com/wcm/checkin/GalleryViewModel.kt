@@ -33,8 +33,12 @@ sealed interface GalleryEvent {
 /**
  * 图库抓取页状态与编排。
  *
+ * 抓取任务一律交给 `CrawlService` 的单闸门，本类只发起与观察 —— 页面自己跑抓取的话，
+ * 首页自动抓图与本页手动抓图会同时写同一批文件。
+ *
  * 抓取任务仍挂在 AppScope：切 Tab / 转屏不中断；日志缓冲、进度快照与
- * 目标行文案都在这里，Fragment 只负责目录选择器/对话框与 ComposeView。
+ * 目标行文案都在这里。页面（`GalleryTab` + `GalleryScreen`）只渲染状态、
+ * 把用户意图发回来，不持有任务也不碰存储。
  */
 @HiltViewModel
 class GalleryViewModel @Inject constructor(
@@ -118,7 +122,7 @@ class GalleryViewModel @Inject constructor(
         }
     }
 
-    /** Fragment 显示时调用：重读目录/目标/计数/重试并刷新运行态。 */
+    /** 页面进入组合时调用：重读目录/目标/计数/重试并刷新运行态。 */
     fun onShown() {
         lastShownAt = System.currentTimeMillis()
         renderDir()

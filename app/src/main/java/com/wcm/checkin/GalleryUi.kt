@@ -1,5 +1,8 @@
 package com.wcm.checkin
 
+/**
+ * 图库抓取页的 UI 状态模型（目标行、单条抓取候选、进度、整页状态）。
+ */
 data class GalleryTargetUi(
     val uid: String,
     val name: String,

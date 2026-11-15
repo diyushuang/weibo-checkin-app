@@ -5,7 +5,7 @@
 之后在真机 + 家宽/移动网络上直接签到，并把最新 Cookie 同步回面板。
 登录态与账号密码、ALC 票据一律用 Android Keystore 加密落盘（v0.11.0 起 cookie 也加密）。
 可选开启「自动重登」：Cookie 失效或临期时，用本机加密保存的账号密码走微博 SSO 重新登录，
-或改用 `ALC` 票据重签（不碰密码）。凭证加密存储、不进日志，风险与开关见下文。
+或改用 `ALC` 票据重签（不碰密码）。
 
 > 本工程原为面板仓库的 `android-app/` 目录，已独立为单独项目，可脱离面板单独
 > 构建与迭代。面板侧文档见同级目录 `微博签到/`。
@@ -92,7 +92,9 @@
   覆盖同微博号账号。**签到 / 补签不再顺带同步** —— 两件事的失败语义分开，
   签到成功不会再因为面板 5xx 被显示成失败
 
-Material 3 界面（底部导航：首页 / 超话 / 图片 / 设置）。颜色全部走 v2.0 设计令牌
+## 界面
+
+Material 3，底部导航：首页 / 超话 / 图片 / 设置。颜色全部走 v2.0 设计令牌
 （冷灰底 + 白卡 + 玫红），**不再跟随系统取色** —— 改用 Compose 后主题由 `WcmTheme`
 按 `values/colors.xml` 固定映射，`DynamicColors` 只对残留的 XML 页面（登录 WebView）生效。
 
@@ -100,23 +102,10 @@ Material 3 界面（底部导航：首页 / 超话 / 图片 / 设置）。颜色
 | --- | --- |
 | ![首页（空状态）](docs/images/home.png) | ![超话（空状态）](docs/images/topics.png) |
 
-超话字段（列表 / 详情 / 签到响应各有哪些可用字段、怎么解析）见
-[`docs/design/topic-fields.md`](docs/design/topic-fields.md)。
-
-微博各端**免登录（游客态）端口**的清点、档位划分（L0 零凭据 / L1 游客 cookie / L2 账号）、
-GitHub 同类项目盘点与改造路线见
-[`docs/research/weibo-guest-endpoint-audit.md`](docs/research/weibo-guest-endpoint-audit.md)。
-
-界面自 v2.0 起对齐面板端 UI 系统（`微博签到/docs/ui-redesign/tokens.css`）：
-冷灰底 + 纯白微描边卡 + 玫红只占小面积，颜色 / 字体 / 间距 / 圆角全部令牌化；
-四档宽度（手机 / 横屏 / 平板 / 桌面）各自覆写尺寸，边到边 + 状态栏 / 导航栏 / 挖孔 / 键盘 / 深色模式统一在 `MainActivity` 的 Compose 壳处理。
-规范、映射表与验收清单见 [`docs/design/ui-system-v2.0.md`](docs/design/ui-system-v2.0.md)，
-三屏浅深色对照稿见 [`docs/design/ui-preview.html`](docs/design/ui-preview.html)。
-
-**权限**：`INTERNET` + `ACCESS_LOCAL_NETWORK`（自建局域网面板用，Android 17 起才需要）。
-WorkManager 会通过 manifest 合并额外注入 `WAKE_LOCK`/`ACCESS_NETWORK_STATE`/
-`RECEIVE_BOOT_COMPLETED`/`FOREGROUND_SERVICE` 四项，用于跨重启的后台保活调度。
-App 不申请存储、定位、通讯录、通知等任何其它权限。
+界面自 v2.0 起对齐面板端 UI 系统：冷灰底 + 纯白微描边卡 + 玫红只占小面积，
+颜色 / 字体 / 间距 / 圆角全部令牌化；四档宽度（手机 / 横屏 / 平板 / 桌面）各自覆写尺寸，
+边到边 + 状态栏 / 导航栏 / 挖孔 / 键盘 / 深色模式统一在 `MainActivity` 的 Compose 壳处理。
+规范与映射表见 [`docs/design/ui-system-v2.0.md`](docs/design/ui-system-v2.0.md)。
 
 ## 自动重登：账密或 ALC（默认开启，风险自担）
 
@@ -150,13 +139,115 @@ Cookie（SUB 等）是微博登录态的唯一凭据，微博没有「续期」�
   频率触发风控，反复失败还会牵连账号；在本机保存密码也扩大了设备丢失 / 被入侵后的
   影响面。不放心就把总开关关掉，只用官方页面扫码登录、过期后手动重登。
 
+## 抓取机制
+
+两条链路共用一个闸门、一套索引与三层去重，只有「怎么枚举帖子」不同：
+
+| 模式 | 枚举方式 | 身份 | 适用 |
+| --- | --- | --- | --- |
+| 时间线（`TimelineCrawler`，v0.5） | `107603<uid>` 分页列表，逐条拉详情 | **必须账号** | 兜底；能拿到帖级 `live_photo` |
+| 相册（`AlbumCrawler`，v0.9.8，默认） | `weibo.com/ajax/profile/getImageWall` 相册墙 | **游客优先** | 只枚举有图微博；不占账号频次 |
+
+### 相册模式（v0.9.8 默认）
+
+- **枚举**：相册墙一页约 20 张图（5–8 帖），天然跳过纯文字帖；游标是服务端下发的
+  `since_id`，按 `treeTag + uid` 隔离存档。每轮「补新」从第 1 页起扫最多 2 页、
+  「补历史」从存档游标扫最多 8 页，单目标 40 帖 / 单轮 20 分钟为上限。
+- **记住走到哪（v0.9.17）**：每轮把补新走到的最深一条记成 `mid|yyyy-MM`（同样是
+  `treeTag + uid` 双键），下一轮翻墙一碰到它就停 —— 它前面的帖都已抓过，
+  不再逐条重查索引。**只有整页都走完才推进记忆**：本页中途被预算/停止打断时
+  宁可留旧值，否则同页剩下的 mid 会被永久跳过（游标停在页首、记忆却推到页中）。
+- **取详情**：优先游客走 `weibo.com/ajax/statuses/show`（扁平 status，`pic_ids` 全量），
+  游客失败或张数少于自述 `pic_num` 时回落账号 + m 站详情（那里有帖级 `live_photo`）。
+- **身份**：游客 cookie 由护照端两步握手签发（`genvisitor2` → `visitor?a=crossdomain`），
+  缓存一年；遇到「身份可疑」失败会刷新一次再重试，仍失败则本轮后续直接走账号详情。
+- **回退**：游客拿不到 / 相册墙枚举失败 → 整轮回退时间线模式，不会「点了没反应」。
+
+### 推进顺序（时间线）
+
+每轮对每个目标依次跑三个阶段，**不再每轮从第 1 页重扫**：
+
+| 阶段 | 做什么 | 停下来的条件 |
+| --- | --- | --- |
+| RETRY | 只补上次失败的槽位，不翻页 | 队列清空 / 预算耗尽 |
+| A · 补新 | 第 1 页起补「水线之上」的新帖 | 本页全部已处理 **且** 已回到水线 |
+| B · 补历史 | 从断点锚点继续往更早补 | 空页 / 触及起始日期 / 预算耗尽 / 回到已覆盖区间 |
+| SCAN · 全量（v0.9.12） | 第 `scanPage` 页起**连续**往下翻 | 空页 / 触及起始日期 / 预算耗尽 / 200 页硬墙 |
+
+### 全量扫描（v0.9.12）
+
+单博主全量 / 全部目标全量走 `CrawlPlanner.planScan`：**不承认已有覆盖区间**，
+只信索引里「这帖是否终态」。所以它能发现任何历史空洞 —— 旧版本按连续计数误判、
+置顶帖绕过判定、中途断掉留下的「游标以为抓过、其实没抓」的缺口，增量永远不会回头，全量会。
+代价只是列表请求数随深度线性增长：终态帖不拉详情、不重复下载。
+
+- **断点用页码**（`scanPage`，与增量锚点 `hint` 分开存）：全量是单向连续下行，
+  页码即位置，中途插入/删除最多让一页重复、不会漏；增量必须用时间锚点，
+  因为它只补一段区间、容易被置顶与删帖带偏。两个字段混用会让两条方向互相覆盖进度。
+- **续跑**：预算用完从 `lastPage + 1` 接着走；翻页失败停在失败页重试（跳过才是真的漏）；
+  翻到空页 / 推到起始日期 / 触达 200 页硬墙则本轮全量完成，下轮从头再来。
+- **预算**（`Budget.FULL`）：只把页数上限放宽到 20，详情/文件/时间上限与增量一致 ——
+  避免一次全量把手机跑几小时。
+- **范围隔离**：单博主抓取只跑选中 UID（`AccountStore.selectTargets`，顺序沿用目标列表）；
+  索引里的「待重试」队列没有 uid 维度，所以**单博主与全量都跳过 RETRY 阶段**，
+  需要补失败时用「待重试」入口，绝不偷偷扩大到别的博主。
+
+### 增量与断点
+
+- 进度记在**游标**（`[已覆盖区间] + 锚点(postId, createdAt) + 页码提示`）里，按
+  **相册目录 + uid** 双键隔离：换目录天然从头开始，切回旧目录仍能原地续跑。
+- 断点**不存页码**：新帖插入会让页码整体下移、删帖会上移，页码只当搜索起点；
+  锚点失效（帖被删）时退化为按时间定位，再失败则从第 1 页重走，正确性不受影响。
+- 每个目标可单独设「起始日期」：它是硬下界，早于该日期的微博不再抓。
+- 单轮有预算上限（页数 / 详情数 / 文件数 / 25 分钟），跑不完下轮接着来，不算失败。
+
+### 去重三层
+
+| 层 | 判据 | 何时用 |
+| --- | --- | --- |
+| L1 文件名 | 归一 ` (1)` 撞名后缀后比对目录快照 | 每次下载前（零成本） |
+| L2 业务身份 | `postId` 已终态则跳过整帖；`picId` 已有映射则跳过该图 | 拉详情前 / 下载前（省一次请求） |
+| L3 内容 | SHA-256 前 128bit，命中则不重复写盘 | 下载后（撞车才比较） |
+
+索引是 `filesDir/crawl/index/<treeTag>.ndjson`（追加式，last-wins，超 1MB 自动 compact）。
+规模估算：6k 张 ≈1MB 索引、≈1.5MB 内存；30k 张 ≈5MB / ≈8MB；10 万张 ≈17MB / ≈25MB。
+**不引入任何新依赖**，APK 体积不变。
+
+### Live Photo 只存一份
+
+一张 Live 配图只落**一个**文件：`prefix_01_live.gif`（转换成功）或 `prefix_01_live.mov`
+（关闭转换 / 转换失败）。旧的 v0.4 会先存 `prefix_01.jpg` 再存 `_live.gif`，同一张图在相册里
+出现两遍 —— 现在的规则是：**GIF 成功就不再存封面静图**；只有落到 mov 时（图库不显示视频）
+才补一张 jpg 当封面，避免这张图等于没抓到。
+
+> 旧版本已经产生的成对文件不会自动删除（删用户文件风险太高），需要时手动删掉那些
+> 与 `_live.gif` 同名同序号的 `.jpg` 即可。
+
+## 安全策略（v0.6.0，v0.11.0 补 cookie 加密）
+
+| 面 | 策略 |
+| --- | --- |
+| 微博接口 / 图片 CDN | **只允许 https**，且 host 必须在 `weibo.cn / weibo.com / weibocdn.com / sinaimg.cn` 白名单内 |
+| 面板地址 | 公网**必须 https**；只有私有网段（10/8、172.16/12、192.168/16、127/8、169.254/16、`.local`、`.lan`）才允许 http |
+| 明文流量 | `network-security-config` 仍整体放行（面板地址构建期无法枚举），但应用层已把明文收敛到内网；换 https 反代后把 `cleartextTrafficPermitted` 改成 `false` 即可彻底关闭 |
+| WebView | 只允许「https + 微博域 + 新浪护照域（`*.sina.com.cn` / `*.sina.cn`，登录链路的跨域分发必经 `passport.sina.cn`）」导航，其余一律拦截；`http` 的 302 升级为 https 后重载，不整跳丢弃；关闭 `file://`/`content://` 访问与混合内容。**会话入库后立即清空 WebView 的 Cookie 库**（v0.11.0） |
+| 本地凭据 | cookie 与账号密码、ALC 一样用 Android Keystore AES-256-GCM 封存（v0.11.0），别名分开（`wcm_secret_key_v1` / `wcm_credential_key_v1`）；升级首次启动一次性把存量明文改写成密文，回读校验不过则回滚 |
+| 备份 | `allowBackup=false` + `dataExtractionRules` 全量排除，Cookie 不会被云备份带走 |
+| 局域网 | Android 17+ 保存局域网面板时申请 `ACCESS_LOCAL_NETWORK`，低版本无此概念直接跳过 |
+
+**权限**：`INTERNET` + `ACCESS_LOCAL_NETWORK`（自建局域网面板用，Android 17 起才需要）。
+WorkManager 会通过 manifest 合并额外注入 `WAKE_LOCK` / `ACCESS_NETWORK_STATE` /
+`RECEIVE_BOOT_COMPLETED` / `FOREGROUND_SERVICE` 四项，用于跨重启的后台保活调度。
+App 不申请存储、定位、通讯录、通知等任何其它权限。
+
 ## 环境要求
 
 | 项 | 版本 |
 | --- | --- |
 | JDK | 17 |
-| AGP | 8.13.2 |
+| AGP / Kotlin | 8.13.2 / 1.9.24 |
 | Gradle | 8.13（见 `gradle/wrapper/gradle-wrapper.properties`） |
+| Hilt / KSP | 2.51.1 / 1.9.24-1.0.20 |
 | compileSdk / targetSdk | 36（Android 16，满足 Play 2026-08-31 起的强制要求） |
 | minSdk | 23（Android 6.0） |
 | 其它 | 开启 core library desugaring（`java.time` 在 API < 26 上靠它提供） |
@@ -207,13 +298,13 @@ sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
 git commit -am "chore(release): x.y.z"
 git push
 # 3. 打 tag 推上去，剩下的交给 CI
-git tag v0.9.15 && git push origin v0.9.15
+git tag v0.11.0 && git push origin v0.11.0
 ```
 
 三个前置条件是硬校验，不满足直接失败，不会发出一个装不上的包：
 
-- tag `v0.9.15` 必须与 `versionName` 完全一致（`versionCode` 只进日志）；
-- `CHANGELOG.md` 必须有 `## [0.9.15]` 小节 —— 它就是发布说明的来源，发布标题取该版
+- tag `v0.11.0` 必须与 `versionName` 完全一致（`versionCode` 只进日志）；
+- `CHANGELOG.md` 必须有 `## [0.11.0]` 小节 —— 它就是发布说明的来源，发布标题取该版
   第一个 `###` 小节（「修复：/改进：/工程：」前缀会去掉）；
 - Secret `WCM_KEYSTORE_B64` / `WCM_KEYSTORE_PASSWORD` 必须已配置。
 
@@ -253,147 +344,79 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
 口令来源优先级：环境变量 `WCM_KEYSTORE_PASSWORD` > `local.properties` 的
 `wcm.keystore.password`。
 
-## 结构
+## 工程结构
 
-> 架构现代化（2026-11）后为 4 个 Gradle 模块：`:app`（UI/Worker）、`:domain`（签到/抓取服务）、
-> `:data`（网络/存储）、`:core`（模型/纯算法/应用级协程）。依赖方向
-> `app -> domain -> data -> core`；包名暂时都保持 `com.wcm.checkin`，模块边界由 Gradle 依赖强制。
-> 分层职责、状态流、Hilt 配置与迁移待办见 [`docs/architecture.md`](docs/architecture.md)。
-> 下面保留 app 模块内的文件清单，便于按文件名查找。
+四个 Gradle 模块，Kotlin 包名全部是 `com.wcm.checkin`（各模块的 Android `namespace`
+是 `com.wcm.checkin.<模块名>`，只影响生成的 `R` 类，不影响包结构）。
+**模块边界由 Gradle 依赖强制，不由 package 强制**，CI 有一道依赖门禁。
+
+```
+:app ──▶ :domain ──▶ :core
+  └────▶ :data   ──▶ :core
+```
+
+| 模块 | 放什么 |
+| --- | --- |
+| `:core` | 模型、端口接口（`Ports.kt` 5 个）、纯算法、微博客户端（`Weibo*Api` / `WeiboHttp` / `WebAjax` / `GuestSession`）、文件与媒体原语（`CrawlIndex` / `SafTreeStore` / `GifEncoder` / `LivePhotoConverter`）、`AppScope` |
+| `:data` | 需要 `Context` 的本地状态：`AccountStore`、`CrawlSettings`、`PanelSettings`、`TopicStore`、`CredentialVault`、`SecretBox`、`CrawlMarks`、`SafAccess`，以及 5 个端口适配器 `PortAdapters.kt` |
+| `:domain` | 服务编排：`CheckinService`、`AccountMaintenanceService`、`AutoRelogin`、`CrawlService`（单闸门）、`CrawlEngine`、`AlbumCrawler`、`TimelineCrawler`、`CrawlSaver`、`CrawlPlanner`、`CrawlProgress`、`PostAssets` |
+| `:app` | Compose UI、Navigation 壳、`CheckInWorker`、`LoginWebViewActivity`、Hilt 组合根 `DomainModule` |
 
 ```
 微博签到app/
-├── settings.gradle.kts      # rootProject.name = "wcm-checkin"，include(":app", ":core", ":data", ":domain")
-├── build.gradle.kts         # AGP 8.13.2 + Kotlin 1.9.24
-├── gradle.properties
-├── gradlew / gradlew.bat
-├── gradle/wrapper/
+├── settings.gradle.kts      # include(":app", ":core", ":data", ":domain")
+├── build.gradle.kts         # AGP 8.13.2 + Kotlin 1.9.24 + Hilt + KSP
 ├── CHANGELOG.md             # 版本变更（发版时与 versionName 同步）
-├── docs/                    # design / research / review
+├── docs/                    # architecture / verification / design / research / review
 ├── .github/workflows/
 │   ├── build-apk.yml        # 日常 push：单测 + assembleDebug + 上传 APK 产物
 │   └── release-apk.yml      # 推 v* tag：签名 release APK + 自动发 GitHub Release
-├── core/                    # 模型、纯算法、应用级协程
-├── domain/                  # 签到 / 抓取 / 保活 / 重登服务
-├── data/                    # 微博与面板网络、SharedPreferences、NDJSON、SAF、Keystore
+├── core/
+├── data/
+├── domain/
 └── app/
     ├── build.gradle.kts     # namespace / applicationId / 签名 / 依赖
     ├── keystore/            # 固定签名 keystore（gitignore，需自行备份）
     └── src/main/
         ├── AndroidManifest.xml
         ├── java/com/wcm/checkin/
-        │   ├── WcmApp.kt / MainActivity.kt            # Hilt + Navigation Compose（4 Tab）
-        │   ├── HomeTab.kt / HomeViewModel.kt          # 首页（签到/同步/重登/超话清单）
-        │   ├── TopicTab.kt / TopicViewModel.kt        # 超话筛选/排序/详情/签到
-        │   ├── GalleryTab.kt / GalleryViewModel.kt    # 抓取目录/目标/进度/日志
-        │   ├── SettingsTab.kt / SettingsScreen.kt     # 设置页（Compose + ViewModel）
-        │   ├── HomeHero/HomeAccounts/HomeCookie/...   # 首页卡与对话框 Compose 组件
-        │   ├── GalleryBrowseActivity.kt / BrowsingActivity.kt
-        │   ├── PostPickActivity.kt / ImagePreviewActivity.kt
-        │   ├── RemotePreviewActivity.kt / RemoteThumb.kt
-        │   ├── LoginWebViewActivity.kt                # 微博官方页登录取 Cookie
-        │   ├── CheckInWorker.kt                       # WorkManager 定时保活/同步
-        │   └── ...                                    # 其余业务/网络/存储类
+        │   ├── WcmApp.kt / MainActivity.kt        # Hilt 入口 + NavHost 壳（4 Tab + 5 条子 route）
+        │   ├── DomainModule.kt                    # 13 条 @Provides：端口适配器 + 8 个服务
+        │   ├── HomeTab / HomeViewModel / Home*     # 首页（签到 / 同步 / 重登 / 超话清单 / 日志）
+        │   ├── TopicTab / TopicScreen / TopicViewModel / TopicUi
+        │   ├── GalleryTab / GalleryScreen / GalleryViewModel / GalleryUi
+        │   ├── BrowsingScreen / PostPickScreen / GalleryBrowseScreen
+        │   ├── ImagePreviewScreen / RemotePreviewScreen / PreviewUi
+        │   ├── SettingsTab / SettingsScreen / SettingsViewModel
+        │   ├── LoginWebViewActivity.kt            # 微博官方页登录取 Cookie（唯一 XML 页面）
+        │   ├── CheckInWorker.kt                   # WorkManager 定时保活 / 同步
+        │   └── ...                                # 其余 Compose 组件与工具
         └── res/               # layout（仅登录页）/ drawable / values / xml
-        └── test/java/com/wcm/checkin/                     # JVM 单测
 ```
 
-近一次全项目审查的问题清单与修复情况见
-[`docs/review/code-review-2026-10-30.md`](docs/review/code-review-2026-10-30.md)。
+命名约定（读代码时按这个找）：
 
-## 抓取机制
-
-两条链路共用一个闸门、一套索引与三层去重，只有「怎么枚举帖子」不同：
-
-| 模式 | 枚举方式 | 身份 | 适用 |
-| --- | --- | --- | --- |
-| 时间线（`runIncremental`，v0.5） | `107603<uid>` 分页列表，逐条拉详情 | **必须账号** | 兜底；能拿到帖级 `live_photo` |
-| 相册（`runAlbum`，v0.9.8，默认） | `weibo.com/ajax/profile/getImageWall` 相册墙 | **游客优先** | 只枚举有图微博；不占账号频次 |
-
-### 相册模式（v0.9.8 默认）
-
-- **枚举**：相册墙一页约 20 张图（5–8 帖），天然跳过纯文字帖；游标是服务端下发的
-  `since_id`，按 `treeTag + uid` 隔离存档。每轮「补新」从第 1 页起扫最多 2 页、
-  「补历史」从存档游标扫最多 8 页，单目标 40 帖 / 单轮 20 分钟为上限。
-- **记住走到哪（v0.9.17）**：每轮把补新走到的最深一条记成 `mid|yyyy-MM`（同样是
-  `treeTag + uid` 双键），下一轮翻墙一碰到它就停 —— 它前面的帖都已抓过，
-  不再逐条重查索引。**只有整页都走完才推进记忆**：本页中途被预算/停止打断时
-  宁可留旧值，否则同页剩下的 mid 会被永久跳过（游标停在页首、记忆却推到页中）。
-- **取详情**：优先游客走 `weibo.com/ajax/statuses/show`（扁平 status，`pic_ids` 全量），
-  游客失败或张数少于自述 `pic_num` 时回落账号 + m 站详情（那里有帖级 `live_photo`）。
-- **身份**：游客 cookie 由护照端两步握手签发（`genvisitor2` → `visitor?a=crossdomain`），
-  缓存一年；遇到「身份可疑」失败会刷新一次再重试，仍失败则本轮后续直接走账号详情。
-- **回退**：游客拿不到 / 相册墙枚举失败 → 整轮回退时间线模式，不会「点了没反应」。
-
-### 推进顺序（时间线）
-
-每轮对每个目标依次跑三个阶段，**不再每轮从第 1 页重扫**：
-
-| 阶段 | 做什么 | 停下来的条件 |
-| --- | --- | --- |
-| RETRY | 只补上次失败的槽位，不翻页 | 队列清空 / 预算耗尽 |
-| A · 补新 | 第 1 页起补「水线之上」的新帖 | 本页全部已处理 **且** 已回到水线 |
-| B · 补历史 | 从断点锚点继续往更早补 | 空页 / 触及起始日期 / 预算耗尽 / 回到已覆盖区间 |
-| SCAN · 全量（v0.9.12） | 第 `scanPage` 页起**连续**往下翻 | 空页 / 触及起始日期 / 预算耗尽 / 200 页硬墙 |
-
-### 全量扫描（v0.9.12）
-
-单博主全量 / 全部目标全量走 `CrawlPlanner.planScan`：**不承认已有覆盖区间**，
-只信索引里「这帖是否终态」。所以它能发现任何历史空洞 —— 旧版本按连续计数误判、
-置顶帖绕过判定、中途断掉留下的「游标以为抓过、其实没抓」的缺口，增量永远不会回头，全量会。
-代价只是列表请求数随深度线性增长：终态帖不拉详情、不重复下载。
-
-- **断点用页码**（`scanPage`，与增量锚点 `hint` 分开存）：全量是单向连续下行，
-  页码即位置，中途插入/删除最多让一页重复、不会漏；增量必须用时间锚点，
-  因为它只补一段区间、容易被置顶与删帖带偏。两个字段混用会让两条方向互相覆盖进度。
-- **续跑**：预算用完从 `lastPage + 1` 接着走；翻页失败停在失败页重试（跳过才是真的漏）；
-  翻到空页 / 推到起始日期 / 触达 200 页硬墙则本轮全量完成，下轮从头再来。
-- **预算**（`Budget.FULL`）：只把页数上限放宽到 20，详情/文件/时间上限与增量一致 ——
-  避免一次全量把手机跑几小时。
-- **范围隔离**：单博主抓取只跑选中 UID（`AccountStore.selectTargets`，顺序沿用目标列表）；
-  索引里的「待重试」队列没有 uid 维度，所以**单博主与全量都跳过 RETRY 阶段**，
-  需要补失败时用「待重试」入口，绝不偷偷扩大到别的博主。
-
-- 进度记在 **游标**（`[已覆盖区间] + 锚点(postId, createdAt) + 页码提示`）里，按
-  **相册目录 + uid** 双键隔离：换目录天然从头开始，切回旧目录仍能原地续跑。
-- 断点**不存页码**：新帖插入会让页码整体下移、删帖会上移，页码只当搜索起点；
-  锚点失效（帖被删）时退化为按时间定位，再失败则从第 1 页重走，正确性不受影响。
-- 每个目标可单独设「起始日期」：它是硬下界，早于该日期的微博不再抓。
-- 单轮有预算上限（页数 / 详情数 / 文件数 / 25 分钟），跑不完下轮接着来，不算失败。
-
-### 去重三层
-
-| 层 | 判据 | 何时用 |
-| --- | --- | --- |
-| L1 文件名 | 归一 ` (1)` 撞名后缀后比对目录快照 | 每次下载前（零成本） |
-| L2 业务身份 | `postId` 已终态则跳过整帖；`picId` 已有映射则跳过该图 | 拉详情前 / 下载前（省一次请求） |
-| L3 内容 | SHA-256 前 128bit，命中则不重复写盘 | 下载后（撞车才比较） |
-
-索引是 `filesDir/crawl/index/<treeTag>.ndjson`（追加式，last-wins，超 1MB 自动 compact）。
-规模估算：6k 张 ≈1MB 索引、≈1.5MB 内存；30k 张 ≈5MB / ≈8MB；10 万张 ≈17MB / ≈25MB。
-**不引入任何新依赖**，APK 体积不变。
-
-### Live Photo 只存一份
-
-一张 Live 配图只落**一个**文件：`prefix_01_live.gif`（转换成功）或 `prefix_01_live.mov`
-（关闭转换 / 转换失败）。旧的 v0.4 会先存 `prefix_01.jpg` 再存 `_live.gif`，同一张图在相册里
-出现两遍 —— 现在的规则是：**GIF 成功就不再存封面静图**；只有落到 mov 时（图库不显示视频）
-才补一张 jpg 当封面，避免这张图等于没抓到。
-
-> 旧版本已经产生的成对文件不会自动删除（删用户文件风险太高），需要时手动删掉那些
-> 与 `_live.gif` 同名同序号的 `.jpg` 即可。
-
-### 安全策略（v0.6.0，v0.11.0 补 cookie 加密）
-
-| 面 | 策略 |
+| 后缀 | 内容 |
 | --- | --- |
-| 微博接口 / 图片 CDN | **只允许 https**，且 host 必须在 `weibo.cn / weibo.com / weibocdn.com / sinaimg.cn` 白名单内 |
-| 面板地址 | 公网**必须 https**；只有私有网段（10/8、172.16/12、192.168/16、127/8、169.254/16、`.local`、`.lan`）才允许 http |
-| 明文流量 | `network-security-config` 仍整体放行（面板地址构建期无法枚举），但应用层已把明文收敛到内网；换 https 反代后把 `cleartextTrafficPermitted` 改成 `false` 即可彻底关闭 |
-| WebView | 只允许「https + 微博域 + 新浪护照域（`*.sina.com.cn` / `*.sina.cn`，登录链路的跨域分发必经 `passport.sina.cn`）」导航，其余一律拦截；`http` 的 302 升级为 https 后重载，不整跳丢弃；关闭 `file://`/`content://` 访问与混合内容。**会话入库后立即清空 WebView 的 Cookie 库**（v0.11.0） |
-| 本地凭据 | cookie 与账号密码、ALC 一样用 Android Keystore AES-256-GCM 封存（v0.11.0），别名分开（`wcm_secret_key_v1` / `wcm_credential_key_v1`）；升级首次启动一次性把存量明文改写成密文，回读校验不过则回滚 |
-| 备份 | `allowBackup=false` + `dataExtractionRules` 全量排除，Cookie 不会被云备份带走 |
-| 局域网 | Android 17+ 保存局域网面板时申请 `ACCESS_LOCAL_NETWORK`，低版本无此概念直接跳过 |
+| `*Tab.kt` | 一条 route 的入口，负责取 ViewModel 与转事件 |
+| `*Screen.kt` | 纯渲染，输入是 `*UiState`，输出是回调 |
+| `*Ui.kt` | UI 状态模型（data class / enum / sealed），不含 Compose |
+| `*ViewModel.kt` | 编排与状态持有，`StateFlow` 出状态、`SharedFlow` 出一次性事件 |
+
+## 文档索引
+
+| 文档 | 内容 |
+| --- | --- |
+| [`docs/architecture.md`](docs/architecture.md) | **当前结构**：模块划分、依赖规则、状态与并发、DI、不变量、加新功能往哪放 |
+| [`docs/verification.md`](docs/verification.md) | **验证记录**：基线指标、门禁结果、已跑的运行时验证、待执行的登录态 E2E 清单 |
+| [`docs/review/refactor-audit-2026-11-15.md`](docs/review/refactor-audit-2026-11-15.md) | 重构完成度审查：旧功能逐条对照、真实差异、升级兼容 checklist |
+| [`docs/design/ui-system-v2.0.md`](docs/design/ui-system-v2.0.md) | UI 系统规范：令牌、四档尺寸映射、验收清单 |
+| [`docs/design/topic-fields.md`](docs/design/topic-fields.md) | 超话字段清单：三个接口能读到什么、怎么解析、怎么降级 |
+| [`docs/design/interactive-crawl-design.md`](docs/design/interactive-crawl-design.md) | 浏览/选图/批量勾选抓取的设计（v0.9.11 已实施） |
+| [`docs/design/full-scan-crawl.md`](docs/design/full-scan-crawl.md) | 单博主全量 / 增量抓取的设计（v0.9.12 已实施） |
+| [`docs/research/weibo-guest-endpoint-audit.md`](docs/research/weibo-guest-endpoint-audit.md) | 微博各端免登录端口清点与档位划分（L0/L1/L2） |
+| [`docs/research/weibo-persistent-login.md`](docs/research/weibo-persistent-login.md) | 持久登录方案研究：登录态生命周期、失效判据、4 条改造路线 |
+| [`docs/research/batch-image-crawl-and-ui.md`](docs/research/batch-image-crawl-and-ui.md) | 批量抓图落盘与 UI 体系的调研（2026-10-27，部分结论已被 v2.0 取代） |
 
 ## 已知遗留
 

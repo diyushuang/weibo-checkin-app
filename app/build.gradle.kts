@@ -19,7 +19,7 @@ val localProps = Properties().apply {
         ?.inputStream()?.use { load(it) }
 }
 val wcmStorePassword: String? = System.getenv("WCM_KEYSTORE_PASSWORD")
-    ?: (localProps.getProperty("wcm.keystore.password") as String?)
+    ?: localProps.getProperty("wcm.keystore.password")
     ?: if (wcmKeystore != null) {
         throw GradleException(
             "检测到 app/keystore/wcm-release.p12 但未配置签名口令：请在 local.properties 写 " +
@@ -39,58 +39,14 @@ android {
         // java.nio.file 等 26+ API 已在代码里换成低版本等价实现。
         minSdk = 23
         targetSdk = 36
-        // 0.9.1：修「启动即闪退」（按钮样式缺 layout_height 导致整页 inflate 失败）、
-        // 进程重建/后台续跑的崩溃路径、prefs 类型不符导致的启动崩溃；lint 警告清零。
-        // 0.9.2：修「登录页一直停在『已检测到 Cookie，等待微博确认登录态』」——
-        // 导航白名单补新浪 SSO 域（login.sina.com.cn 是登录态写回 .weibo.cn 的必经一跳）、
-        // data.login 放宽布尔/数字/字符串、两套 cookie 合并口径都试、失败主动补 m 站会话、
-        // 失败原因写进状态行并支持点按重试。
-        // 0.9.3：换登录入口 —— 主站通道 wapsso 的登录态只写 `.weibo.com`，回到 m 站会被
-        // visitor 系统发访客 SUB（表现为「登录成功却跳到游客首页、判定未登录」）；
-        // 改用 m 站官方入口 passport.weibo.cn/signin/login?r=…（→ source=wapssowb）。
-        // 0.9.4：登录白名单补 `.cn` 护照域 —— m 站通道的跨域分发要经过 passport.sina.cn，
-        // 只放行 sina.com.cn 会卡在「已拦截跳转：passport.sina.cn」。
-        // 0.9.5：修「点立即签到毫无反应」—— 运行中把主按钮置灰后点击事件不再派发，
-        // 打开即自动签到的场景下用户点了整轮都静默；改为按钮常可点 + 文案变「正在签到…」，
-        // 并用活跃 Job 校正残留的 busy 闸门。
-        // 0.9.6：超话状态链路对齐面板 —— 请求补 MWeibo-Pwa（决定卡片/按钮语义）、
-        // 签到响应认「已签到」文案、验签 errno=100015 换新 st 重试、快照跨天失效
-        // （昨天的「已签」不能当今天的结论）、全部账号视图按「账号+超话」去重。
-        // 0.9.7：按《免登录端口审计》修三处（详见 docs/research 与 CHANGELOG）。
-        // 0.9.8：相册抓图模式（游客身份枚举相册墙）+ 18 图补全。
-        // 0.9.9：全项目审查修复 —— 游客身份改两步握手、置顶帖不再污染覆盖边界、
-        // 账号表加锁、长任务移出 View 作用域、图库重活移出主线程、签到与面板同步解耦、
-        // 超话状态只在打开 App 时刷新一次。完整清单见 CHANGELOG.md。
-        // 0.9.10：修「昵称一直显示（未获取到昵称）」（资料解析对齐面板端 + Web 端
-        // 稳定链路）；「仅同步面板」升级为并列的「Cookie 同步」按钮 + 有效期面板
-        // （同步 +7 天估算，临期/过期整行标红）。完整清单见 CHANGELOG.md。
-        // 0.9.11：浏览博主抓图 —— 博主内容预览（九宫格缩略图 + 原创/有图筛选）、
-        // 单图勾选抓取（详情权威清单 + 全屏大图「只下这张」）、跨帖批量勾选；
-        // 与增量抓取共用闸门/索引/命名。完整清单见 CHANGELOG.md。
-        // 0.9.12：单博主全量/增量 —— 目标行菜单「仅此博主·增量/全量」+ 运行卡
-        // 「全量（全部目标）」；全量 = planScan 连续下行、不信覆盖区间、按页断点续跑。
-        // 0.9.13：2026-11-01 全项目复审的 56 条修复 + 两轮独立复审追加的 7 条回归修复，
-        // 无新增功能（只修正确性与稳定性）。完整清单见 CHANGELOG.md。
-        // 0.9.14：修浏览博主抓图「缩略图全空白 / 长按大图加载失败」（sinaimg 热链保护
-        // 需要 Referer；大图字节上限按尺寸分档），并把预览图改成「可见才加载、按顺序
-        // 一格一格来」。完整清单见 CHANGELOG.md。
-        // 0.9.15：账号密码自动重登（Keystore 加密凭证 + SSO 登录 + 退避/硬停策略）；
-        // 有效期口径改为「只从真实登录/关键字段换发起算」，同步与探活不再续命。
-        // 0.9.16：账号行第一行改答「今天签了吗」——今日超话快照优先，`lastResult` 不再
-        // 冒充今日结论（它只在真的发起过签到时才写），并给它补上写入时刻以便判跨天。
-        // 0.9.17：浏览页预览图改成 48dp 小图（FIT_CENTER 整张缩进去）+ 点开全屏大图
-        // （`RemotePreviewActivity`）；相册抓取的「补新」记住上次抓到最后一条微博，
-        // 碰到它就停，不再每轮把前面已抓过的帖重新枚举一遍。
-        // 0.9.18：预览（浏览页小图 / 大图 / 选图页）标出「这张已经抓过」——
-        // 索引读一份只含 picId 与终态帖 id 的快照，按需加载、按 mtime 失效。
-        // 0.10.0：架构现代化落版（4 模块 + Hilt + 全量 Compose + R8）。**无新增功能、
-        // 数据格式零迁移**，可直接覆盖安装 0.9.18；版本号跳过 0.9.19 是为了区分
-        // 「行为等价但工程结构已变」的两条线。附带的可用性修复：已抓勾 / 超话等级与
-        // 展开详情的无障碍播报、九宫格「+N」溢出标记、待签角标 3 位上限、
-        // 全屏大图加载失败提示。
-        // 0.10.1：修「浏览博主 → 载入」必弹「列表请求失败：NetworkOnMainThreadException」、
-        // 列表永远空白 —— 该页是唯一没把网络调用切到 IO 的编排（viewModelScope 默认
-        // Main.immediate，OkHttp 的同步 execute() 在主线程直接抛这个异常）。
+        // 版本演进（每个版本的完整条目见 CHANGELOG.md，这里只留现行口径）：
+        // · 0.9.x  —— 功能铺开：超话面板、游客态相册抓取、浏览/选图、全量扫描、
+        //             账密自动重登、Cookie 有效期口径。目标一直是「不用户重新登录」。
+        // · 0.10.x —— 工程重构：4 模块 + Hilt + 全量 Compose + R8。**无新增功能、
+        //             数据格式零迁移**，可直接覆盖安装 0.9.18（版本号跳过 0.9.19 是
+        //             为了区分「行为等价但结构已变」这条线）。
+        // · 0.11.x —— 持久登录加固：cookie/ALC 加密落盘、登录墙判死、ALC 免密码重签。
+        // 发版时这里只改 versionCode/versionName 两个数字，历史不要往这里堆。
         versionCode = 35
         versionName = "0.11.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -113,9 +69,10 @@ android {
             signingConfigs.findByName("wcm")?.let { signingConfig = it }
         }
         release {
-            // Phase 0：先单独验证 R8 / 资源收缩，再引入 Compose。
-            // 当前依赖（OkHttp / WorkManager / AndroidX）均自带 consumer rules，
-            // 项目无反射、无 getIdentifier、无动态资源查找。
+            // R8 + 资源收缩自 0.10.0 起开启并稳定出包（APK 6.55MB → 3.63MB）。
+            // 当前依赖（OkHttp / WorkManager / AndroidX / Hilt / Compose）均自带 consumer rules，
+            // 项目无反射、无 getIdentifier、无动态资源查找；只额外钉了 Worker 类名，
+            // 原因见 proguard-rules.pro。
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -126,7 +83,8 @@ android {
         }
     }
     buildFeatures {
-        // 编译期生成 ViewBinding，后续逐屏替换手写 findViewById。
+        // ViewBinding 只剩登录页在用（LoginWebViewActivity ← activity_login.xml）；
+        // 其余页面全部 Compose，组件树里的 View 由 ComposeView 托管。
         viewBinding = true
         buildConfig = true
         compose = true
@@ -167,12 +125,21 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     implementation("androidx.core:core-ktx:1.15.0")
+    // 登录页仍是 XML + ViewBinding + AppCompatActivity（Compose 之外唯一的页面），
+    // appcompat 只为它保留。material 还被 WcmApp 的 DynamicColors 用到。
     implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation("androidx.fragment:fragment-ktx:1.8.6")
-    implementation("androidx.recyclerview:recyclerview:1.4.0")
-    implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("com.google.android.material:material:1.12.0")
+    // 下面三个不是"源码用到"，而是**版本钉**：material 1.12.0 与 appcompat 的 POM 里
+    // 声明的是 recyclerview 1.0.0 / viewpager2 1.0.0 / fragment 1.5.4（2018–2022 年的版本）。
+    // 删掉这三行，它们仍会以传递依赖进 APK，只是版本退回老版 —— 所以这里显式声明，
+    // 把它们抬到与其余 AndroidX 对齐的版本。**不要因为"搜不到引用"就删掉它们**。
+    // 源码里确实没有直接的 RecyclerView / ViewPager2 / Fragment 引用：
+    // 全屏翻页是自研的 ZoomPager + ZoomableImageView（见 PreviewUi.kt），
+    // 页面是 Compose route，四个 Tab 也不再走 Fragment。
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")

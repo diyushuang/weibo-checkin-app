@@ -21,6 +21,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 
+/**
+ * 单账号的重登凭证对话框：保存/删除账号密码与 ALC 票据、查看重登状态、立即重登。
+ *
+ * 凭证由 `CredentialVault` 用 Keystore 加密落盘，本对话框只收集输入并转成事件，
+ * 不碰加解密，也不把密码写进任何日志或状态快照。
+ */
 data class ReloginDialogUi(
     val uid: String,
     val statusText: String,

@@ -5,7 +5,7 @@ package com.wcm.checkin
  *
  * 这一行以前直接显示 [Account.lastResult]，空串就写「尚未签到」。
  * 问题在于 `lastResult` **只在「本机真的发起过一次签到」时才会写**：打开 App 时的
- * 自动刷新超话（`HomeFragment.refreshTopics`）只更新超话快照，从不碰它。于是
+ * 自动刷新超话（`HomeViewModel` 的刷新链路）只更新超话快照，从不碰它。于是
  * 「今天 7 个超话一个不剩地签完、但本机没签过这个号」会出现自相矛盾的一行：
  * chip 上是「已签 7 / 待签 0」，下面却写着「尚未签到」。
  *

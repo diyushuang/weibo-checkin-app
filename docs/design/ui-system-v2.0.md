@@ -1,10 +1,17 @@
 # UI 系统规范 v2.0（对齐面板端 `tokens.css`）
 
-> 工程：`com.wcm.checkin`（微博签到助手，Kotlin / View，minSdk 23 / targetSdk 36）
+> 工程：`com.wcm.checkin`（微博签到助手，minSdk 23 / targetSdk 36）
 > 参考基线：`微博签到/docs/ui-redesign/tokens.css`（面板端 UI 系统 v2.0）
-> 落地范围：**只改呈现层**（`res/` 令牌与布局、Fragment 的视图绑定）。
+> 落地范围：**只改呈现层**（`res/` 令牌 + Compose 主题 `WcmTheme`）。
 > 抓取内核、签到逻辑、面板同步、Cookie 存储一行未改。
-> 取代：`ui-system-v0.7.md`（暖灰 + 粉卡方案，视觉过闷，已废弃）
+>
+> **v0.10.0 起承载方式已变**：界面从「XML + Fragment」改为 Compose，令牌不再以
+> XML 样式为主要载体，而是由 `WcmTheme`（定义在 `:app` 的 `SettingsScreen.kt`）
+> 把 `values/colors.xml` / `dimens.xml` 的同一套令牌映射到 Material 3 色彩角色与
+> 形状。**令牌本身（色值、四档尺寸、圆角）仍然有效**，本文的 §1 视觉规范与
+> §3 适配档位继续适用；凡是提到「布局 XML」「Fragment 视图绑定」的段落，
+> 现状按 Compose 的 modifier / `Arrangement` 理解。
+> 现行结构见 [`../architecture.md`](../architecture.md)。
 
 ---
 

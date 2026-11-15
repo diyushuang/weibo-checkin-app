@@ -24,6 +24,10 @@ sealed interface RemotePreviewEvent {
 }
 
 /** 远程大图预览状态与加载（route 版）。 */
+
+/**
+ * 全尺寸图用信号量把并发压在 2 以内 —— 一次二十来张原图同时下载会直接 OOM。
+ */
 @HiltViewModel
 class RemotePreviewViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,

@@ -28,6 +28,12 @@ sealed interface SettingsEvent {
     data class Saved(val needsLanPermission: Boolean) : SettingsEvent
 }
 
+/**
+ * 设置项包括面板地址与令牌、打开即签到、GIF 转换、自动重登总开关。
+ *
+ * 公网地址必须是 https，私有网段才允许 http（口径在 `PanelUrl`）。保存失败要把原因
+ * 回写到状态里给页面显示，不能静默吞掉。
+ */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,

@@ -4,6 +4,14 @@
 > 前置调研：`docs/research/weibo-guest-endpoint-audit.md`（接口档位）、`docs/research/batch-image-crawl-and-ui.md`（同类项目与存储基线）。
 > 起草日期：2026-10-31　｜　状态：**已实施（v0.9.11，2026-10-31）**
 
+> **代码位置已随 0.10.0 重构迁移**（本文正文写的是重构前的单模块路径）：
+> `WeiboApi.kt` → `:core` 的 `WeiboPostApi` / `WeiboImageUrl`；`Crawler.kt` → `:domain` 的
+> `CrawlEngine` / `CrawlSaver` / `PostAssets`；`CrawlRunner.kt` → `:domain` 的 `CrawlService`；
+> `GalleryFragment` → `:app` 的 `GalleryTab` / `GalleryViewModel`；
+> `BrowsingActivity` / `PostPickActivity` / `ImagePreviewActivity` / `RemotePreviewActivity`
+> 分别改为 `BrowsingScreen`、`PostPickScreen`、`ImagePreviewScreen`、`RemotePreviewScreen` 四条 route。
+> 现行结构见 [`../architecture.md`](../architecture.md)。
+
 ## 实施回填（v0.9.11）
 
 | 计划项 | 落地情况 |

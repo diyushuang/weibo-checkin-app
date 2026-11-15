@@ -28,7 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-/** 首页 Hero 卡的渲染状态，由 HomeFragment 在每次 render 时重建。 */
+/** 首页 Hero 卡的渲染状态，由 `HomeViewModel` 每次状态变化时整体重建。 */
 data class HomeHeroUiState(
     val ringValue: String = "",
     val pendingValue: String = "",
