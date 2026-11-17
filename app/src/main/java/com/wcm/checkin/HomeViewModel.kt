@@ -363,9 +363,15 @@ class HomeViewModel @Inject constructor(
         } else {
             ctx.getString(R.string.cookie_server_expiry_unknown)
         }
-        val estimated = ctx.getString(R.string.cookie_estimated_expiry_fmt, formatStamp(life.estimatedAt))
+        // 判定口径已改为「服务端声明优先」，此时再并列显示经验推算值会自相矛盾
+        // （剩余 30 天，却写「推算到期 11/24」）。只在服务端到期未知时才展示推算值。
+        val estimated = if (life.serverExpiresAt > 0L) {
+            ""
+        } else {
+            " · " + ctx.getString(R.string.cookie_estimated_expiry_fmt, formatStamp(life.estimatedAt))
+        }
         val legacy = if (life.fromPanel) "\n" + ctx.getString(R.string.cookie_legacy_anchor_note) else ""
-        val base = "$login · $sync\n$server · $estimated$legacy"
+        val base = "$login · $sync\n$server$estimated$legacy"
         return if (life.alert) base + "\n" + ctx.getString(R.string.cookie_renew_hint) else base
     }
 

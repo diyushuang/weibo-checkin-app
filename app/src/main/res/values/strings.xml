@@ -453,4 +453,96 @@
     <string name="crawl_retry_running">正在重试失败的帖子…</string>
     <string name="crawl_saf_lost_action">重新选择</string>
     <string name="crawl_saf_readonly">只有只读权限，可能无法写入新图片</string>
+
+    <!-- ===== 超话互动任务 ===== -->
+    <string name="nav_tasks">任务</string>
+    <string name="engage_title">超话互动任务</string>
+    <string name="engage_subtitle">按固定次数自动完成评论、转发、点赞与发帖</string>
+
+    <string name="engage_consent_title">执行前请确认</string>
+    <string name="engage_consent_body">开启后，本应用会在你指定的超话内自动发布内容：\n\n1. 内容会以你的账号公开发布，发出后需你本人到微博手动删除，本应用不提供批量撤回。\n2. 平台可能因自动化发布对该账号限流、禁言或限制超话发言。\n3. 遇到身份验证时任务会停止，需要你在微博 App 内手动完成，本应用不做任何绕过。\n\n建议保持低次数、长间隔，并只在你自己的常用超话内使用。</string>
+    <string name="engage_consent_accept">我已了解，开启任务</string>
+    <string name="engage_consent_decline">暂不开启</string>
+
+    <string name="engage_status_off">未开启</string>
+    <string name="engage_status_on">已开启</string>
+    <string name="engage_status_running">正在执行…</string>
+    <string name="engage_uncertain_warn">上次发帖结果未知，今日发帖已暂停，请到微博确认后在发帖记录里处理</string>
+    <string name="engage_awaiting_warn">有 %1$d 条发帖在等你确认，请到发帖记录里点「确认发送」</string>
+
+    <string name="engage_account_label">执行账号</string>
+    <string name="engage_topic_label">目标超话</string>
+    <string name="engage_topic_empty">请先在微博内关注该超话，再刷新列表</string>
+    <string name="engage_refresh_topics">刷新超话列表</string>
+
+    <string name="engage_counts_title">执行次数</string>
+    <string name="engage_count_post">发帖</string>
+    <string name="engage_count_repost">转发</string>
+    <string name="engage_count_comment">评论</string>
+    <string name="engage_count_like">点赞</string>
+    <string name="engage_count_unit">次/天</string>
+
+    <string name="engage_time_title">执行时间</string>
+    <string name="engage_time_quiet">免打扰时段</string>
+    <string name="engage_auto_run">打开 App 时自动执行</string>
+    <string name="engage_auto_run_off">关闭时不会自己跑，只在任务页点「立即执行一次」才执行</string>
+    <string name="engage_time_quiet_value">%1$d 点 – %2$d 点不执行</string>
+
+    <string name="engage_post_title">发帖设置</string>
+    <string name="engage_post_video">视频链接（仅作为正文文本，不上传）</string>
+    <string name="engage_post_sync">同步到个人主页</string>
+    <string name="engage_post_confirm">发帖前需要我确认</string>
+    <string name="engage_post_background">后台定时也允许发帖</string>
+    <string name="engage_post_maxlen">单条正文长度上限</string>
+
+    <string name="engage_preview_title">发帖预览</string>
+    <string name="engage_preview_empty">文案库为空，先添加文案才能预览</string>
+    <string name="engage_preview_next">换一条看看</string>
+    <string name="engage_preview_note">预览只校验长度与格式，不代表平台不会限流</string>
+    <string name="engage_preview_length">%1$d / %2$d 字</string>
+
+    <string name="engage_texts_title">文案库</string>
+    <string name="engage_texts_count">可用 %1$d 条 / 共 %2$d 条</string>
+    <string name="engage_texts_open">管理文案</string>
+    <string name="engage_texts_add">新增文案</string>
+    <string name="engage_texts_import">批量导入</string>
+    <string name="engage_texts_import_hint">从百度输入法圈子复制文案后粘贴到这里。本应用不会联网获取任何文案。</string>
+    <string name="engage_texts_import_mode_blank">空行分段</string>
+    <string name="engage_texts_import_mode_line">一行一条</string>
+    <string name="engage_texts_import_mode_custom">自定义分隔符</string>
+    <string name="engage_texts_import_separator">分隔符</string>
+    <string name="engage_texts_import_do">导入</string>
+    <string name="engage_texts_paste">从剪贴板粘贴</string>
+    <string name="engage_texts_empty">还没有文案</string>
+    <string name="engage_texts_delete">删除</string>
+    <string name="engage_texts_used">已用 %1$d 次</string>
+
+    <string name="engage_posts_title">发帖记录</string>
+    <string name="engage_posts_open">查看全部</string>
+    <string name="engage_posts_empty">还没有发帖记录</string>
+    <string name="engage_posts_state_ok">成功</string>
+    <string name="engage_posts_state_uncertain">结果未知</string>
+    <string name="engage_posts_state_failed">失败</string>
+    <string name="engage_posts_state_skipped">跳过</string>
+    <string name="engage_posts_state_awaiting">待确认</string>
+    <string name="engage_posts_view_on_weibo">去微博查看</string>
+    <string name="engage_posts_no_browser">没有可打开该链接的应用</string>
+    <string name="engage_posts_copy">复制正文</string>
+    <string name="engage_posts_confirm_sent">已确认发出</string>
+    <string name="engage_posts_confirm_not_sent">确认未发出</string>
+    <string name="engage_posts_confirm_send">确认发送</string>
+    <string name="engage_posts_awaiting_hint">这条正文已按当前设置组好，点「确认发送」才会真正发出</string>
+    <string name="engage_posts_uncertain_hint">请先到微博确认这条帖子是否存在，再选择下面的处理方式</string>
+
+    <string name="engage_run_now">立即执行一次</string>
+    <string name="engage_run_hint">这里可以手动补跑一轮；无人值守的自动执行需要另外打开「打开 App 时自动执行」开关</string>
+    <string name="engage_run_need_enable">任务未开启：先打开右上角开关，并勾选风险声明后才能执行</string>
+    <string name="engage_runs_title">运行记录</string>
+    <string name="engage_runs_empty">还没有运行记录</string>
+    <string name="engage_run_in_progress">进行中…</string>
+
+    <string name="engage_danger_title">关闭与清理</string>
+    <string name="engage_disable">关闭任务</string>
+    <string name="engage_clear_data">清除任务数据</string>
+    <string name="engage_clear_confirm">将删除配置、文案库、运行记录与发帖台账，不可恢复。确定继续？</string>
 </resources>

@@ -1,7 +1,9 @@
 package com.wcm.checkin
 
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONObject
 import java.net.URI
@@ -342,4 +344,100 @@ object WeiboHttp {
             .header("X-Requested-With", "XMLHttpRequest")
             .header("Cookie", cookie)
             .build()
+
+    /**
+     * `weibo.com` 侧 ajax **只读**请求。
+     *
+     * 与 [desktopRequest] 的区别只有一套浏览器同域 ajax 头：`Origin` / `Referer` /
+     * `X-XSRF-TOKEN`。看着像可有可无，实测缺了就是 **HTTP 403**——
+     * `ajax_proxy/chaohua/page`（超话帖子流）在真机上用 desktopRequest 拿到的正是 403，
+     * 而同一时刻同 cookie 的写接口（走 [formRequest]）是通的。
+     *
+     * 浏览器抓包时这几个头是浏览器自动带的，所以「只要 X-Requested-With」这个结论
+     * 只在浏览器环境成立；从 OkHttp 发就必须自己补齐。
+     */
+    internal fun ajaxRequest(url: String, cookie: String, referer: String, xsrf: String): Request =
+        Request.Builder().url(url)
+            .header("User-Agent", WEB_UA)
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Origin", BASE_WEB_ORIGIN)
+            .header("Referer", referer)
+            .apply { if (xsrf.isNotEmpty()) header("X-XSRF-TOKEN", xsrf) }
+            .header("Cookie", cookie)
+            .build()
+
+    // ---------- 写请求（weibo.com ajax 族）----------
+
+    /**
+     * 从 cookie 串里取 `XSRF-TOKEN` 并解码。
+     *
+     * 写接口必需这个头——实测缺它直接 403。cookie 里的值是 URL 编码过的
+     * （例如 `xxx%3D`），必须解码后再放进 `X-XSRF-TOKEN`，否则服务端不认。
+     * 没有该 cookie 时返回空串，由调用方决定是否放弃请求。
+     */
+    fun xsrfOf(cookie: String): String {
+        val raw = parseCookieString(cookie)["XSRF-TOKEN"] ?: return ""
+        return try {
+            java.net.URLDecoder.decode(raw, "UTF-8")
+        } catch (e: Exception) {
+            raw
+        }
+    }
+
+    /**
+     * 表单 POST 请求（weibo.com 写接口统一形态）。
+     *
+     * 刻意**不**复用 [request]：m 站口径（iPhone UA + m 站 Referer + MWeibo-Pwa）
+     * 与 Web ajax 口径不同，混用会把只读链路的请求头改坏。两条路径各自独立。
+     */
+    internal fun formRequest(
+        url: String,
+        cookie: String,
+        form: String,
+        referer: String,
+        xsrf: String,
+    ): Request = Request.Builder().url(url)
+        .header("User-Agent", WEB_UA)
+        .header("Accept", "application/json, text/plain, */*")
+        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+        .header("X-Requested-With", "XMLHttpRequest")
+        .header("Origin", BASE_WEB_ORIGIN)
+        .header("Referer", referer)
+        .apply { if (xsrf.isNotEmpty()) header("X-XSRF-TOKEN", xsrf) }
+        .header("Content-Type", FORM_CONTENT_TYPE)
+        .header("Cookie", cookie)
+        .post(form.toByteArray(Charsets.UTF_8).toRequestBody(FORM_MEDIA_TYPE))
+        .build()
+
+    /** 发一次表单 POST，并让会话吸收响应里的 `Set-Cookie`（换发回收）。 */
+    internal fun postForm(
+        url: String,
+        session: WeiboSession,
+        form: String,
+        referer: String,
+        xsrf: String,
+    ): Response {
+        val req = formRequest(url, session.cookie, form, referer, xsrf)
+        return client.newCall(req).execute().also { session.absorb(it) }
+    }
+
+    /**
+     * 把一段响应体压成能进日志/记录的摘要。
+     *
+     * 硬要求（架构文档不变量 5）：日志与错误信息不得包含凭据。这里除了截断，
+     * 还做一次凭据特征检测——宁可丢掉整段响应，也不让 `SUB=` 落进任何持久化结构。
+     */
+    fun safeBodyExcerpt(body: String, limit: Int = 120): String {
+        val text = body.trim()
+        if (text.isEmpty()) return ""
+        val credentialMarks = listOf("SUB=", "SUBP=", "SCF=", "ALF=", "SSOLoginState=", "XSRF-TOKEN=")
+        if (credentialMarks.any { text.contains(it) }) return "[响应含凭据片段，已省略]"
+        return if (text.length <= limit) text else text.take(limit) + "…"
+    }
+
+    private const val BASE_WEB_ORIGIN = "https://weibo.com"
+    private const val FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
+    private val FORM_MEDIA_TYPE = "application/x-www-form-urlencoded".toMediaType()
 }

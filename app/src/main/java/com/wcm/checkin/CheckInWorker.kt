@@ -5,7 +5,6 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -157,19 +156,34 @@ class CheckInWorker @AssistedInject constructor(
         private const val WORK_NAME = "wcm-keepalive"
 
         fun schedule(ctx: Context) {
-            // 没网/低电不空跑：省电省流量，条件满足后 WorkManager 自动补跑
+            // **不加 NetworkType.CONNECTED**（与 EngageScheduler 同因，真机实测）：
+            // WorkManager 判该约束看的是 `NetworkState.isValidated`，国内访问不到
+            // `connectivitycheck.gstatic.com/generate_204`，该标志恒为 false →
+            // 约束永不满足 → 保活一次都不跑，而且不报错。
+            //
+            // 实证（Android 16）：装了三天后查 WorkManager DB，
+            // `CheckInWorker run_attempt_count=0、period_count=0` —— 6 小时一次的
+            // 保活从未执行。这条链路一断，「探活换发」「临期自动重登」全部失效，
+            // 用户看到的就是「Cookie 到期了也不会自己续」。
+            //
+            // 低电约束保留：低电时确实不该跑网络任务，且它能正常生效。
             val request = PeriodicWorkRequestBuilder<CheckInWorker>(
                 6, TimeUnit.HOURS, 1, TimeUnit.HOURS
             )
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
                         .setRequiresBatteryNotLow(true)
                         .build()
                 )
                 .build()
             WorkManager.getInstance(ctx).enqueueUniquePeriodicWork(
-                WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request
+                WORK_NAME,
+                // 必须 UPDATE，不能 KEEP：KEEP 会保留数据库里已有的 work spec，
+                // 改了约束（例如去掉 NetworkType.CONNECTED）也不会生效 ——
+                // 老用户升级后会继续带着旧约束永远不跑，而这一点从日志到界面都看不出来。
+                // UPDATE 在 WorkManager 2.8+ 会保留周期进度、只更新约束与参数。
+                ExistingPeriodicWorkPolicy.UPDATE,
+                request,
             )
         }
     }

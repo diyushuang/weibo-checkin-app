@@ -13,6 +13,8 @@ class AccountMaintenanceService(
     private val account: AccountPort,
     /** 面板地址与令牌。 */
     private val panel: PanelPort,
+    /** 凭证库：只用来「把 cookie 里自带的 ALC 收进来」，不读密码。 */
+    private val vault: CredentialPort,
 ) {
 
     /**
@@ -44,6 +46,28 @@ class AccountMaintenanceService(
             serverExpiresAt = serverExpiresAt,
             loginAt = loginAt,
         )
+        harvestAlc(ctx, acc, cookie)
+    }
+
+    /**
+     * 把 cookie 里自带的 `ALC` 收进票据库。
+     *
+     * 为什么值得单独做：`ALC` 是**免密码重签**的唯一凭据，而它本来就在登录/探活返回的
+     * cookie 串里；此前只有「用户去浏览器开发者工具里复制再粘贴」这一条路，
+     * 扫码登录拿到的 ALC 直接白丢（实测账号 `alcAt=0` 就是这个原因）。
+     *
+     * 只在**还没有 ALC**时写：不覆盖用户手动填的那份（手动填的可能是更新的）。
+     * 提取失败/为空一律静默——这条链路是纯增益，不能影响探活主流程。
+     */
+    private fun harvestAlc(ctx: Context, acc: Account, cookie: String) {
+        runCatching {
+            if (vault.hasAlc(ctx, acc.uid)) return
+            val alc = WeiboAlcLogin.alcFromCookie(cookie)
+            if (alc.isEmpty()) return
+            // 写票据库 + 记录保存时刻，两步都在适配器里完成
+            vault.saveAlc(ctx, acc.uid, alc)
+            acc.alcAt = System.currentTimeMillis()
+        }
     }
 
     /** 昵称仍是占位值时补拉；拿不到返回空串，不影响主流程。 */

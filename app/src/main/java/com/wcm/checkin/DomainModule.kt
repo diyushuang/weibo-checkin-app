@@ -3,7 +3,9 @@ package com.wcm.checkin
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import android.content.Context
 import javax.inject.Singleton
 
 /**
@@ -52,7 +54,8 @@ object DomainModule {
     fun provideAccountMaintenance(
         account: AccountPort,
         panel: PanelPort,
-    ): AccountMaintenanceService = AccountMaintenanceService(account, panel)
+        vault: CredentialPort,
+    ): AccountMaintenanceService = AccountMaintenanceService(account, panel, vault)
 
     @Provides
     @Singleton
@@ -107,4 +110,65 @@ object DomainModule {
         album: AlbumCrawler,
         engine: CrawlEngine,
     ): CrawlService = CrawlService(settings, timeline, album, engine)
+
+    // ========================= 超话互动任务 =========================
+
+    /**
+     * 存储实现直接暴露成两个端口。
+     *
+     * 没有像其他端口那样再套一层 `PortAdapters`：`EngageStore` 的方法签名本来就是
+     * 照着窄端口设计的（没有默认参数，不需要为抽象改调用点），再套一层只是多一跳。
+     */
+    @Provides
+    @Singleton
+    fun provideEngageStore(@ApplicationContext context: Context): EngageStore = EngageStore(context)
+
+    @Provides
+    @Singleton
+    fun provideEngageConfigPort(store: EngageStore): EngageConfigPort = store
+
+    @Provides
+    @Singleton
+    fun provideEngageRunPort(store: EngageStore): EngageRunPort = store
+
+    /** 账号读取：按 uid 取一份可用的 cookie。 */
+    @Provides
+    @Singleton
+    fun provideEngageAccountSource(
+        account: AccountPort,
+        @ApplicationContext context: Context,
+    ): EngageAccountSource = EngageAccountSource { uid ->
+        account.load(context).firstOrNull { it.uid == uid }?.let {
+            EngageAccount(
+                uid = it.uid,
+                name = it.name,
+                cookie = it.cookie,
+                cookieDomains = it.cookieDomains,
+                dead = it.cookieDead,
+            )
+        }
+    }
+
+    /** 换发回写：一轮结束后把会话里吸收到的 Set-Cookie 落回账号。 */
+    @Provides
+    @Singleton
+    fun provideEngageAccountSink(
+        account: AccountPort,
+        @ApplicationContext context: Context,
+    ): EngageAccountSink = EngageAccountSink { uid, cookie, domains ->
+        account.updateCookie(context, uid, cookie, domains)
+    }
+
+    /**
+     * 必须 `@Singleton`：它持有实例级 `Mutex`，多一个实例就多一把闸门，
+     * 定时任务与手动补跑会同时开跑，导致同一动作被执行两次。
+     */
+    @Provides
+    @Singleton
+    fun provideEngageService(
+        config: EngageConfigPort,
+        runs: EngageRunPort,
+        source: EngageAccountSource,
+        sink: EngageAccountSink,
+    ): EngageService = EngageService(config, runs, source, sink)
 }

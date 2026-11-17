@@ -140,4 +140,12 @@ class CredentialVaultAdapter : CredentialPort {
     override fun hasAlc(ctx: Context, uid: String): Boolean = AlcVault.has(ctx, uid)
 
     override fun loadAlc(ctx: Context, uid: String): String? = AlcVault.load(ctx, uid)
+
+    override fun saveAlc(ctx: Context, uid: String, alc: String) {
+        if (alc.isBlank()) return
+        AlcVault.save(ctx, uid, alc)
+        // 顺手记「什么时候存过 ALC」：界面用它显示「已保存 ALC（时间）」，
+        // `Account.alcAt` 存在账号表里，由这里统一维护，调用方不必再单独写一次。
+        AccountStore.setAlcAt(ctx, uid, System.currentTimeMillis())
+    }
 }

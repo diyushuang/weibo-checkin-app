@@ -35,6 +35,21 @@ object WeiboThrottle {
      * 用 Mutex 而不是 `synchronized`：等待期间必须让出线程，否则和 `Thread.sleep`
      * 是同一个毛病。
      */
+    /**
+     * 这个 key 现在真要等多久。**只查询，不占位、不修改状态。**
+     *
+     * 存在的理由是预算判断：此前调用方拿「配置的间隔区间随机值」直接和 deadline 比，
+     * 但同一个 key 的**首次**调用其实一秒都不用等（`lastAt` 为空）。默认配置下
+     * 发帖间隔是 5–8 分钟，于是「今天第一条帖子」被误判成来不及而直接跳过 ——
+     * 表现就是评论转发点赞都跑了、发帖一条没有。
+     */
+    fun remaining(key: String, gapMs: Long): Long {
+        if (gapMs <= 0L) return 0L
+        val last = lastAt[key] ?: return 0L
+        val wait = gapMs - (System.currentTimeMillis() - last)
+        return if (wait > 0L) wait else 0L
+    }
+
     suspend fun await(key: String, gapMs: Long) {
         if (gapMs <= 0L) return
         // 必须用 computeIfAbsent：ConcurrentHashMap 的 getOrPut 是「先查再放」两步，

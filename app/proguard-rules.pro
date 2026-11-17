@@ -13,3 +13,6 @@
 #   1) 不依赖三方库的规则细节（换版本后若改成 allowobfuscation，这里仍兜底）；
 #   2) 把「重命名的后果」写在能读到的地方，而不是等线上出现 ClassNotFoundException。
 -keep class com.wcm.checkin.CheckInWorker { <init>(...); }
+
+# 同 CheckInWorker：WorkManager 按类名反射实例化，类名进 work.db 后跨版本存活。
+-keep class com.wcm.checkin.EngageWorker { <init>(...); }

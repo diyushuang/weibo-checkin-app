@@ -177,6 +177,19 @@ object WeiboAlcLogin {
             .substringBefore(';')
             .trim()
 
+    /**
+     * 从**整串 cookie** 里取出 `ALC` 的值；没有返回空串。
+     *
+     * 用途：登录或探活拿到的 cookie 里如果自带 `ALC`，就自动收进票据库，
+     * 用户不必再去浏览器开发者工具里手动复制一遍。
+     * 与 [normalizeAlc] 的区别是后者只认「单条 `ALC=xxx`」，整串 cookie 会取错字段。
+     */
+    fun alcFromCookie(cookie: String): String {
+        if (cookie.isBlank()) return ""
+        val raw = WeiboHttp.parseCookieString(cookie)["ALC"] ?: return ""
+        return normalizeAlc(raw)
+    }
+
     /** 从 SSO 的 META 返回页里取 `location.replace("…")` 的目标地址。 */
     fun extractLocationReplace(html: String): String? {
         val pattern = Regex(

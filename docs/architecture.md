@@ -49,6 +49,7 @@
 | 端口 | `AccountPort`（账号表读写）／`CrawlSettingsPort`／`TopicCachePort`／`PanelPort`／`CredentialPort` |
 | 纯算法 | `AssetName`、`Hashing`、`CrawlCursor`、`ReloginPolicy`、`CookieLife`、`PanelUrl` |
 | 微博客户端 | `WeiboHttp`（出站基座 + 域名白名单）、`WeiboAuthApi`、`WeiboTopicApi`、`WeiboPostApi`、`WeiboImageUrl`、`WeiboThrottle`、`WebAjax`、`GuestSession`、`WeiboPasswordLogin`、`WeiboAlcLogin` |
+| 超话互动任务 | `EngageModels`（模型）、`EngageTextPool`（文案与正文组装）、`EngagePlanner`（规划）、`EngageGuard`（熔断）、`EngageSchedule`（日期与排期）、`EngageCodec`（序列化）、`EngagePorts`（两个窄端口）、`WeiboWriteApi`（四动作+删除）、`WeiboFeedApi`（帖子流） |
 | 文件与媒体 | `CrawlIndex`、`SafTreeStore`、`GalleryFiles`、`Takeover`、`RemoteBytes`、`GifEncoder`、`LivePhotoConverter` |
 | 进程级资源 | `AppScope`（应用级协程作用域） |
 
@@ -58,7 +59,7 @@
 
 `AccountStore`、`CrawlSettings`、`PanelSettings`、`TopicStore`、`CrawlMarks`、`SafAccess`、
 `StorePrefs`、`SecretBox`（字段级加密）、`CredentialVault`（Keystore 凭证库）、
-`PortAdapters.kt`（5 个端口 32 个方法的转发）。
+`PortAdapters.kt`（5 个端口 32 个方法的转发）、`EngageStore`（互动任务：独立 prefs `wcm_engage`）。
 
 不放：View、网络客户端与纯算法（已在 `:core`）。
 
@@ -74,6 +75,7 @@
 | `CrawlPlanner` / `CrawlProgress` | 规划（增量 / 全量 / 重试）与进度归约，纯函数 |
 | `AlbumCrawler` / `TimelineCrawler` | 两条枚举链路的实现 |
 | `CrawlSaver` / `PostAssets` | 落盘、三层去重、索引写入 |
+| `EngageService` | 互动任务编排：配置 → 登录 → 关注校验 → 计划 → 文案/目标 → 逐条执行（预占/熔断）→ 收尾 |
 
 不放：Android UI、资源 `R.*`、任何对 `:data` 的 import。
 
@@ -81,7 +83,7 @@
 
 `WcmApp`（`@HiltAndroidApp`）、`MainActivity`（ComponentActivity + NavHost 壳）、
 `LoginWebViewActivity`（唯一保留 ViewBinding 的页面）、`Theme.kt`（`WcmTheme`）、
-四个 Tab 的 Screen/ViewModel、浏览/选图/预览 route、`CheckInWorker`、`DomainModule`。
+五个 Tab 的 Screen/ViewModel、浏览/选图/预览 route、`CheckInWorker`、`EngageWorker`、`DomainModule`。
 
 命名约定：`*Tab.kt` 是 route 入口，`*Screen.kt` 纯渲染，`*Ui.kt` 是 UI 状态模型
 （不含 Compose），`*ViewModel.kt` 持状态与编排。四类之外只有 `Theme.kt`（主题）、
@@ -105,17 +107,18 @@
 
 ### 3.1 导航
 
-`MainActivity` 用 Navigation Compose + `NavigationBar`，9 条 route：
+`MainActivity` 用 Navigation Compose + `NavigationBar`，12 条 route：
 
 ```
 home ─┐
-topic ─┼─ 四个 Tab（saveState/restoreState，切回保留滚动与筛选）
-gallery ┤
-settings ┘
-        └─ galleryBrowse / browsing / postPick / imagePreview / remotePreview（入栈子页）
+topic ─┤
+gallery ┼─ 五个 Tab（saveState/restoreState，切回保留滚动与筛选）
+settings ┤
+engage ─┘
+        └─ galleryBrowse / browsing / postPick / imagePreview / remotePreview / engage_texts / engage_posts（入栈子页）
 ```
 
-四个 Tab 的 ViewModel 挂在 **Activity 作用域**，切 Tab 不丢状态；子页各用自己的
+五个 Tab 的 ViewModel 挂在 **Activity 作用域**，切 Tab 不丢状态；子页各用自己的
 ViewModel。只有一个 Activity，只有登录页例外。
 
 ### 3.2 状态与并发
@@ -137,9 +140,9 @@ manifest 关闭 WorkManager 默认初始化，避免自定义 `HiltWorkerFactory
 | 注入点 | 注解 |
 | --- | --- |
 | Application | `@HiltAndroidApp` |
-| `CheckInWorker` | `@HiltWorker` + `@AssistedInject` |
-| 9 个 ViewModel | `@HiltViewModel` |
-| 服务与端口 | `DomainModule` 的 13 条 `@Provides`，全部 `@Singleton` |
+| `CheckInWorker` / `EngageWorker` | `@HiltWorker` + `@AssistedInject` |
+| 10 个 ViewModel | `@HiltViewModel` |
+| 服务与端口 | `DomainModule` 的 20 条 `@Provides`，全部 `@Singleton` |
 
 `:domain` **刻意不引入 Hilt**：它只有构造函数注入，装配集中在 `:app` 的 `DomainModule`。
 好处是 `:domain` 不依赖 DI 框架，将来抽 `:feature` 或换框架不用动业务代码。
@@ -185,14 +188,14 @@ manifest 关闭 WorkManager 默认初始化，避免自定义 `HiltWorkerFactory
 本机 JDK 需显式指定（机器上没有全局 `java`）：
 
 ```bash
-JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline \
+JAVA_HOME=$JDK17_HOME ./gradlew --offline \
   :app:testDebugUnitTest :app:assembleDebug
 
 # release（R8 + 资源收缩 + 固定签名）
-JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew --offline :app:assembleRelease
+JAVA_HOME=$JDK17_HOME ./gradlew --offline :app:assembleRelease
 
 # 真机/模拟器冒烟（需连接设备）
-JAVA_HOME=C:/Users/adsm/dev/jdk17 ./gradlew :app:connectedDebugAndroidTest
+JAVA_HOME=$JDK17_HOME ./gradlew :app:connectedDebugAndroidTest
 ```
 
 环境版本、CI 流水线与产物指标见 README 的「环境要求」「构建」「发版」三节；

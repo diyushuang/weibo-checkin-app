@@ -47,8 +47,8 @@ android {
         //             为了区分「行为等价但结构已变」这条线）。
         // · 0.11.x —— 持久登录加固：cookie/ALC 加密落盘、登录墙判死、ALC 免密码重签。
         // 发版时这里只改 versionCode/versionName 两个数字，历史不要往这里堆。
-        versionCode = 35
-        versionName = "0.11.0"
+        versionCode = 42
+        versionName = "0.12.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -101,6 +101,14 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+    testOptions {
+        unitTests {
+            // 本地单测跑在 JVM 上，android.jar 里的方法（Log、TextUtils…）都是抛
+            // RuntimeException("not mocked") 的桩。:domain 的 EngageService 会用
+            // android.util.Log 打链路日志，不开这个开关单测直接炸。
+            isReturnDefaultValues = true
+        }
     }
     lint {
         // NewApi 是硬错误：一旦有人用了高于 minSdk 的 API，构建期就拦下，

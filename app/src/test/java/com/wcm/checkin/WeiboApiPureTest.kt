@@ -49,7 +49,7 @@ class WeiboApiPureTest {
         assertEquals("RnQI2A5sU", WeiboPostApi.parseBidFromInput("https://m.weibo.cn/status/RnQI2A5sU?f=1"))
         assertEquals("RnQI2A5sU", WeiboPostApi.parseBidFromInput("https://weibo.com/1234567/RnQI2A5sU"))
         assertEquals("AbCd12345", WeiboPostApi.parseBidFromInput("AbCd12345"))
-        assertEquals("5356841628600820", WeiboPostApi.parseBidFromInput("5356841628600820"))
+        assertEquals("5000000000000011", WeiboPostApi.parseBidFromInput("5000000000000011"))
         assertEquals("", WeiboPostApi.parseBidFromInput("https://m.weibo.cn/u/123456"))
         assertEquals("", WeiboPostApi.parseBidFromInput("不是链接也不是ID"))
     }

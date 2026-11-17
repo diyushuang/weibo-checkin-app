@@ -56,9 +56,13 @@ object CookieLife {
     ) {
         val alert: Boolean get() = state == State.EXPIRING || state == State.EXPIRED
         val known: Boolean get() = state != State.UNKNOWN
-        /** 最终判定是否来自服务端声明（否则就是经验推算）。 */
-        val serverAuthoritative: Boolean get() = serverExpiresAt > 0 &&
-            (estimatedAt <= 0 || serverExpiresAt <= estimatedAt)
+        /**
+         * 最终判定是否来自服务端声明。
+         *
+         * 口径已改为「服务端优先」：只要有服务端到期（ALF / Set-Cookie），
+         * 判定就按它走，经验推算只在没有服务端声明时兜底。
+         */
+        val serverAuthoritative: Boolean get() = serverExpiresAt > 0
     }
 
     /**
@@ -128,7 +132,19 @@ object CookieLife {
             .filter { it > 0L && (anchor <= 0L || it > anchor) }
             .minOrNull() ?: 0L
 
-        val deadline = listOf(estimated, server).filter { it > 0L }.minOrNull() ?: 0L
+        // 服务端声明优先于经验值。
+        //
+        // 「登录 + 7 天」只是经验保守值，而 ALF / Set-Cookie 的 Expires 是**服务端给出的
+        // 真实有效期**：实测本账号 ALF 是 30 天，按 7 天算会在登录后一周就判临期，
+        // 白触发一次重登（若没凭证则直接判死），比真实失效早了 23 天。
+        // 经验值只在**没有任何服务端声明**时兜底（旧数据、m 站 cookie 不带 ALF）。
+        //
+        // 提前失效的风险由保活兜住：每 6 小时探活，探活失败即 markDead → 触发重登。
+        val deadline = when {
+            server > 0L -> server
+            estimated > 0L -> estimated
+            else -> 0L
+        }
         if (deadline == 0L) {
             return View(
                 State.UNKNOWN, 0L, estimated, server, loginAt, anchor,

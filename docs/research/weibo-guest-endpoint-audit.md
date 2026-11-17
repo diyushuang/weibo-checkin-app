@@ -350,7 +350,7 @@ GET  https://passport.weibo.com/visitor/visitor?a=crossdomain&t=<tid>&s=<sub>&sp
 | 4 | 落盘仍走 `wx*.sinaimg.cn/large/<pid>.jpg`，命名沿用 `AssetName` |
 | 5 | 与时间线并联：全局开关（图片页可切），游客拿不到时自动回落时间线 |
 
-**18 图专项**（实测 `5354995067127335` 该帖 web 详情 `pic_num=18 / pic_ids=18 / pic_infos=18`）：
+**18 图专项**（实测 `5000000000000006` 该帖 web 详情 `pic_num=18 / pic_ids=18 / pic_infos=18`）：
 图清单永远以 `pic_ids` 为准；`pic_ids` 少于自述 `pic_num` 时补拉账号详情取更全的一份；
 仍不足则告警不中断。列表侧的粗筛改用 `max(pic_num, pics.length, pic_ids.length)`，
 避免 0/18 形态被当成纯文字帖跳过。

@@ -696,6 +696,10 @@ object AccountStore {
         // 账号密码（cred_）与 ALC（alc_）都在这一个 prefs 里，必须一起清。
         CredentialVault.clear(ctx, uid)
         AlcVault.clear(ctx, uid)
+        // 互动任务的当日计数 / 发帖台账 / 运行记录都按 uid 存在独立 prefs 里，
+        // 删账号时不一起清就会永久残留：任务页按旧 uid 还能翻出别人的发帖正文，
+        // 而这个账号已经不存在了。删账号 = 删干净，不留孤儿数据。
+        runCatching { EngageStore(ctx).clearAll(uid) }
     }
 
     /** 记录一次 ALC 凭证的保存时刻（ALC 值本身在 [AlcVault] 里加密存）。 */

@@ -157,4 +157,12 @@ interface CredentialPort {
 
     /** 读取并解密 `ALC`；没存返回 null，解不开抛 `CredentialUnreadableException`。 */
     fun loadAlc(ctx: Context, uid: String): String?
+
+    /**
+     * 保存 `ALC`（登录/探活时从 cookie 里自动收到的那份，或用户手动粘贴的）。
+     *
+     * 加这个写口是为了「自动提取」：原来只有 UI 层能写（`AlcVault.save` 直调），
+     * 而 cookie 明文只在 domain 的探活结果里出现，UI 拿不到。
+     */
+    fun saveAlc(ctx: Context, uid: String, alc: String)
 }

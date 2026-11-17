@@ -153,14 +153,14 @@ class CrawlProgressTest {
     fun describeFailures_showsMissingSlotCount() {
         val records = listOf(
             CrawlIndex.PostRec(
-                postId = "5356841628600820",
+                postId = "5000000000000011",
                 at = 0L,
                 status = CrawlIndex.Status.PARTIAL,
                 expected = 9,
                 failed = linkedSetOf(2, 5),
             ),
             CrawlIndex.PostRec(
-                postId = "5356841628600821",
+                postId = "5000000000000012",
                 at = 0L,
                 status = CrawlIndex.Status.PARTIAL,
                 expected = 3,
@@ -168,7 +168,7 @@ class CrawlProgressTest {
             ),
         )
         assertEquals(
-            listOf("5356841628600820 · 缺 2 张", "5356841628600821"),
+            listOf("5000000000000011 · 缺 2 张", "5000000000000012"),
             describeFailures(records),
         )
     }

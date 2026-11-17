@@ -368,6 +368,16 @@ class LoginWebViewActivity : AppCompatActivity() {
                         )
                     )
                     Toast.makeText(this@LoginWebViewActivity, getString(R.string.login_added_fmt, name), Toast.LENGTH_SHORT).show()
+                    // 登录拿到的 cookie 里如果自带 ALC，直接收进票据库：
+                    // 用户就不必再去浏览器开发者工具里手动复制一遍。
+                    // 已有 ALC 时不覆盖（手动填的可能是更新的）。
+                    runCatching {
+                        val alc = WeiboAlcLogin.alcFromCookie(verify.cookie)
+                        if (alc.isNotEmpty() && !AlcVault.has(this@LoginWebViewActivity, uid)) {
+                            AlcVault.save(this@LoginWebViewActivity, uid, alc)
+                            AccountStore.setAlcAt(this@LoginWebViewActivity, uid, now)
+                        }
+                    }
                     // 会话已经复制进账号表，WebView 自己那份明文 cookie 库不再有任何用途。
                     // 立刻清掉：否则设备上会长期同时存在两份明文凭据（prefs 一份 + Cookie SQLite 一份），
                     // 删账号时那份也不会跟着消失。清理是异步的，flush 必须放在回调里，

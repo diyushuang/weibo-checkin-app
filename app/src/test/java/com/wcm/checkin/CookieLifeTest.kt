@@ -159,15 +159,29 @@ class CookieLifeTest {
     }
 
     @Test
-    fun describe_estimatedEarlierThanServerExpiryWins() {
+    fun describe_serverExpiryWinsEvenIfLater() {
+        // 口径变更（0.12.5）：服务端声明优先于「登录 + 7 天」的经验值。
+        // 实测 ALF 给的是 30 天，按经验值算会在第 7 天就判临期 → 白触发一次重登
+        // （没凭证时直接判死），比真实失效早 23 天。
         val v = CookieLife.describe(
             cookie = "SUB=x",
             loginAt = now - 6 * day,
             serverExpiresAt = now + 30 * day,
             now = now,
         )
-        assertEquals(CookieLife.State.EXPIRING, v.state)
-        assertEquals(now + 1 * day, v.deadlineAt)
+        assertEquals(CookieLife.State.OK, v.state)
+        assertEquals(now + 30 * day, v.deadlineAt)
+        assertTrue(v.serverAuthoritative)
+        // 经验推算值仍然保留，只是不再参与判定
+        assertEquals(now + 1 * day, v.estimatedAt)
+    }
+
+    @Test
+    fun describe_fallsBackToEstimatedWhenServerUnknown() {
+        // 没有服务端声明（m 站 cookie 不带 ALF / 旧数据）→ 退回经验 TTL
+        val v = CookieLife.describe(cookie = "SUB=x", loginAt = now - 3 * day, now = now)
+        assertEquals(now + 4 * day, v.deadlineAt)
+        assertEquals(CookieLife.State.OK, v.state)
         assertFalse(v.serverAuthoritative)
     }
 

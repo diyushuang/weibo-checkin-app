@@ -68,6 +68,9 @@ private const val ROUTE_POST_PICK = "post_pick"
 private const val ROUTE_REMOTE_PREVIEW = "remote_preview"
 private const val ROUTE_GALLERY_BROWSE = "gallery_browse"
 private const val ROUTE_IMAGE_PREVIEW = "image_preview"
+private const val ROUTE_ENGAGE = "engage"
+private const val ROUTE_ENGAGE_TEXTS = "engage_texts"
+private const val ROUTE_ENGAGE_POSTS = "engage_posts"
 
 /**
  * 单 Activity + Navigation Compose 壳：四个 Tab 都是纯 Compose 目的地。
@@ -82,6 +85,7 @@ class MainActivity : ComponentActivity() {
     private val topicViewModel: TopicViewModel by viewModels()
     private val galleryViewModel: GalleryViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
+    private val engageViewModel: EngageViewModel by viewModels()
 
     private val badgeState = MutableStateFlow<Int?>(null)
     private var navController: NavHostController? = null
@@ -97,7 +101,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val nav = rememberNavController()
             navController = nav
-            WcmTheme { AppShell(nav, homeViewModel, topicViewModel, galleryViewModel, settingsViewModel, badgeState) }
+            WcmTheme { AppShell(nav, homeViewModel, topicViewModel, galleryViewModel, settingsViewModel, engageViewModel, badgeState) }
         }
     }
 
@@ -134,6 +138,7 @@ private fun AppShell(
     topicViewModel: TopicViewModel,
     galleryViewModel: GalleryViewModel,
     settingsViewModel: SettingsViewModel,
+    engageViewModel: EngageViewModel,
     badgeState: MutableStateFlow<Int?>,
 ) {
     val backStack by nav.currentBackStackEntryAsState()
@@ -143,7 +148,7 @@ private fun AppShell(
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
     val showBottomBar = route == ROUTE_HOME || route == ROUTE_TOPICS ||
-        route == ROUTE_GALLERY || route == ROUTE_SETTINGS
+        route == ROUTE_GALLERY || route == ROUTE_SETTINGS || route == ROUTE_ENGAGE
 
     Column(
         modifier = Modifier
@@ -519,6 +524,25 @@ private fun AppShell(
                 composable(ROUTE_SETTINGS) {
                     SettingsTab(viewModel = settingsViewModel)
                 }
+                composable(ROUTE_ENGAGE) {
+                    EngageTab(
+                        viewModel = engageViewModel,
+                        onOpenTexts = { nav.navigate(ROUTE_ENGAGE_TEXTS) },
+                        onOpenPosts = { nav.navigate(ROUTE_ENGAGE_POSTS) },
+                    )
+                }
+                composable(ROUTE_ENGAGE_TEXTS) {
+                    EngageTextScreen(
+                        viewModel = engageViewModel,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(ROUTE_ENGAGE_POSTS) {
+                    EngagePostLogScreen(
+                        viewModel = engageViewModel,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
             }
         }
         if (showBottomBar && !imeVisible) {
@@ -570,6 +594,19 @@ private fun AppShell(
                     badge = null,
                     onClick = {
                         nav.navigate(ROUTE_SETTINGS) {
+                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                )
+                NavItem(
+                    selected = route == ROUTE_ENGAGE,
+                    icon = R.drawable.ic_nav_tasks,
+                    label = R.string.nav_tasks,
+                    badge = null,
+                    onClick = {
+                        nav.navigate(ROUTE_ENGAGE) {
                             popUpTo(nav.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
                             restoreState = true

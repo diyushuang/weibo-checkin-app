@@ -134,11 +134,16 @@ class CheckinService(
                 topicCache.save(ctx, acc.uid, topics, System.currentTimeMillis())
                 var ok = 0
                 var fail = 0
+                // 签到成功的超话 key：循环结束后要把它们标记成已签再写回快照，
+                // 否则首页仍显示「今日已签 0/4」，和日志里的「签到 4/4」自相矛盾
+                // （真机实测踩到：日志 4/4，首页 0/4）。
+                val signed = LinkedHashSet<String>()
                 for (topic in pending) {
                     pause(Random.nextLong(3000, 8000))
                     try {
                         if (WeiboTopicApi.sign(session, topic.scheme ?: "", verify.st)) {
                             ok++
+                            signed.add(topic.key)
                             log("  ✓ ${topic.name}")
                         } else {
                             fail++
@@ -148,6 +153,11 @@ class CheckinService(
                         fail++
                         log("  ✗ ${topic.name}：${e.message}")
                     }
+                }
+                if (signed.isNotEmpty()) {
+                    val updated = topics.map { if (it.key in signed) it.copy(done = true) else it }
+                    onTopics(acc.uid, updated)
+                    topicCache.save(ctx, acc.uid, updated, System.currentTimeMillis())
                 }
                 noteResult(
                     ctx, acc,
