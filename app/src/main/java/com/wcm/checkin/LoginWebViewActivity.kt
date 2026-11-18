@@ -367,6 +367,10 @@ class LoginWebViewActivity : AppCompatActivity() {
                             cookieRotateKeys = "login",
                         )
                     )
+                    // 这次是用户亲手在微博页面上走完的登录（账密 + 短信/扫码验证都过了）：
+                    // 之前「需要二次验证 / 密码错」的硬停不再成立。不清掉的话，自动重登会
+                    // 一直停在「已暂停」而拒绝工作，用户明明刚救回来却看不到效果。
+                    AccountStore.saveReloginState(this@LoginWebViewActivity, uid, ReloginPolicy.State())
                     Toast.makeText(this@LoginWebViewActivity, getString(R.string.login_added_fmt, name), Toast.LENGTH_SHORT).show()
                     // 登录拿到的 cookie 里如果自带 ALC，直接收进票据库：
                     // 用户就不必再去浏览器开发者工具里手动复制一遍。

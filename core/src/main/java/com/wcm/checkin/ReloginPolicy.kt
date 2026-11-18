@@ -51,18 +51,35 @@ object ReloginPolicy {
     /** 一次失败后的新状态与给用户看的文案。 */
     data class Failure(val state: State, val message: String)
 
+    /**
+     * 已知 `retcode` 的补充说明。
+     *
+     * 只放「码本身看不出原因、但用户必须知道该干什么」的那几个；其余仍按
+     * `（retcode xxx）` 原样带上，方便定位。
+     */
+    private val RETCODE_DETAILS = mapOf(
+        // 微博对账密登录的通用拒绝：实测与账号是否存在无关，换任意账号都是它。
+        // 新设备 / 异地登录时它几乎等同于「请先完成短信或私信二次验证」。
+        "1117" to "多为该账号需短信/私信二次验证或登录过于频繁，请用「网页登录」完成一次验证",
+    )
+
     /** 失败原因的固定文案；`retcode` 只用于补充定位，绝不回显表单/密码。 */
     fun reasonText(code: String, retcode: String = ""): String {
         val base = when (code) {
             CODE_BAD_CREDENTIALS -> "账号或密码错误"
-            CODE_NEEDS_MANUAL -> "需要验证码或二次验证，请人工扫码/手动处理"
+            CODE_NEEDS_MANUAL -> "需要验证码或二次验证（需人工处理）：账密自动重登过不去，请用「网页登录」完成一次验证，或填写 ALC 票据"
             CODE_RISK_CONTROL -> "被微博风控拦截"
             CODE_NETWORK -> "网络异常"
             CODE_VERIFY_FAILED -> "登录返回成功，但新 Cookie 未通过校验"
             CODE_CREDENTIAL_UNREADABLE -> "本地凭证无法解密，请重新保存账号密码"
             else -> "微博登录返回未知错误"
         }
-        return if (retcode.isNotEmpty()) "$base（retcode $retcode）" else base
+        val rc = retcode.trim()
+        return when {
+            rc.isEmpty() -> base
+            RETCODE_DETAILS[rc] != null -> "$base（retcode $rc：${RETCODE_DETAILS[rc]}）"
+            else -> "$base（retcode $rc）"
+        }
     }
 
     /** 24 小时窗口内的尝试时刻（升序）。 */

@@ -8,13 +8,16 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import okio.ByteString.Companion.decodeBase64
 import okio.ByteString.Companion.encodeUtf8
 import okio.ByteString.Companion.toByteString
 import java.io.IOException
 import java.math.BigInteger
 import java.net.URLEncoder
 import java.security.KeyFactory
+import java.security.PublicKey
 import java.security.spec.RSAPublicKeySpec
+import java.security.spec.X509EncodedKeySpec
 import javax.crypto.Cipher
 
 /**
@@ -55,7 +58,24 @@ object WeiboPasswordLogin {
     }
 
     /** 微博风控 / 频率限制。 */
-    private val RISK_CODES = setOf("2090", "50114001", "50114002", "50114003", "50114004")
+    private val RISK_CODES = setOf(
+        "2090", "50114001", "50114002", "50114003", "50114004",
+        // 1117「抱歉！登录失败，请稍候再试」：服务端拒绝这次账密登录的通用回执。
+        // 实测与账号是否存在无关（换任意 su 都是 1117），多为「新设备/异地要求二次验证」
+        // 或「短时间登录过多」。归为风控类 = 可退避重试，但不硬停。
+        "1117",
+    )
+
+    /**
+     * 文案里的「要人工验证」特征词。
+     *
+     * 判定顺序放在码表**之前**：微博常把一个通用错误码配上「需要短信验证」这类文案，
+     * 只认码表会把「要验证」误判成风控/未知，用户看到的就一直是「未知错误」。
+     */
+    private val VERIFY_MARKS = listOf(
+        "验证码", "二次验证", "安全验证", "身份验证", "短信验证", "私信验证",
+        "扫码", "验证后", "captcha", "verification",
+    )
 
     data class Outcome(
         val ok: Boolean,
@@ -132,6 +152,11 @@ object WeiboPasswordLogin {
         if (servertime.isEmpty() || nonce.isEmpty() || pubkey.isEmpty() || rsakv.isEmpty()) {
             return fail(ReloginPolicy.CODE_UNKNOWN, prelogin.optString("retcode", ""))
         }
+        // `showpin=1` = 服务端这次就要验证码。继续提交密码只会白撞一次风控，
+        // 直接判 needs_manual（硬停），把「该去人工验证」这件事提前说清楚。
+        if (prelogin.optInt("showpin", 0) == 1) {
+            return fail(ReloginPolicy.CODE_NEEDS_MANUAL, prelogin.optString("retcode", ""))
+        }
 
         val sp = try {
             rsaEncrypt(pubkey, servertime, nonce, password)
@@ -174,8 +199,10 @@ object WeiboPasswordLogin {
                     }
                     return fail(code, "", "登录接口 HTTP ${resp.code}")
                 }
-                parseJsonObject(resp.body?.string().orEmpty())
-                    ?: return fail(ReloginPolicy.CODE_UNKNOWN, "")
+                val body = resp.body?.string().orEmpty()
+                // 不是 JSON 时不能一律判 unknown：微博要人工验证时会回一整页 HTML
+                // （验证页 / 安全中心），把正文交给文案识别才能落到 needs_manual。
+                parseJsonObject(body) ?: return fail(classifyRetcode("", body.take(4000)), "")
             }
         } catch (e: IOException) {
             return fail(ReloginPolicy.CODE_NETWORK, "")
@@ -244,14 +271,15 @@ object WeiboPasswordLogin {
      */
     fun classifyRetcode(retcode: String, text: String): String {
         val rc = retcode.trim()
+        val t = text.lowercase()
+        // 文案里明确提到「验证」→ 一定是要人工处理，优先于任何码表
+        if (VERIFY_MARKS.any { t.contains(it) }) return ReloginPolicy.CODE_NEEDS_MANUAL
+
         if (rc in NEEDS_MANUAL_CODES) return ReloginPolicy.CODE_NEEDS_MANUAL
         if (rc in BAD_CREDENTIAL_CODES) return ReloginPolicy.CODE_BAD_CREDENTIALS
         if (rc in RISK_CODES) return ReloginPolicy.CODE_RISK_CONTROL
 
-        val t = text.lowercase()
         return when {
-            t.contains("验证码") || t.contains("二次验证") || t.contains("安全验证") ||
-                t.contains("扫码") || t.contains("captcha") -> ReloginPolicy.CODE_NEEDS_MANUAL
             t.contains("密码") || t.contains("账号或密码") || t.contains("用户名或密码") ->
                 ReloginPolicy.CODE_BAD_CREDENTIALS
             t.contains("频繁") || t.contains("风控") || t.contains("异常") || t.contains("限制") ->
@@ -328,18 +356,109 @@ object WeiboPasswordLogin {
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
             .build()
 
-    /** RSA/PKCS#1 v1.5 加密登录口令（新浪公钥为 1024 位，指数固定 65537）。 */
+    /**
+     * RSA/PKCS#1 v1.5 加密登录口令。
+     *
+     * 公钥形态见 [parsePublicKey] —— 2026-11 起新浪下发的已经是 PEM，老实现只认
+     * 16 进制 modulus，直接抛 NumberFormatException（表现为「登录返回未知错误」）。
+     */
     fun rsaEncrypt(
-        pubkeyHex: String, servertime: String, nonce: String, password: String,
+        pubkey: String, servertime: String, nonce: String, password: String,
     ): String {
-        val modulus = BigInteger(pubkeyHex.trim(), 16)
-        val exponent = BigInteger("10001", 16)
-        val key = KeyFactory.getInstance("RSA")
-            .generatePublic(RSAPublicKeySpec(modulus, exponent))
         val cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
-        cipher.init(Cipher.ENCRYPT_MODE, key)
+        cipher.init(Cipher.ENCRYPT_MODE, parsePublicKey(pubkey))
         val plain = "$servertime\t$nonce\n$password".toByteArray(Charsets.UTF_8)
         return cipher.doFinal(plain).toByteString().base64()
+    }
+
+    /** PEM 头的起始标记：出现它才说明是 PEM 而不是裸 16 进制。 */
+    private const val PEM_MARK = "-----BEGIN"
+
+    /** 16 进制 modulus（无 PEM 头）。 */
+    private val HEX_ONLY = Regex("^[0-9a-fA-F]+$")
+
+    /**
+     * 解析 `sso/prelogin.php` 下发的公钥，三种形态都认：
+     *
+     * 1. **PEM / X.509 SubjectPublicKeyInfo** —— `-----BEGIN PUBLIC KEY-----`，
+     *    当前（2026-11 实测）线上就是这种，1024 位；
+     * 2. **PEM / PKCS#1** —— `-----BEGIN RSA PUBLIC KEY-----`，兜底；
+     * 3. **裸 16 进制 modulus** —— 2026-11 之前的口径，指数固定 65537。
+     *
+     * 为什么必须三种都认：这是整条账密重登链路的唯一入口。解析失败只会被上层归成
+     * `unknown`，用户看到「微博登录返回未知错误」——密码再对也永远过不去，
+     * 且现象和「密码错」「风控」全都长得不一样，极难从日志定位。
+     */
+    fun parsePublicKey(raw: String): PublicKey {
+        val text = raw.trim()
+        require(text.isNotEmpty()) { "公钥为空" }
+        val body = if (text.contains(PEM_MARK)) pemBodyOf(text) else text
+        if (HEX_ONLY.matches(body)) {
+            return KeyFactory.getInstance("RSA").generatePublic(
+                RSAPublicKeySpec(BigInteger(body, 16), BigInteger("10001", 16)),
+            )
+        }
+        val der = body.decodeBase64()?.toByteArray()
+            ?: throw IllegalArgumentException("公钥不是合法的 PEM/base64")
+        val factory = KeyFactory.getInstance("RSA")
+        // 先按 X.509（带算法标识）；不成立再按 PKCS#1（裸 RSAPublicKey SEQUENCE）
+        runCatching { factory.generatePublic(X509EncodedKeySpec(der)) }
+            .getOrNull()
+            ?.let { return it }
+        val (modulus, exponent) = decodePkcs1(der)
+        return factory.generatePublic(RSAPublicKeySpec(modulus, exponent))
+    }
+
+    /** 去掉 PEM 头尾与所有空白，只留 base64 主体。 */
+    private fun pemBodyOf(pem: String): String =
+        pem.lineSequence()
+            .filterNot { it.contains("-----") }
+            .joinToString("")
+            .filterNot { it.isWhitespace() }
+
+    /**
+     * 极简 DER 读取，只服务 PKCS#1 这一种兜底：
+     * `RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }`。
+     *
+     * 不追求通用性（不做 tag 树、不认其他类型），越界一律抛异常交给上层归类。
+     */
+    internal fun decodePkcs1(der: ByteArray): Pair<BigInteger, BigInteger> {
+        var i = 0
+
+        fun u8(): Int {
+            require(i < der.size) { "DER 越界" }
+            return der[i++].toInt() and 0xFF
+        }
+
+        fun expect(tag: Int) {
+            require(u8() == tag) { "DER tag 不符" }
+        }
+
+        fun length(): Int {
+            val first = u8()
+            if (first and 0x80 == 0) return first
+            val n = first and 0x7F
+            require(n in 1..4 && i + n <= der.size) { "DER 长度越界" }
+            var len = 0
+            repeat(n) { len = (len shl 8) or u8() }
+            return len
+        }
+
+        fun integer(): BigInteger {
+            expect(0x02)
+            val len = length()
+            require(len > 0 && i + len <= der.size) { "DER 整数越界" }
+            val bytes = der.copyOfRange(i, i + len)
+            i += len
+            // 正数：DER 会在最高位为 1 时补一个 0x00，这里按无符号解释
+            return BigInteger(1, bytes)
+        }
+
+        expect(0x30)
+        length()
+        val modulus = integer()
+        val exponent = integer()
+        return modulus to exponent
     }
 
     private fun reasonTextOf(payload: JSONObject): String {

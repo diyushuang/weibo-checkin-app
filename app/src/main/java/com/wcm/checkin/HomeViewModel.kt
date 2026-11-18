@@ -623,6 +623,10 @@ class HomeViewModel @Inject constructor(
                 AccountStore.setAlcAt(ctx, uid, System.currentTimeMillis())
             }
             AccountStore.setAccountAutoRelogin(ctx, uid, true)
+            // 重新保存凭证 = 用户给了一次新授权：把历史失败/硬停清掉。
+            // 不清的话，只要曾经被「密码错」或「需要二次验证」硬停过一次，
+            // 重新填一遍凭证也永远点不动「立即重登」（shouldAttempt 对硬停码直接拒绝）。
+            AccountStore.saveReloginState(ctx, uid, ReloginPolicy.State())
         } catch (e: Exception) {
             toast(ctx.getString(R.string.relogin_failure_fmt, "凭证加密保存失败"))
             return false
