@@ -269,6 +269,40 @@ class EngageViewModel @Inject constructor(
         }
     }
 
+    // ---------- 动作模式与节奏 ----------
+
+    /**
+     * 切换单个动作的三态（关闭 / 仅手动 / 自动）。
+     *
+     * 从「关闭」切到「手动」时如果次数是 0，顺手补成 1：否则用户点了开关却看不到
+     * 任何效果（次数还是 0，等于没开），很容易以为按钮坏了。
+     */
+    fun setMode(action: EngageAction, mode: EngageActionMode) {
+        val cfg = _state.value.config
+        var next = cfg.withMode(action, mode)
+        if (mode != EngageActionMode.OFF && next.countOf(action) <= 0) {
+            next = when (action) {
+                EngageAction.POST -> next.copy(postCount = 1)
+                EngageAction.REPOST -> next.copy(repostCount = 1)
+                EngageAction.COMMENT -> next.copy(commentCount = 1)
+                EngageAction.LIKE -> next.copy(likeCount = 1)
+            }
+        }
+        persist(next)
+    }
+
+    /** 套用节奏预设（稳健 / 均衡 / 快速）。 */
+    fun applyPace(pace: EngagePace) {
+        persist(EngagePacing.apply(_state.value.config, pace))
+    }
+
+    /** 微调某一项间隔；[action] 为 null 表示动作之间的通用间隔。 */
+    fun adjustGap(action: EngageAction?, deltaMs: Long) {
+        val cfg = _state.value.config
+        val range = EngagePacing.gapOf(cfg, action)
+        persist(EngagePacing.withGap(cfg, action, EngagePacing.shift(range, deltaMs)))
+    }
+
     // ---------- 预览 ----------
 
     fun nextPreview() {
@@ -400,20 +434,42 @@ class EngageViewModel @Inject constructor(
 
     // ---------- 执行 ----------
 
-    fun runNow() {
+    /** 手动跑一轮（四类动作按各自设置全部执行）。 */
+    fun runNow() = launchRun(emptySet())
+
+    /**
+     * 只执行某一个动作。
+     *
+     * 这是「手动执行」的另一半：模式设为「仅手动」的动作只能从这里触发。
+     * 只跑指定的动作，不动其它动作的额度——用户点一次发帖，不该顺带把今天的
+     * 评论次数也扣掉。
+     */
+    fun runOnly(action: EngageAction) = launchRun(setOf(action))
+
+    private fun launchRun(only: Set<EngageAction>) {
         if (_state.value.running) return
+        val label = if (only.isEmpty()) "" else "（仅${only.joinToString("、") { it.label }}）"
         viewModelScope.launch {
             _state.update {
-                it.copy(running = true, message = "", progress = EngageProgress(stage = "准备执行"))
+                it.copy(
+                    running = true,
+                    message = "",
+                    progress = EngageProgress(
+                        stage = "准备执行$label",
+                        startedAt = System.currentTimeMillis(),
+                        trigger = if (only.isEmpty()) EngageTrigger.MANUAL_ALL else EngageTrigger.MANUAL_ONLY,
+                    ),
+                )
             }
             // service.run 内部已切到 IO，这里不必再包一层
-            val outcome = runCatching { service.run(background = false) }
+            val outcome = runCatching { service.run(background = false, only = only) }
                 .getOrElse { EngageOutcome(blockedReason = "执行异常：${it.message.orEmpty().take(80)}") }
             val finishedRun = outcome.run
             val msg = when {
                 outcome.blockedReason.isNotEmpty() -> outcome.blockedReason
                 finishedRun != null -> buildString {
-                    append("本轮完成：").append(finishedRun.summary())
+                    append(if (only.isEmpty()) "本轮完成：" else "${only.joinToString("、") { it.label }}完成：")
+                    append(finishedRun.summary())
                     // 目标流不可用这类环境问题不走 blockedReason，只放在 notes 里；
                     // 不拼进来用户就只看到「评论 0/1」，看不出是没目标还是被风控。
                     outcome.notes.firstOrNull()?.let { append("（").append(it).append("）") }

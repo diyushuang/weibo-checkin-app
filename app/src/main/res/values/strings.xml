@@ -482,6 +482,23 @@
     <string name="engage_count_like">点赞</string>
     <string name="engage_count_unit">次/天</string>
 
+    <string name="engage_actions_title">动作与次数</string>
+    <string name="engage_action_off_hint">已关闭</string>
+    <string name="engage_action_run_only">单独执行</string>
+    <string name="engage_actions_note">「关闭」不做；「仅手动」不参与自动轮次（打开 App 自动执行），点「立即执行一次」或该动作的「单独执行」时仍会执行；「自动」参与每一轮自动执行。</string>
+
+    <string name="engage_pace_title">执行节奏</string>
+    <string name="engage_pace_post">发帖间隔</string>
+    <string name="engage_pace_comment">评论间隔</string>
+    <string name="engage_pace_repost">转发间隔</string>
+    <string name="engage_pace_like">点赞间隔</string>
+    <string name="engage_pace_between">动作之间</string>
+    <string name="engage_pace_budget">单轮时间预算</string>
+    <string name="engage_pace_note">间隔越短越容易被限流：自动执行建议「均衡」或「稳健」，手动补跑可以用「快速」。每次间隔在上限内随机，不会一直取同值。后台执行时预算上限为 9 分钟。</string>
+
+    <string name="engage_trace_title">执行过程</string>
+    <string name="engage_trace_idle">尚未开始</string>
+
     <string name="engage_time_title">执行时间</string>
     <string name="engage_time_quiet">免打扰时段</string>
     <string name="engage_auto_run">打开 App 时自动执行</string>

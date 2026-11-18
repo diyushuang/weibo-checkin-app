@@ -24,7 +24,7 @@ object EngagePlanner {
      * 注意：这**只影响执行顺序**，不影响界面展示顺序 —— `EngageAction.entries`
      * 仍是 评论/转发/点赞/发帖，设置页的次数排列与运行摘要都按那个顺序显示。
      */
-    private val EXECUTION_ORDER = listOf(
+    val EXECUTION_ORDER = listOf(
         EngageAction.POST,
         EngageAction.COMMENT,
         EngageAction.REPOST,
@@ -53,11 +53,18 @@ object EngagePlanner {
      *
      * 发帖额外受两件事压制：存在未收敛的预占（上次结果未知）时清零——
      * 宁可今天不发，也不能重复发。
+     *
+     * [only] 非空时只统计这些动作（单项执行）：其它动作直接归零，
+     * 这样「只点一次发帖」不会顺带把评论额度也扣掉。
      */
-    fun remaining(config: EngageConfig, counter: EngageDayCounter): Map<EngageAction, Int> {
+    fun remaining(
+        config: EngageConfig,
+        counter: EngageDayCounter,
+        only: Set<EngageAction> = emptySet(),
+    ): Map<EngageAction, Int> {
         val map = LinkedHashMap<EngageAction, Int>(4)
         for (action in EngageAction.entries) {
-            if (!config.enabledOf(action)) {
+            if (!config.enabledOf(action) || (only.isNotEmpty() && action !in only)) {
                 map[action] = 0
                 continue
             }
@@ -83,7 +90,15 @@ object EngagePlanner {
      * 顺序固定，因为要按重要度排列显示：先讲"白跑"，再讲"没用"，最后讲"危险"。
      */
     fun quotaHints(config: EngageConfig): List<String> {
-        val hints = ArrayList<String>(5)
+        val hints = ArrayList<String>(6)
+        val manualOnly = EngageAction.entries.filter {
+            config.enabledOf(it) && !config.autoOf(it)
+        }
+        if (manualOnly.isNotEmpty()) {
+            hints.add(
+                "${manualOnly.joinToString("、") { it.label }}设为「仅手动」：自动轮次不会做，只能点该动作的「单独执行」"
+            )
+        }
         if (config.commentEnabled && config.commentCount > 4) {
             hints.add("评论每日仅前 4 条计入超话经验，超出部分不产生经验且增加风控风险")
         }
@@ -110,14 +125,21 @@ object EngagePlanner {
     /**
      * 生成这一轮的执行计划。
      *
-     * [nowMillis] 参与免打扰判断；[background] 为 true 时若配置禁止后台发帖，
-     * 发帖会被扣掉并记一条 note（而不是整轮不跑）。
+     * [nowMillis] 参与免打扰判断；[background] 为 true 时是**自动轮次**
+     * （打开 App 补跑 / 后台 Worker）：
+     * - 设为「仅手动」的动作会被扣掉，并记一条 note —— 否则用户会看到
+     *   「我明明关了自动，它还是跑了」；
+     * - 若配置禁止后台发帖，发帖会被扣掉并记一条 note（而不是整轮不跑）。
+     *
+     * [only] 非空表示**只执行这些动作**（单项执行按钮），此时不受自动/手动开关约束：
+     * 用户主动点了按钮，就该按他点的做。
      */
     fun plan(
         config: EngageConfig,
         counter: EngageDayCounter,
         nowMillis: Long,
         background: Boolean = false,
+        only: Set<EngageAction> = emptySet(),
     ): Plan {
         val invalid = config.validate()
         if (invalid != null) return Plan(blocked = invalid)
@@ -126,13 +148,28 @@ object EngagePlanner {
             return Plan(blocked = "当前处于免打扰时段（${config.quietStartHour}–${config.quietEndHour} 点）")
         }
 
-        val notes = ArrayList<String>(3)
-        val left = remaining(config, counter).toMutableMap()
+        val notes = ArrayList<String>(4)
+        val left = remaining(config, counter, only).toMutableMap()
 
         if (counter.hasPendingPost()) notes.add("上次发帖结果未知，今日发帖已暂停，请到微博确认后在台账里处理")
-        if (background && !config.postInBackground && (left[EngageAction.POST] ?: 0) > 0) {
-            left[EngageAction.POST] = 0
-            notes.add("后台任务未允许发帖，本次跳过发帖")
+
+        // 自动轮次里，「仅手动」的动作一律不做。放在 postInBackground 之前：
+        // 两者叠加时先说「你设了仅手动」，这比「后台不允许发帖」更贴近用户的心智。
+        val manualSkipped = ArrayList<EngageAction>(4)
+        if (background) {
+            for (action in EngageAction.entries) {
+                if ((left[action] ?: 0) > 0 && !config.autoOf(action)) {
+                    left[action] = 0
+                    manualSkipped.add(action)
+                }
+            }
+            if (manualSkipped.isNotEmpty()) {
+                notes.add("${manualSkipped.joinToString("、") { it.label }}设为「仅手动」，本次自动轮次已跳过")
+            }
+            if (!config.postInBackground && (left[EngageAction.POST] ?: 0) > 0) {
+                left[EngageAction.POST] = 0
+                notes.add("后台任务未允许发帖，本次跳过发帖")
+            }
         }
 
         val actions = ArrayList<PlannedAction>()
@@ -156,10 +193,21 @@ object EngagePlanner {
             notes.add("已达单轮上限 ${config.maxActionsPerRun}，其余留待下一轮")
         }
 
-        return Plan(
-            actions = actions,
-            blocked = if (actions.isEmpty()) "今日已无待执行动作" else "",
-            notes = notes,
-        )
+        // 空计划的三种成因要分开说，否则用户只看到「今日已无待执行动作」，
+        // 完全想不到是自己把动作关成了「仅手动」。
+        val blocked = when {
+            actions.isNotEmpty() -> ""
+            only.isNotEmpty() -> {
+                val name = only.joinToString("、") { it.label }
+                "本次没有可执行的${name}：今日额度已用完或该动作已关闭"
+            }
+            background && manualSkipped.size == EngageAction.entries.size ->
+                "自动轮次没有可执行动作（四项都已设为「仅手动」或关闭）"
+            background && manualSkipped.isNotEmpty() ->
+                "自动轮次没有可执行动作（${manualSkipped.joinToString("、") { it.label }}已设为仅手动）"
+            else -> "今日已无待执行动作"
+        }
+
+        return Plan(actions = actions, blocked = blocked, notes = notes)
     }
 }

@@ -13,12 +13,29 @@ package com.wcm.checkin
  *   这两条在 [EngagePlanner.quotaHints] 里必须对用户显式提示。
  */
 
-/** 四个可执行动作。枚举声明顺序即默认执行顺序：评论 → 转发 → 点赞 → 发帖。 */
+/** 四个可执行动作。枚举声明顺序即界面展示顺序：评论 → 转发 → 点赞 → 发帖。 */
 enum class EngageAction(val key: String, val label: String) {
     COMMENT("comment", "评论"),
     REPOST("repost", "转发"),
     LIKE("like", "点赞"),
     POST("post", "发帖"),
+}
+
+/**
+ * 单个动作的参与方式（三态）。
+ *
+ * 0.12.x 只有「开启 / 关闭」两态，四个动作被绑在同一轮里跑，用户无法只让点赞自动、
+ * 发帖必须自己点。三态把「要不要做」和「能不能自己动」拆成两件事：
+ * - [OFF]    —— 完全不做，也不出现在计划里；
+ * - [MANUAL] —— 只响应「单独执行」按钮，自动轮次（打开 App / 后台）会跳过；
+ * - [AUTO]   —— 参与自动轮次，也能手动执行。
+ *
+ * 默认 [AUTO]：升级前的用户行为不变，不会因为加了开关就少做动作。
+ */
+enum class EngageActionMode(val label: String, val hint: String) {
+    OFF("关闭", "本轮不执行这个动作"),
+    MANUAL("仅手动", "只有点「单独执行」才做，自动轮次跳过"),
+    AUTO("自动", "自动轮次与手动执行都会做"),
 }
 
 /**
@@ -110,6 +127,34 @@ enum class EngageErrorKind {
     /** 这类失败是否意味着「这次请求可能已经生效」——发帖遇到时必须进 UNCERTAIN。 */
     val outcomeUnknown: Boolean
         get() = this == NETWORK || this == SERVER_ERROR
+
+    /**
+     * 中文短语。
+     *
+     * 枚举名只适合 logcat，日志与界面要给用户看，否则「失败（TARGET_GONE）」
+     * 这种输出等于没说。集中在这里，避免每个调用点各写一份 when。
+     */
+    val label: String
+        get() = when (this) {
+            NONE -> "正常"
+            LOGIN_WALL -> "登录墙拦截"
+            NOT_LOGGED_IN -> "未登录"
+            TOPIC_NOT_FOLLOWED -> "未关注超话"
+            TOPIC_BLOCKED -> "被屏蔽或禁言"
+            LEVEL_TOO_LOW -> "超话等级不足"
+            RATE_LIMITED -> "操作频繁被限流"
+            NEED_VERIFY -> "需要身份验证"
+            CONTENT_REJECTED -> "内容被拦截"
+            PARAM_INVALID -> "参数错误"
+            ENDPOINT_INVALID -> "接口已变更"
+            TARGET_GONE -> "目标已失效"
+            DUPLICATE_ACTION -> "重复操作"
+            NETWORK -> "网络异常"
+            SERVER_ERROR -> "服务端异常"
+            NO_TEXT -> "无可用文案"
+            CONFIG_INVALID -> "配置非法"
+            GUARD_TRIPPED -> "已熔断"
+        }
 }
 
 /** 熔断器给出的处置建议。 */
@@ -152,6 +197,17 @@ data class EngageConfig(
     val commentEnabled: Boolean = true,
     val likeEnabled: Boolean = true,
 
+    /**
+     * 各动作是否参与**自动**轮次（打开 App 补跑 / 后台 Worker）。
+     *
+     * 与 `*Enabled` 组合成 [EngageActionMode] 三态。手动「单独执行」不受这里的限制——
+     * 用户主动点了按钮，就不该再被自动开关挡住。
+     */
+    val postAuto: Boolean = true,
+    val repostAuto: Boolean = true,
+    val commentAuto: Boolean = true,
+    val likeAuto: Boolean = true,
+
     val postCount: Int = 1,
     val repostCount: Int = 2,
     val commentCount: Int = 4,
@@ -170,17 +226,25 @@ data class EngageConfig(
      */
     val autoRunOnOpen: Boolean = false,
 
-    val postGapMinMs: Long = 5 * 60_000L,
-    val postGapMaxMs: Long = 8 * 60_000L,
-    val repostGapMinMs: Long = 60_000L,
-    val repostGapMaxMs: Long = 180_000L,
-    val commentGapMinMs: Long = 25_000L,
-    val commentGapMaxMs: Long = 60_000L,
-    val likeGapMinMs: Long = 15_000L,
-    val likeGapMaxMs: Long = 40_000L,
+    /**
+     * 各类动作之间的间隔区间。
+     *
+     * 默认值 = [EngagePace.BALANCED]（0.13.0 起）。0.12.x 的老默认值（发帖 5–8 分钟、
+     * 评论 25–60 秒…）现在保留成 [EngagePace.GENTLE]，用户可以在任务页一键切回去。
+     * 这套值此前没有任何 UI 入口，所以「存的就是旧默认值」只可能来自默认——
+     * `EngageCodec` 据此做一次性迁移（见 `LEGACY_GAPS`）。
+     */
+    val postGapMinMs: Long = 60_000L,
+    val postGapMaxMs: Long = 120_000L,
+    val repostGapMinMs: Long = 20_000L,
+    val repostGapMaxMs: Long = 45_000L,
+    val commentGapMinMs: Long = 10_000L,
+    val commentGapMaxMs: Long = 20_000L,
+    val likeGapMinMs: Long = 8_000L,
+    val likeGapMaxMs: Long = 15_000L,
     /** 动作之间的额外间隔。 */
-    val actionGapMinMs: Long = 5_000L,
-    val actionGapMaxMs: Long = 20_000L,
+    val actionGapMinMs: Long = 3_000L,
+    val actionGapMaxMs: Long = 8_000L,
 
     /** 连续失败达到该值即熔断。 */
     val failStreakAbort: Int = 3,
@@ -233,12 +297,40 @@ data class EngageConfig(
         EngageAction.LIKE -> likeEnabled
     }
 
+    fun autoOf(action: EngageAction): Boolean = when (action) {
+        EngageAction.POST -> postAuto
+        EngageAction.REPOST -> repostAuto
+        EngageAction.COMMENT -> commentAuto
+        EngageAction.LIKE -> likeAuto
+    }
+
+    /** 三态口径，界面与计划器都读这一个函数，避免两处各拼一次。 */
+    fun modeOf(action: EngageAction): EngageActionMode = when {
+        !enabledOf(action) -> EngageActionMode.OFF
+        !autoOf(action) -> EngageActionMode.MANUAL
+        else -> EngageActionMode.AUTO
+    }
+
+    fun withMode(action: EngageAction, mode: EngageActionMode): EngageConfig {
+        val on = mode != EngageActionMode.OFF
+        val auto = mode == EngageActionMode.AUTO
+        return when (action) {
+            EngageAction.POST -> copy(postEnabled = on, postAuto = auto)
+            EngageAction.REPOST -> copy(repostEnabled = on, repostAuto = auto)
+            EngageAction.COMMENT -> copy(commentEnabled = on, commentAuto = auto)
+            EngageAction.LIKE -> copy(likeEnabled = on, likeAuto = auto)
+        }
+    }
+
     fun gapRangeOf(action: EngageAction): LongRange = when (action) {
         EngageAction.POST -> postGapMinMs..postGapMaxMs
         EngageAction.REPOST -> repostGapMinMs..repostGapMaxMs
         EngageAction.COMMENT -> commentGapMinMs..commentGapMaxMs
         EngageAction.LIKE -> likeGapMinMs..likeGapMaxMs
     }
+
+    /** 跨动作的通用间隔。 */
+    fun actionGapRange(): LongRange = actionGapMinMs..actionGapMaxMs
 
     /** 配置是否具备执行条件。返回非空字符串即不可执行。 */
     fun validate(consentVersionExpected: Int = CONSENT_VERSION): String? = when {
@@ -266,6 +358,11 @@ data class EngageConfig(
             likeGapMinMs to likeGapMaxMs,
             actionGapMinMs to actionGapMaxMs,
         ).any { (min, max) -> min < 0L || max < min } -> "间隔区间非法（上限不能小于下限）"
+        // 间隔配得比单轮预算还长时，每个动作都会被判「来不及」而跳过，
+        // 表现成「设了却不执行」，所以在这里直接拦住。
+        listOf(
+            postGapMaxMs, repostGapMaxMs, commentGapMaxMs, likeGapMaxMs, actionGapMaxMs,
+        ).any { it > EngagePacing.MAX_GAP_MS } -> "间隔上限不能超过 ${EngagePacing.MAX_GAP_MS / 60_000} 分钟"
         else -> null
     }
 
@@ -298,38 +395,9 @@ data class EngageText(
 )
 
 /**
- * 一轮执行的实时进度。
- *
- * 为什么需要它：一轮动作含间隔最长 8 分钟，此前 `EngageService` 只在一轮**结束**
- * 时写运行记录，界面除了一行「正在执行…」之外没有任何可观测输出 —— 用户无法
- * 区分「在等间隔」「在跑」还是「已经挂了」。这里把阶段、当前动作、已完成条数
- * 与最近一条结果直接推给界面。
- *
- * 与 [EngageActionRecord] 不同，这是**过程态**：实时推给界面、不落盘
- * （落盘的是运行记录 [EngageRun]）。
+ * 一轮执行的实时进度见单独的 `EngageProgress.kt`（步骤清单 + 流水 + ETA）。
+ * 本文件只留持久化模型与配置。
  */
-data class EngageProgress(
-    /** 阶段说明，例如「校验登录态」「拉取超话帖子流」「执行动作」。 */
-    val stage: String = "",
-    /** 正在执行的动作；为空表示还在准备阶段。 */
-    val action: EngageAction? = null,
-    /** 已完成（含失败/跳过）的动作数。 */
-    val done: Int = 0,
-    /** 本轮计划动作总数。 */
-    val total: Int = 0,
-    /** 最近一条结果的一句话说明。 */
-    val message: String = "",
-) {
-    /** 「3/10 · 评论：成功」这样的单行进度。 */
-    fun line(): String {
-        val prefix = if (action != null) "${action.label} " else ""
-        val counter = if (total > 0) "$done/$total" else ""
-        val tail = listOf(prefix.trim(), counter).filter { it.isNotEmpty() }.joinToString(" ")
-        return listOf(stage, tail, message)
-            .filter { it.isNotEmpty() }
-            .joinToString(" · ")
-    }
-}
 
 /** 一条动作的执行记录。 */
 data class EngageActionRecord(
@@ -359,10 +427,26 @@ data class EngageRun(
     /** 终止原因；空串表示跑完计划内全部动作。 */
     val stopReason: String = "",
     val records: List<EngageActionRecord> = emptyList(),
+    /** 这一轮是谁触发的（手动全部 / 单项 / 自动）。 */
+    val trigger: EngageTrigger = EngageTrigger.MANUAL_ALL,
+    /** 单项执行时限定做的动作；为空表示不限制。 */
+    val only: List<EngageAction> = emptyList(),
+    /**
+     * 过程快照：步骤清单与流水。
+     *
+     * 之前只存 [records]，跑完就只剩「评论 1/0 失败」这种结论，没有任何上下文
+     * （在等间隔卡住？被风控？文案没取到？）。把过程一起存下来，运行记录页
+     * 才能做到「点开一轮，按时间顺序看它到底经历了什么」。
+     */
+    val steps: List<EngageStep> = emptyList(),
+    val logs: List<EngageLogEntry> = emptyList(),
 ) {
     val okCount: Int get() = records.count { it.state == ActionState.OK }
     val failCount: Int get() = records.count { it.state == ActionState.FAILED }
     val uncertainCount: Int get() = records.count { it.state == ActionState.UNCERTAIN }
+
+    /** 一轮总耗时；未结束时返回 0（界面自己按当前时间算）。 */
+    val durationMs: Long get() = if (finishedAt > 0L) (finishedAt - startedAt).coerceAtLeast(0L) else 0L
 
     /** 「评论 3/4 · 转发 2/2 · 点赞 3/3 · 发帖 1/1」这样的单行摘要。 */
     fun summary(): String = EngageAction.entries.joinToString(" · ") { a ->

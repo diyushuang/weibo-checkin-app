@@ -33,6 +33,10 @@ object EngageCodec {
         put("r", c.repostEnabled)
         put("c", c.commentEnabled)
         put("l", c.likeEnabled)
+        put("pa", c.postAuto)
+        put("ra", c.repostAuto)
+        put("ca2", c.commentAuto)
+        put("la", c.likeAuto)
         put("pc", c.postCount)
         put("rc", c.repostCount)
         put("cc", c.commentCount)
@@ -40,6 +44,10 @@ object EngageCodec {
         put("qs", c.quietStartHour)
         put("qe", c.quietEndHour)
         put("aro", c.autoRunOnOpen)
+        // 节奏代际标记：只有**没有**这个键的配置（0.13.0 之前写的）才走间隔迁移。
+        // 否则「用户主动点了稳健档」存下来的数值会与旧默认值完全相同，
+        // 下次读取又被迁移成均衡档 —— 表现就是「选了稳健，重启后自己变回均衡」。
+        put("gv", GAP_VERSION)
         put("pg1", c.postGapMinMs)
         put("pg2", c.postGapMaxMs)
         put("rg1", c.repostGapMinMs)
@@ -69,6 +77,20 @@ object EngageCodec {
         val o = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         if (o.optInt("v", 0) != CONFIG_VERSION) return null
         val d = EngageConfig()
+
+        // 间隔：0.13.0 之前这五个区间**没有任何 UI 入口**，落盘的值只可能来自当时的
+        // 默认值（GENTLE）。所以「恰好等于旧默认」可以安全地一次性迁移到新默认档
+        // （BALANCED），否则升级后用户抱怨的「间隔太长」根本不会改变。
+        //
+        // 只在配置**没有 gv 标记**时迁移：有了标记说明它由新版写出，值就是用户的选择
+        // （包括主动选「稳健」得到的、与旧默认完全相同的那组数值）。
+        val migrateGaps = !o.has("gv") || o.optInt("gv", GAP_VERSION) < GAP_VERSION
+        val postGap = migrateGap(migrateGaps, o, "pg1", "pg2", LEGACY_GAPS.post, d.gapRangeOf(EngageAction.POST))
+        val repostGap = migrateGap(migrateGaps, o, "rg1", "rg2", LEGACY_GAPS.repost, d.gapRangeOf(EngageAction.REPOST))
+        val commentGap = migrateGap(migrateGaps, o, "cg1", "cg2", LEGACY_GAPS.comment, d.gapRangeOf(EngageAction.COMMENT))
+        val likeGap = migrateGap(migrateGaps, o, "lg1", "lg2", LEGACY_GAPS.like, d.gapRangeOf(EngageAction.LIKE))
+        val actionGap = migrateGap(migrateGaps, o, "ag1", "ag2", LEGACY_GAPS.actionGap, d.actionGapRange())
+
         return EngageConfig(
             enabled = o.optBoolean("e", d.enabled),
             consentAt = o.optLong("ca", d.consentAt),
@@ -83,6 +105,11 @@ object EngageCodec {
             repostEnabled = o.optBoolean("r", d.repostEnabled),
             commentEnabled = o.optBoolean("c", d.commentEnabled),
             likeEnabled = o.optBoolean("l", d.likeEnabled),
+            // 缺键时按「自动」读：老版本没有这个维度，行为必须保持不变
+            postAuto = o.optBoolean("pa", d.postAuto),
+            repostAuto = o.optBoolean("ra", d.repostAuto),
+            commentAuto = o.optBoolean("ca2", d.commentAuto),
+            likeAuto = o.optBoolean("la", d.likeAuto),
             postCount = o.optInt("pc", d.postCount),
             repostCount = o.optInt("rc", d.repostCount),
             commentCount = o.optInt("cc", d.commentCount),
@@ -90,16 +117,16 @@ object EngageCodec {
             quietStartHour = o.optInt("qs", d.quietStartHour),
             quietEndHour = o.optInt("qe", d.quietEndHour),
             autoRunOnOpen = o.optBoolean("aro", d.autoRunOnOpen),
-            postGapMinMs = o.optLong("pg1", d.postGapMinMs),
-            postGapMaxMs = o.optLong("pg2", d.postGapMaxMs),
-            repostGapMinMs = o.optLong("rg1", d.repostGapMinMs),
-            repostGapMaxMs = o.optLong("rg2", d.repostGapMaxMs),
-            commentGapMinMs = o.optLong("cg1", d.commentGapMinMs),
-            commentGapMaxMs = o.optLong("cg2", d.commentGapMaxMs),
-            likeGapMinMs = o.optLong("lg1", d.likeGapMinMs),
-            likeGapMaxMs = o.optLong("lg2", d.likeGapMaxMs),
-            actionGapMinMs = o.optLong("ag1", d.actionGapMinMs),
-            actionGapMaxMs = o.optLong("ag2", d.actionGapMaxMs),
+            postGapMinMs = postGap.first,
+            postGapMaxMs = postGap.last,
+            repostGapMinMs = repostGap.first,
+            repostGapMaxMs = repostGap.last,
+            commentGapMinMs = commentGap.first,
+            commentGapMaxMs = commentGap.last,
+            likeGapMinMs = likeGap.first,
+            likeGapMaxMs = likeGap.last,
+            actionGapMinMs = actionGap.first,
+            actionGapMaxMs = actionGap.last,
             failStreakAbort = o.optInt("fs", d.failStreakAbort),
             maxActionsPerRun = o.optInt("ma", d.maxActionsPerRun),
             requireConfirmBeforePost = o.optBoolean("rcp", d.requireConfirmBeforePost),
@@ -117,6 +144,33 @@ object EngageCodec {
                 .takeIf { it != LEGACY_RUN_BUDGET_MS } ?: d.maxRunDurationMs,
         )
     }
+
+    /**
+     * 读一组间隔并做一次性迁移。
+     *
+     * 只有在**上下限同时等于旧默认值**时才替换：单边相等更像是用户手动调过一半，
+     * 那种情况必须原样保留。[shouldMigrate] 为 false（配置已带 gv 标记）时一律原样读。
+     */
+    private fun migrateGap(
+        shouldMigrate: Boolean,
+        o: JSONObject,
+        keyMin: String,
+        keyMax: String,
+        legacy: LongRange,
+        def: LongRange,
+    ): LongRange {
+        if (!o.has(keyMin) && !o.has(keyMax)) return def
+        val min = o.optLong(keyMin, def.first)
+        val max = o.optLong(keyMax, def.last)
+        if (!shouldMigrate) return min..max
+        return if (min == legacy.first && max == legacy.last) def else min..max
+    }
+
+    /** 节奏代际：0.13.0 引入。老配置（无 `gv`）读时迁移一次，之后值不再被动。 */
+    private const val GAP_VERSION = 1
+
+    /** 0.12.x 的默认间隔（现为 `EngagePace.GENTLE`），仅用于老配置迁移。 */
+    private val LEGACY_GAPS = EngagePacing.gapsOf(EngagePace.GENTLE)!!
 
     /** 0.12.6 之前的默认单轮预算（8 分钟）；仅用于老配置迁移。 */
     private const val LEGACY_RUN_BUDGET_MS = 8 * 60_000L
@@ -231,6 +285,37 @@ object EngageCodec {
         put("st", r.startedAt)
         put("ft", r.finishedAt)
         put("sr", r.stopReason)
+        put("tr", r.trigger.name)
+        put("ol", JSONArray().apply { r.only.forEach { put(it.name) } })
+        put("sp", JSONArray().apply {
+            r.steps.forEach { s ->
+                put(
+                    JSONObject().apply {
+                        put("i", s.id)
+                        put("t", s.title)
+                        put("s", s.state.name)
+                        put("b", s.startedAt)
+                        put("e", s.endedAt)
+                        put("d", s.detail)
+                    }
+                )
+            }
+        })
+        put("lg", JSONArray().apply {
+            // 落盘再截一次：内存里最多 140 条，但一次运行可能反复刷新草稿，
+            // 每条都写全量会让 prefs 写入量随运行时长线性增长。
+            r.logs.takeLast(MAX_LOGS_PERSISTED).forEach { e ->
+                put(
+                    JSONObject().apply {
+                        put("at", e.at)
+                        put("l", e.level.name)
+                        put("a", e.action?.name ?: "")
+                        put("q", e.seq)
+                        put("x", e.text)
+                    }
+                )
+            }
+        })
         put("rec", JSONArray().apply {
             r.records.forEach { a ->
                 put(
@@ -286,8 +371,49 @@ object EngageCodec {
             finishedAt = o.optLong("ft", 0L),
             stopReason = o.optString("sr", ""),
             records = records,
+            trigger = runCatching { EngageTrigger.valueOf(o.optString("tr")) }
+                .getOrDefault(EngageTrigger.MANUAL_ALL),
+            only = o.optJSONArray("ol")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    runCatching { EngageAction.valueOf(arr.optString(i)) }.getOrNull()
+                }
+            }.orEmpty(),
+            steps = o.optJSONArray("sp")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    val s = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val id = s.optString("i", "")
+                    if (id.isEmpty()) return@mapNotNull null
+                    EngageStep(
+                        id = id,
+                        title = s.optString("t", id),
+                        state = runCatching { EngageStepState.valueOf(s.optString("s")) }
+                            .getOrDefault(EngageStepState.PENDING),
+                        startedAt = s.optLong("b", 0L),
+                        endedAt = s.optLong("e", 0L),
+                        detail = s.optString("d", ""),
+                    )
+                }
+            }.orEmpty(),
+            logs = o.optJSONArray("lg")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    val e = arr.optJSONObject(i) ?: return@mapNotNull null
+                    EngageLogEntry(
+                        at = e.optLong("at", 0L),
+                        level = runCatching { EngageLogLevel.valueOf(e.optString("l")) }
+                            .getOrDefault(EngageLogLevel.INFO),
+                        action = e.optString("a", "").takeIf { it.isNotEmpty() }?.let {
+                            runCatching { EngageAction.valueOf(it) }.getOrNull()
+                        },
+                        seq = e.optInt("q", 0),
+                        text = e.optString("x", ""),
+                    )
+                }
+            }.orEmpty(),
         )
     }
+
+    /** 单条运行记录落盘的流水条数上限（内存里是 [EngageProgress.MAX_LOGS]）。 */
+    private const val MAX_LOGS_PERSISTED = 120
 
     // ---------- 发帖台账 ----------
 

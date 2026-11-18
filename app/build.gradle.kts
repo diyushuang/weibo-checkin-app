@@ -46,9 +46,12 @@ android {
         //             数据格式零迁移**，可直接覆盖安装 0.9.18（版本号跳过 0.9.19 是
         //             为了区分「行为等价但结构已变」这条线）。
         // · 0.11.x —— 持久登录加固：cookie/ALC 加密落盘、登录墙判死、ALC 免密码重签。
+        // · 0.12.x —— 超话互动任务：发帖/评论/转发/点赞，含写前预占与三态收敛。
+        // · 0.13.0 —— 互动任务可用性：执行节奏可调（默认从 6 分钟压到 2 分钟）、
+        //             动作三态（关闭/仅手动/自动）、单项执行、执行过程可视化。
         // 发版时这里只改 versionCode/versionName 两个数字，历史不要往这里堆。
-        versionCode = 42
-        versionName = "0.12.6"
+        versionCode = 43
+        versionName = "0.13.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

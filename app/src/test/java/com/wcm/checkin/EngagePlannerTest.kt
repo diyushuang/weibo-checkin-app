@@ -233,6 +233,90 @@ class EngagePlannerTest {
         assertEquals(ids.size, ids.toSet().size)
     }
 
+    // ---------- 单项执行 ----------
+
+    @Test
+    fun `单项执行只做指定的动作`() {
+        // 用户点「点赞」的单独执行，不该顺带把发帖/评论也跑一遍
+        val plan = EngagePlanner.plan(config(), counter(), at(10), only = setOf(EngageAction.LIKE))
+        assertEquals(listOf(EngageAction.LIKE, EngageAction.LIKE, EngageAction.LIKE), plan.actions.map { it.action })
+        assertEquals("", plan.blocked)
+    }
+
+    @Test
+    fun `单项执行不影响其它动作的额度`() {
+        val plan = EngagePlanner.plan(config(), counter(), at(10), only = setOf(EngageAction.LIKE))
+        assertEquals(3, plan.actions.size)
+        // 只扣点赞：评论仍然是完整额度，下一轮照跑
+        val next = EngagePlanner.plan(config(), counter(done = mapOf(EngageAction.LIKE to 1)), at(11))
+        assertEquals(4, next.countOf(EngageAction.COMMENT))
+    }
+
+    @Test
+    fun `单项执行时额度用完给出明确原因`() {
+        val plan = EngagePlanner.plan(
+            config(),
+            counter(done = mapOf(EngageAction.LIKE to 3)),
+            at(10),
+            only = setOf(EngageAction.LIKE),
+        )
+        assertTrue(plan.actions.isEmpty())
+        assertTrue(plan.blocked, plan.blocked.contains("没有可执行的点赞"))
+    }
+
+    @Test
+    fun `单项执行不受仅手动开关影响`() {
+        // 「仅手动」的意思是「只能手动点」，用户点了就必须执行
+        val cfg = config().copy(likeAuto = false)
+        val plan = EngagePlanner.plan(cfg, counter(), at(10), only = setOf(EngageAction.LIKE))
+        assertEquals(3, plan.countOf(EngageAction.LIKE))
+    }
+
+    // ---------- 自动 / 仅手动 ----------
+
+    @Test
+    fun `自动轮次跳过仅手动动作并说明原因`() {
+        val cfg = config().copy(postAuto = false, likeAuto = false)
+        val plan = EngagePlanner.plan(cfg, counter(), at(10), background = true)
+        assertEquals(0, plan.countOf(EngageAction.POST))
+        assertEquals(0, plan.countOf(EngageAction.LIKE))
+        assertEquals(4, plan.countOf(EngageAction.COMMENT))
+        assertTrue(plan.notes.any { it.contains("仅手动") })
+    }
+
+    @Test
+    fun `手动补跑仍然会做仅手动动作`() {
+        val cfg = config().copy(postAuto = false)
+        val plan = EngagePlanner.plan(cfg, counter(), at(10), background = false)
+        assertEquals(1, plan.countOf(EngageAction.POST))
+    }
+
+    @Test
+    fun `全部设为仅手动时自动轮次给出专门提示`() {
+        // 不能只说「今日已无待执行动作」——用户会以为额度用完，实际是自己关了自动
+        val cfg = config().copy(postAuto = false, repostAuto = false, commentAuto = false, likeAuto = false)
+        val plan = EngagePlanner.plan(cfg, counter(), at(10), background = true)
+        assertTrue(plan.actions.isEmpty())
+        assertTrue(plan.blocked, plan.blocked.contains("仅手动"))
+    }
+
+    @Test
+    fun `三态切换映射到启用与自动两个字段`() {
+        val cfg = config()
+        val off = cfg.withMode(EngageAction.LIKE, EngageActionMode.OFF)
+        assertEquals(EngageActionMode.OFF, off.modeOf(EngageAction.LIKE))
+        assertTrue(!off.likeEnabled)
+
+        val manual = off.withMode(EngageAction.LIKE, EngageActionMode.MANUAL)
+        assertEquals(EngageActionMode.MANUAL, manual.modeOf(EngageAction.LIKE))
+        assertTrue(manual.likeEnabled)
+        assertTrue(!manual.likeAuto)
+
+        val auto = manual.withMode(EngageAction.LIKE, EngageActionMode.AUTO)
+        assertEquals(EngageActionMode.AUTO, auto.modeOf(EngageAction.LIKE))
+        assertTrue(auto.likeEnabled && auto.likeAuto)
+    }
+
     // ---------- 互动目标需求 ----------
 
     @Test

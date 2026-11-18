@@ -113,6 +113,58 @@ class EngageCodecTest {
         assertNull(EngageCodec.configFromJson(null))
     }
 
+    // ---------- 动作三态与老数据迁移 ----------
+
+    @Test
+    fun `动作的自动开关往返一致`() {
+        val cfg = sampleConfig().copy(
+            postAuto = false,
+            commentAuto = false,
+        )
+        val back = EngageCodec.configFromJson(EngageCodec.configToJson(cfg))!!
+        assertEquals(EngageActionMode.MANUAL, back.modeOf(EngageAction.POST))
+        assertEquals(EngageActionMode.MANUAL, back.modeOf(EngageAction.COMMENT))
+        assertEquals(EngageActionMode.AUTO, back.modeOf(EngageAction.REPOST))
+    }
+
+    @Test
+    fun `老配置缺自动开关时按自动读`() {
+        // 0.13.0 之前没有这个维度：升级后行为必须保持不变，否则会少做动作
+        val back = EngageCodec.configFromJson("""{"v":1,"p":true,"r":true,"c":true,"l":true}""")!!
+        EngageAction.entries.forEach { assertEquals(it.label, EngageActionMode.AUTO, back.modeOf(it)) }
+    }
+
+    @Test
+    fun `老默认间隔升级后迁移到均衡档`() {
+        // 旧默认值（= 稳健档）没有任何 UI 入口，存下来只可能来自默认，迁移是安全的。
+        // 不迁移的话用户抱怨的「间隔太长」升级后一点没变。
+        val legacy = """{"v":1,"pg1":300000,"pg2":480000,"rg1":60000,"rg2":180000,
+            "cg1":25000,"cg2":60000,"lg1":15000,"lg2":40000,"ag1":5000,"ag2":20000}"""
+        val back = EngageCodec.configFromJson(legacy)!!
+        assertEquals(EngageConfig(), back)
+        assertEquals(EngagePace.BALANCED, EngagePacing.presetOf(back))
+    }
+
+    @Test
+    fun `自定义间隔不会被迁移覆盖`() {
+        // 上下限不同时等于旧默认，说明用户调过一半，必须原样保留
+        val custom = """{"v":1,"cg1":25000,"cg2":90000}"""
+        val back = EngageCodec.configFromJson(custom)!!
+        assertEquals(25_000L, back.commentGapMinMs)
+        assertEquals(90_000L, back.commentGapMaxMs)
+        assertEquals(EngagePace.CUSTOM, EngagePacing.presetOf(back))
+    }
+
+    @Test
+    fun `主动选稳健档不会被当成老配置迁移掉`() {
+        // 稳健档的数值与旧默认完全相同，靠 gv 标记区分「用户选的」与「老版本默认的」。
+        // 少了这个标记，用户选完稳健、重启 App 就自己变回均衡。
+        val gentle = EngagePacing.apply(EngageConfig(), EngagePace.GENTLE)
+        val back = EngageCodec.configFromJson(EngageCodec.configToJson(gentle))!!
+        assertEquals(EngagePace.GENTLE, EngagePacing.presetOf(back))
+        assertEquals(gentle, back)
+    }
+
     // ---------- 文案池 ----------
 
     @Test
@@ -207,6 +259,50 @@ class EngageCodecTest {
     @Test
     fun `缺 runId 的运行记录判为无效`() {
         assertNull(EngageCodec.runFromJson("""{"uid":"x"}"""))
+    }
+
+    @Test
+    fun `运行记录的过程快照可以回放`() {
+        // 过程日志与步骤是这次新增的排查依据，必须能落盘再读回来，
+        // 否则「跑完只剩一句失败」的问题等于没解。
+        val run = EngageRun(
+            runId = "r2",
+            accountUid = "u1",
+            topicId = tid,
+            topicName = "棋手战鹰",
+            startedAt = 1000L,
+            finishedAt = 9000L,
+            trigger = EngageTrigger.MANUAL_ONLY,
+            only = listOf(EngageAction.LIKE),
+            steps = listOf(
+                EngageStep("auth", "校验登录态", EngageStepState.OK, 1000L, 1500L, "有效"),
+                EngageStep("run", "执行动作", EngageStepState.WARN, 1500L, 9000L, "2/3 成功"),
+            ),
+            logs = listOf(
+                EngageLogEntry(1200L, EngageLogLevel.INFO, EngageAction.LIKE, 1, "提交中：点赞帖子 500"),
+                EngageLogEntry(1300L, EngageLogLevel.ERROR, EngageAction.LIKE, 1, "失败：操作频繁被限流"),
+            ),
+        )
+        val back = EngageCodec.runFromJson(EngageCodec.runToJson(run))!!
+        assertEquals(EngageTrigger.MANUAL_ONLY, back.trigger)
+        assertEquals(listOf(EngageAction.LIKE), back.only)
+        assertEquals(2, back.steps.size)
+        assertEquals(EngageStepState.WARN, back.steps[1].state)
+        assertEquals("2/3 成功", back.steps[1].detail)
+        assertEquals(2, back.logs.size)
+        assertEquals(EngageLogLevel.ERROR, back.logs[1].level)
+        assertEquals(EngageAction.LIKE, back.logs[1].action)
+        assertEquals("失败：操作频繁被限流", back.logs[1].text)
+        assertEquals(8_000L, back.durationMs)
+    }
+
+    @Test
+    fun `老运行记录缺过程字段时读成空列表`() {
+        val back = EngageCodec.runFromJson("""{"id":"r9","uid":"u1","st":1}""")!!
+        assertTrue(back.steps.isEmpty())
+        assertTrue(back.logs.isEmpty())
+        assertEquals(EngageTrigger.MANUAL_ALL, back.trigger)
+        assertEquals(0L, back.durationMs)
     }
 
     @Test
