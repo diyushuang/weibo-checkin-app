@@ -17,16 +17,35 @@ import org.junit.Test
 class EngageServiceTest {
 
     private class FakeConfigPort(var cfg: EngageConfig) : EngageConfigPort {
-        var texts: List<EngageText> = emptyList()
+        /** 三套库各一份，按 kind 存取——与真实实现同构，漏写会立刻编译失败。 */
+        private val pools: MutableMap<TextKind, MutableList<EngageText>> =
+            TextKind.entries.associateWith { mutableListOf<EngageText>() }.toMutableMap()
+
         override fun loadConfig(): EngageConfig = cfg
         override fun saveConfig(config: EngageConfig) { cfg = config }
-        override fun loadTexts(): List<EngageText> = texts
-        override fun saveTexts(texts: List<EngageText>) { this.texts = texts }
-        override fun appendTexts(newTexts: List<EngageText>): List<EngageText> {
-            texts = texts + newTexts
-            return texts
+        override fun loadTexts(kind: TextKind): List<EngageText> = pools.getValue(kind).toList()
+        override fun saveTexts(kind: TextKind, texts: List<EngageText>) {
+            pools[kind] = texts.toMutableList()
         }
-        override fun clearAll() { cfg = EngageConfig(); texts = emptyList() }
+
+        override fun appendTexts(kind: TextKind, newTexts: List<EngageText>): List<EngageText> {
+            pools.getValue(kind).addAll(newTexts)
+            return loadTexts(kind)
+        }
+
+        override fun mutateTexts(
+            kind: TextKind,
+            transform: (List<EngageText>) -> List<EngageText>,
+        ): List<EngageText> {
+            val next = transform(loadTexts(kind))
+            saveTexts(kind, next)
+            return next
+        }
+
+        override fun clearAll() {
+            cfg = EngageConfig()
+            TextKind.entries.forEach { pools[it] = mutableListOf() }
+        }
     }
 
     /** 只实现被断言用到的那几条，其余保持默认行为。 */

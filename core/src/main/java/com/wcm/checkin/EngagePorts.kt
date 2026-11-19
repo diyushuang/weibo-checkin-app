@@ -15,15 +15,28 @@ interface EngageConfigPort {
 
     fun saveConfig(config: EngageConfig)
 
-    /** 整池读取。[:data] 实现应当按单键存取，避免碎键扫描。 */
-    fun loadTexts(): List<EngageText>
+    /**
+     * 读某一套文案库（发帖 / 评论 / 转发）。
+     *
+     * 参数**刻意不给默认值**：三套库的正文上限与用途完全不同，让漏改的调用点
+     * 编译失败，好过它静默读到发帖库、把 500 字长文当评论发出去。
+     */
+    fun loadTexts(kind: TextKind): List<EngageText>
 
-    fun saveTexts(texts: List<EngageText>)
+    fun saveTexts(kind: TextKind, texts: List<EngageText>)
 
-    /** 追加若干条并返回落盘后的整池（便于界面立刻刷新统计）。 */
-    fun appendTexts(newTexts: List<EngageText>): List<EngageText>
+    /** 追加若干条并返回落盘后的整库（便于界面立刻刷新统计）。 */
+    fun appendTexts(kind: TextKind, newTexts: List<EngageText>): List<EngageText>
 
-    /** 清空配置与文案（危险操作，界面必须二次确认）。 */
+    /**
+     * 原子读改写某一套库。
+     *
+     * 收尾写使用统计必须走它：`loadTexts` → `saveTexts` 两步之间只要插进一次
+     * [appendTexts]（用户正在导入文案），刚导入的条目就会被整库回写悄悄覆盖掉。
+     */
+    fun mutateTexts(kind: TextKind, transform: (List<EngageText>) -> List<EngageText>): List<EngageText>
+
+    /** 清空配置与三套文案库（危险操作，界面必须二次确认）。 */
     fun clearAll()
 }
 

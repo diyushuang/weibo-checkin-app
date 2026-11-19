@@ -2,6 +2,7 @@ package com.wcm.checkin
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -16,14 +17,17 @@ import org.junit.Test
 class EngagePacingTest {
 
     @Test
-    fun `默认配置就是均衡档`() {
-        assertEquals(EngagePace.BALANCED, EngagePacing.presetOf(EngageConfig()))
+    fun `默认配置就是快速档`() {
+        // 0.14.0 起默认就是最快那档：发帖 5–15 秒、评论 1–10 秒
+        assertEquals(EngagePace.FAST, EngagePacing.presetOf(EngageConfig()))
+        assertEquals(5_000L..15_000L, EngageConfig().gapRangeOf(EngageAction.POST))
+        assertEquals(1_000L..10_000L, EngageConfig().gapRangeOf(EngageAction.COMMENT))
     }
 
     @Test
-    fun `稳健档等于 0_12 的旧默认间隔`() {
+    fun `慢速档等于 0_12 的旧默认间隔`() {
         // 老默认值必须能一键找回：这是「我觉得太快了想切回去」的退路
-        val g = EngagePacing.gapsOf(EngagePace.GENTLE)!!
+        val g = EngagePacing.gapsOf(EngagePace.SLOW)!!
         assertEquals(5 * 60_000L..8 * 60_000L, g.post)
         assertEquals(25_000L..60_000L, g.comment)
         assertEquals(60_000L..180_000L, g.repost)
@@ -32,11 +36,34 @@ class EngagePacingTest {
     }
 
     @Test
-    fun `三档都能被反向识别`() {
-        for (pace in listOf(EngagePace.GENTLE, EngagePace.BALANCED, EngagePace.FAST)) {
+    fun `五档都能被反向识别`() {
+        for (pace in EngagePace.entries.filter { it != EngagePace.CUSTOM }) {
             val cfg = EngagePacing.apply(EngageConfig(), pace)
             assertEquals(pace.label, pace, EngagePacing.presetOf(cfg))
         }
+    }
+
+    @Test
+    fun `档位按速度单调递增`() {
+        val counts = mapOf(
+            EngageAction.POST to 1,
+            EngageAction.COMMENT to 4,
+            EngageAction.REPOST to 2,
+            EngageAction.LIKE to 3,
+        )
+        val order = listOf(
+            EngagePace.TURBO, EngagePace.FAST, EngagePace.BALANCED, EngagePace.GENTLE, EngagePace.SLOW,
+        )
+        val estimates = order.map { EngagePacing.estimateRunMs(EngagePacing.apply(EngageConfig(), it), counts) }
+        assertEquals(estimates.sorted(), estimates)
+        assertTrue("slow=${estimates.last()}", estimates.last() > 5 * 60_000L)
+    }
+
+    @Test
+    fun `间隔低于安全线时给出风险提示`() {
+        // 默认档本身就低于社区经验线：提示必须存在，但不能被当成「配置错误」拦住执行
+        assertNotNull(EngagePacing.riskHint(EngageConfig()))
+        assertNull(EngagePacing.riskHint(EngagePacing.apply(EngageConfig(), EngagePace.GENTLE)))
     }
 
     @Test
@@ -124,7 +151,7 @@ class EngagePacingTest {
     }
 
     @Test
-    fun `快速档的估算明显短于稳健档`() {
+    fun `快速档的估算明显短于更慢的档位`() {
         val counts = mapOf(
             EngageAction.POST to 1,
             EngageAction.COMMENT to 4,
@@ -134,10 +161,11 @@ class EngagePacingTest {
         val fast = EngagePacing.estimateRunMs(EngagePacing.apply(EngageConfig(), EngagePace.FAST), counts)
         val balanced = EngagePacing.estimateRunMs(EngagePacing.apply(EngageConfig(), EngagePace.BALANCED), counts)
         val gentle = EngagePacing.estimateRunMs(EngagePacing.apply(EngageConfig(), EngagePace.GENTLE), counts)
+        val slow = EngagePacing.estimateRunMs(EngagePacing.apply(EngageConfig(), EngagePace.SLOW), counts)
         assertTrue("fast=$fast balanced=$balanced", fast < balanced)
         assertTrue("balanced=$balanced gentle=$gentle", balanced < gentle)
         // 老默认档一轮六分钟左右，这正是用户抱怨「间隔太长」的来源
-        assertTrue("gentle=$gentle", gentle > 5 * 60_000L)
+        assertTrue("slow=$slow", slow > 5 * 60_000L)
         assertNotEquals(0L, fast)
     }
 

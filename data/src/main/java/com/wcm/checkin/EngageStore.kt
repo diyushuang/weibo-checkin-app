@@ -30,35 +30,80 @@ class EngageStore(context: Context) : EngageConfigPort, EngageRunPort {
         prefs.edit().putString(KEY_CFG, EngageCodec.configToJson(config)).apply()
     }
 
-    override fun loadTexts(): List<EngageText> =
-        EngageCodec.textsFromJson(prefs.getString(KEY_TEXTS, null))
-
-    override fun saveTexts(texts: List<EngageText>) {
-        val capped = if (texts.size <= MAX_TEXTS) texts else texts.takeLast(MAX_TEXTS)
-        prefs.edit().putString(KEY_TEXTS, EngageCodec.textsToJson(capped)).apply()
+    override fun loadTexts(kind: TextKind): List<EngageText> = synchronized(LOCK) {
+        ensureTextsMigrated()
+        EngageCodec.textsFromJson(prefs.getString(keyTexts(kind), null))
     }
 
-    override fun appendTexts(newTexts: List<EngageText>): List<EngageText> = synchronized(LOCK) {
-        if (newTexts.isEmpty()) return@synchronized loadTexts()
-        val existing = loadTexts()
-        val merged = existing + newTexts
-        if (merged.size <= MAX_TEXTS) {
-            saveTexts(merged)
-            return@synchronized merged
+    override fun saveTexts(kind: TextKind, texts: List<EngageText>) = synchronized(LOCK) {
+        writeTexts(kind, texts)
+    }
+
+    /**
+     * 写某一套库。
+     *
+     * 两道防线：① 只允许写入 kind 匹配的条目（把评论列表写进发帖键不会崩，
+     * 只会静默串库，是最难查的一类错）；② 每库独立上限。
+     */
+    private fun writeTexts(kind: TextKind, texts: List<EngageText>) {
+        val sameKind = texts.filter { it.kind == kind }
+        val capped = if (sameKind.size <= MAX_TEXTS) sameKind else sameKind.takeLast(MAX_TEXTS)
+        prefs.edit().putString(keyTexts(kind), EngageCodec.textsToJson(capped)).apply()
+    }
+
+    override fun appendTexts(kind: TextKind, newTexts: List<EngageText>): List<EngageText> =
+        synchronized(LOCK) {
+            val incoming = newTexts.filter { it.kind == kind }
+            val merged = loadTexts(kind) + incoming
+            if (merged.size <= MAX_TEXTS) {
+                writeTexts(kind, merged)
+                return@synchronized merged
+            }
+            // 超上限时的丢弃顺序：**本次新增优先保住**（用户刚导入的东西不能悄悄消失），
+            // 其余位置先给有使用统计的、再按导入时间从新到旧补满。
+            val keep = ArrayList<EngageText>(MAX_TEXTS)
+            incoming.forEach { if (keep.size < MAX_TEXTS) keep.add(it) }
+            val older = loadTexts(kind)
+                .filter { it !in incoming }
+                .sortedWith(compareByDescending<EngageText> { it.usedCount > 0 }.thenByDescending { it.createdAt })
+            for (t in older) {
+                if (keep.size >= MAX_TEXTS) break
+                keep.add(t)
+            }
+            writeTexts(kind, keep)
+            keep
         }
-        // 超上限时的丢弃顺序：**本次新增优先保住**（用户刚导入的东西不能悄悄消失），
-        // 其余位置先给有使用统计的、再按导入时间从新到旧补满。
-        val keep = ArrayList<EngageText>(MAX_TEXTS)
-        newTexts.forEach { if (keep.size < MAX_TEXTS) keep.add(it) }
-        val older = existing
-            .filter { it !in newTexts }
-            .sortedWith(compareByDescending<EngageText> { it.usedCount > 0 }.thenByDescending { it.createdAt })
-        for (t in older) {
-            if (keep.size >= MAX_TEXTS) break
-            keep.add(t)
+
+    override fun mutateTexts(
+        kind: TextKind,
+        transform: (List<EngageText>) -> List<EngageText>,
+    ): List<EngageText> = synchronized(LOCK) {
+        val next = transform(loadTexts(kind))
+        writeTexts(kind, next)
+        next
+    }
+
+    /**
+     * 老单池（`texts_v1`）→ 三套库的一次性拆分。
+     *
+     * 幂等靠三件事：① [KEY_TEXTS_SPLIT] 标记；② 发帖键已存在就只补标记（标记丢了的兜底）；
+     * ③ 整批写用 `commit()`，标记与新键同批落盘——中途被杀时「标记也没落」，下次整体重做。
+     * 派生 id 是固定后缀（`~c` / `~r`），所以最坏情况是重复覆盖同样内容，不会长出 `~c~c`。
+     */
+    private fun ensureTextsMigrated() { // 调用方已持 LOCK
+        if (prefs.getBoolean(KEY_TEXTS_SPLIT, false)) return
+        if (prefs.contains(keyTexts(TextKind.POST))) {
+            prefs.edit().putBoolean(KEY_TEXTS_SPLIT, true).commit()
+            return
         }
-        saveTexts(keep)
-        keep
+        val legacy = EngageCodec.textsFromJson(prefs.getString(KEY_TEXTS_LEGACY, null))
+        val split = EngageTextPool.splitLegacy(legacy)
+        prefs.edit()
+            .putString(keyTexts(TextKind.POST), EngageCodec.textsToJson(split.post))
+            .putString(keyTexts(TextKind.COMMENT), EngageCodec.textsToJson(split.comment))
+            .putString(keyTexts(TextKind.REPOST), EngageCodec.textsToJson(split.repost))
+            .putBoolean(KEY_TEXTS_SPLIT, true)
+            .commit()
     }
 
     // ---------- 当日计数 ----------
@@ -232,7 +277,14 @@ class EngageStore(context: Context) : EngageConfigPort, EngageRunPort {
     }
 
     override fun clearAll() {
-        prefs.edit().remove(KEY_CFG).remove(KEY_TEXTS).apply()
+        prefs.edit()
+            .remove(KEY_CFG)
+            .remove(keyTexts(TextKind.POST))
+            .remove(keyTexts(TextKind.COMMENT))
+            .remove(keyTexts(TextKind.REPOST))
+            .remove(KEY_TEXTS_LEGACY)
+            .remove(KEY_TEXTS_SPLIT)
+            .apply()
     }
 
     override fun clearAll(uid: String) = synchronized(LOCK) {
@@ -253,6 +305,9 @@ class EngageStore(context: Context) : EngageConfigPort, EngageRunPort {
 
     private fun counterKey(uid: String, day: String) = "$COUNTER_PREFIX${uid}_$day"
 
+    /** 三套库各自的键。后缀用 [TextKind.key]，与路由参数同一套名字。 */
+    private fun keyTexts(kind: TextKind) = "$KEY_TEXTS_PREFIX${kind.key}_v1"
+
     private fun postKey(uid: String, day: String) = "$POST_PREFIX${uid}_$day"
 
     private fun runKey(uid: String, runId: String) = "$RUN_PREFIX${uid}_$runId"
@@ -264,12 +319,21 @@ class EngageStore(context: Context) : EngageConfigPort, EngageRunPort {
         const val PREFS = "wcm_engage"
 
         const val KEY_CFG = "cfg_v1"
-        const val KEY_TEXTS = "texts_v1"
+
+        /** 三套文案库：`texts_post_v1` / `texts_comment_v1` / `texts_repost_v1`。 */
+        const val KEY_TEXTS_PREFIX = "texts_"
+
+        /** 0.13.x 及以前的单池键。**只读不删**（留作回滚余量），由 [KEY_TEXTS_SPLIT] 保证只拆一次。 */
+        const val KEY_TEXTS_LEGACY = "texts_v1"
+
+        /** 拆分完成标记。 */
+        const val KEY_TEXTS_SPLIT = "texts_split_v1"
 
         const val COUNTER_PREFIX = "counter_v1_"
         const val POST_PREFIX = "post_v1_"
         const val RUN_PREFIX = "run_v1_"
 
+        /** 每套库的条数上限（不是三库合计）。 */
         const val MAX_TEXTS = 500
         const val MAX_POSTS_PER_DAY = 50
         const val KEEP_RUNS = 20

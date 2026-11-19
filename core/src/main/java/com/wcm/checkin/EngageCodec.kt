@@ -63,7 +63,10 @@ object EngageCodec {
         put("rcp", c.requireConfirmBeforePost)
         put("pib", c.postInBackground)
         put("stl", c.syncToTimeline)
-        put("vu", c.videoUrl)
+        put("ptm", c.postTextMode.name)
+        put("ctm", c.commentTextMode.name)
+        put("rtm", c.repostTextMode.name)
+        put("rte", c.repostTextEnabled)
         put("pfc", c.preferFirstComment)
         put("stg", c.strictTextGapDays)
         put("mt", c.maxTextLen)
@@ -78,18 +81,19 @@ object EngageCodec {
         if (o.optInt("v", 0) != CONFIG_VERSION) return null
         val d = EngageConfig()
 
-        // 间隔：0.13.0 之前这五个区间**没有任何 UI 入口**，落盘的值只可能来自当时的
-        // 默认值（GENTLE）。所以「恰好等于旧默认」可以安全地一次性迁移到新默认档
-        // （BALANCED），否则升级后用户抱怨的「间隔太长」根本不会改变。
+        // 间隔：历史上有两代默认值都没有任何 UI 入口，落盘的值只可能来自当时的默认档，
+        // 所以「**整组**恰好等于某一代默认」可以安全地一次性迁移到当前默认（FAST），
+        // 否则升级后用户抱怨的「间隔太长」根本不会改变。
         //
-        // 只在配置**没有 gv 标记**时迁移：有了标记说明它由新版写出，值就是用户的选择
-        // （包括主动选「稳健」得到的、与旧默认完全相同的那组数值）。
-        val migrateGaps = !o.has("gv") || o.optInt("gv", GAP_VERSION) < GAP_VERSION
-        val postGap = migrateGap(migrateGaps, o, "pg1", "pg2", LEGACY_GAPS.post, d.gapRangeOf(EngageAction.POST))
-        val repostGap = migrateGap(migrateGaps, o, "rg1", "rg2", LEGACY_GAPS.repost, d.gapRangeOf(EngageAction.REPOST))
-        val commentGap = migrateGap(migrateGaps, o, "cg1", "cg2", LEGACY_GAPS.comment, d.gapRangeOf(EngageAction.COMMENT))
-        val likeGap = migrateGap(migrateGaps, o, "lg1", "lg2", LEGACY_GAPS.like, d.gapRangeOf(EngageAction.LIKE))
-        val actionGap = migrateGap(migrateGaps, o, "ag1", "ag2", LEGACY_GAPS.actionGap, d.actionGapRange())
+        // 只在配置的 gv 低于当前代际时迁移：带 gv 说明它由新版写出，值就是用户的选择。
+        // 整组而不是逐项比较：单组相等更像「用户只调了其中一项」，那种情况必须原样保留。
+        val migrateGaps = !o.has("gv") || o.optInt("gv", 0) < GAP_VERSION
+        val gaps = readGaps(o, d)
+        val effectiveGaps = if (migrateGaps && (gaps == LEGACY_GAPS_V1 || gaps == LEGACY_GAPS_V2)) {
+            EngagePacing.gapsOf(EngagePace.FAST) ?: gaps
+        } else {
+            gaps
+        }
 
         return EngageConfig(
             enabled = o.optBoolean("e", d.enabled),
@@ -117,22 +121,25 @@ object EngageCodec {
             quietStartHour = o.optInt("qs", d.quietStartHour),
             quietEndHour = o.optInt("qe", d.quietEndHour),
             autoRunOnOpen = o.optBoolean("aro", d.autoRunOnOpen),
-            postGapMinMs = postGap.first,
-            postGapMaxMs = postGap.last,
-            repostGapMinMs = repostGap.first,
-            repostGapMaxMs = repostGap.last,
-            commentGapMinMs = commentGap.first,
-            commentGapMaxMs = commentGap.last,
-            likeGapMinMs = likeGap.first,
-            likeGapMaxMs = likeGap.last,
-            actionGapMinMs = actionGap.first,
-            actionGapMaxMs = actionGap.last,
+            postGapMinMs = effectiveGaps.post.first,
+            postGapMaxMs = effectiveGaps.post.last,
+            repostGapMinMs = effectiveGaps.repost.first,
+            repostGapMaxMs = effectiveGaps.repost.last,
+            commentGapMinMs = effectiveGaps.comment.first,
+            commentGapMaxMs = effectiveGaps.comment.last,
+            likeGapMinMs = effectiveGaps.like.first,
+            likeGapMaxMs = effectiveGaps.like.last,
+            actionGapMinMs = effectiveGaps.actionGap.first,
+            actionGapMaxMs = effectiveGaps.actionGap.last,
             failStreakAbort = o.optInt("fs", d.failStreakAbort),
             maxActionsPerRun = o.optInt("ma", d.maxActionsPerRun),
             requireConfirmBeforePost = o.optBoolean("rcp", d.requireConfirmBeforePost),
             postInBackground = o.optBoolean("pib", d.postInBackground),
             syncToTimeline = o.optBoolean("stl", d.syncToTimeline),
-            videoUrl = o.optString("vu", d.videoUrl),
+            postTextMode = o.pickModeOf("ptm", d.postTextMode),
+            commentTextMode = o.pickModeOf("ctm", d.commentTextMode),
+            repostTextMode = o.pickModeOf("rtm", d.repostTextMode),
+            repostTextEnabled = o.optBoolean("rte", d.repostTextEnabled),
             preferFirstComment = o.optBoolean("pfc", d.preferFirstComment),
             strictTextGapDays = o.optInt("stg", d.strictTextGapDays),
             maxTextLen = o.optInt("mt", d.maxTextLen),
@@ -145,37 +152,44 @@ object EngageCodec {
         )
     }
 
-    /**
-     * 读一组间隔并做一次性迁移。
-     *
-     * 只有在**上下限同时等于旧默认值**时才替换：单边相等更像是用户手动调过一半，
-     * 那种情况必须原样保留。[shouldMigrate] 为 false（配置已带 gv 标记）时一律原样读。
-     */
-    private fun migrateGap(
-        shouldMigrate: Boolean,
-        o: JSONObject,
-        keyMin: String,
-        keyMax: String,
-        legacy: LongRange,
-        def: LongRange,
-    ): LongRange {
-        if (!o.has(keyMin) && !o.has(keyMax)) return def
-        val min = o.optLong(keyMin, def.first)
-        val max = o.optLong(keyMax, def.last)
-        if (!shouldMigrate) return min..max
-        return if (min == legacy.first && max == legacy.last) def else min..max
-    }
+    /** 读五组间隔；缺字段一律取默认值（当前默认 = [EngagePace.FAST]）。 */
+    private fun readGaps(o: JSONObject, d: EngageConfig): EngagePacing.Gaps = EngagePacing.Gaps(
+        actionGap = o.optLong("ag1", d.actionGapMinMs)..o.optLong("ag2", d.actionGapMaxMs),
+        post = o.optLong("pg1", d.postGapMinMs)..o.optLong("pg2", d.postGapMaxMs),
+        comment = o.optLong("cg1", d.commentGapMinMs)..o.optLong("cg2", d.commentGapMaxMs),
+        repost = o.optLong("rg1", d.repostGapMinMs)..o.optLong("rg2", d.repostGapMaxMs),
+        like = o.optLong("lg1", d.likeGapMinMs)..o.optLong("lg2", d.likeGapMaxMs),
+    )
 
-    /** 节奏代际：0.13.0 引入。老配置（无 `gv`）读时迁移一次，之后值不再被动。 */
-    private const val GAP_VERSION = 1
+    /** 取用方式：坏值/缺字段回落默认，不让一条脏数据把整份配置判死。 */
+    private fun JSONObject.pickModeOf(key: String, def: TextPickMode): TextPickMode =
+        runCatching { TextPickMode.valueOf(optString(key, def.name)) }.getOrDefault(def)
 
-    /** 0.12.x 的默认间隔（现为 `EngagePace.GENTLE`），仅用于老配置迁移。 */
-    private val LEGACY_GAPS = EngagePacing.gapsOf(EngagePace.GENTLE)!!
+    /** 节奏代际：0.13.0 引入（`gv=1`），0.14.0 升到 2 —— 默认档从「均衡」改为「快速」。 */
+    private const val GAP_VERSION = 2
+
+    /** 0.12.x 的默认间隔（现为 [EngagePace.SLOW]），仅用于老配置迁移。 */
+    private val LEGACY_GAPS_V1 = EngagePacing.Gaps(
+        actionGap = 5_000L..20_000L,
+        post = 5 * 60_000L..8 * 60_000L,
+        comment = 25_000L..60_000L,
+        repost = 60_000L..180_000L,
+        like = 15_000L..40_000L,
+    )
+
+    /** 0.13.x 的默认间隔（现为 [EngagePace.GENTLE]），仅用于老配置迁移。 */
+    private val LEGACY_GAPS_V2 = EngagePacing.Gaps(
+        actionGap = 3_000L..8_000L,
+        post = 60_000L..120_000L,
+        comment = 10_000L..20_000L,
+        repost = 20_000L..45_000L,
+        like = 8_000L..15_000L,
+    )
 
     /** 0.12.6 之前的默认单轮预算（8 分钟）；仅用于老配置迁移。 */
     private const val LEGACY_RUN_BUDGET_MS = 8 * 60_000L
 
-    // ---------- 文案池 ----------
+    // ---------- 文案池（三套库共用一套编解码，库由 prefs 键区分） ----------
 
     fun textsToJson(list: List<EngageText>): String {
         val arr = JSONArray()
@@ -184,6 +198,7 @@ object EngageCodec {
                 JSONObject().apply {
                     put("i", t.id)
                     put("b", t.body)
+                    put("k", t.kind.name)
                     put("ca", t.createdAt)
                     put("n", t.usedCount)
                     put("lu", t.lastUsedAt)
@@ -210,6 +225,9 @@ object EngageCodec {
                 EngageText(
                     id = id,
                     body = body,
+                    // 老数据（拆库之前）没有这个键，一律按发帖库读
+                    kind = runCatching { TextKind.valueOf(o.optString("k", TextKind.POST.name)) }
+                        .getOrDefault(TextKind.POST),
                     createdAt = o.optLong("ca", 0L),
                     usedCount = o.optInt("n", 0),
                     lastUsedAt = o.optLong("lu", 0L),

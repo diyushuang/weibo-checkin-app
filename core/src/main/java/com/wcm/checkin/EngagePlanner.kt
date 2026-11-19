@@ -102,8 +102,14 @@ object EngagePlanner {
         if (config.commentEnabled && config.commentCount > 4) {
             hints.add("评论每日仅前 4 条计入超话经验，超出部分不产生经验且增加风控风险")
         }
-        if (config.commentEnabled) {
-            hints.add("评论正文超过 ${config.maxCommentLen} 字会被跳过（按平台限制拒绝，不截断）")
+        if (config.commentEnabled || config.repostEnabled) {
+            hints.add(
+                "评论与转发单条上限 ${EngageTextPool.COMMENT_LIMIT} 字（平台硬限），" +
+                    "超限会被跳过而不是截断"
+            )
+        }
+        if (config.repostEnabled && !config.repostTextEnabled) {
+            hints.add("转发已关闭文案：将执行空转发，部分超话/账号可能拒绝")
         }
         if (config.repostEnabled && config.repostCount > 2) {
             hints.add("转发每日仅前 2 条计入超话经验，超出部分不产生经验")

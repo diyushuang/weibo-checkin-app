@@ -9,15 +9,20 @@ package com.wcm.checkin
  * - 现在既要给预设档位，又要允许逐项微调，还要能反推「当前是哪一档」，
  *   这些换算都是纯函数，放在 `:core` 才能脱机单测。
  *
- * 三档的取舍（发帖 / 评论 / 转发 / 点赞 / 动作间）：
- * - [EngagePace.GENTLE] 就是 0.12.x 的老默认值，保留下来给「宁可慢也别被限流」的用户；
- * - [EngagePace.BALANCED] 是新默认值，一轮从十几分钟压到两三分钟；
- * - [EngagePace.FAST] 只建议手动补跑时用，自动执行开这档风控风险明显更高。
+ * 五档的取舍（发帖 / 评论 / 转发 / 点赞 / 动作间），由慢到快：
+ * - [SLOW] 就是 0.12.x 的老默认值（发帖 5–8 分钟），保留给「宁可慢也别被限流」的用户；
+ * - [GENTLE] 是 0.13.x 的默认值（发帖 1–2 分钟），社区经验里最稳的一档；
+ * - [BALANCED] 是 0.13.x 的「快速」档（发帖 30–60 秒），速度与安全折中；
+ * - [FAST] 是 0.14.0 的新默认（发帖 5–15 秒、评论 1–10 秒），一轮压到 1 分钟左右；
+ * - [TURBO] 把间隔压到 2–5 秒，只建议手动补跑：超话发帖的社区规范普遍要求
+ *   两帖间隔 ≥5 分钟，[TURBO] 与 [FAST] 都在明显越线的区间里，界面必须提示风险。
  */
 enum class EngagePace(val label: String, val hint: String) {
-    GENTLE("稳健", "间隔最长，最不容易触发限流，一轮约 10 分钟"),
-    BALANCED("均衡", "默认档，兼顾速度与安全，一轮约 2–3 分钟"),
-    FAST("快速", "间隔最短，适合手动补跑；自动执行请谨慎"),
+    SLOW("慢速", "最保守，发帖间隔 5–8 分钟，一轮可能十几分钟"),
+    GENTLE("稳健", "发帖 1–2 分钟、评论 10–20 秒，风控风险最低的日常档"),
+    BALANCED("均衡", "发帖 30–60 秒、评论 5–10 秒，速度与安全折中"),
+    FAST("快速", "默认档：发帖 5–15 秒、评论 1–10 秒，一轮约 1 分钟"),
+    TURBO("极速", "发帖 2–5 秒，只建议手动补跑；风控风险明显更高"),
     CUSTOM("自定义", "逐项调过间隔，点上面的档位可一键还原"),
 }
 
@@ -31,6 +36,32 @@ object EngagePacing {
      * 而且日志里只有一句预算不足，很难联想到是间隔配错了。
      */
     const val MAX_GAP_MS = 30 * 60_000L
+
+    /**
+     * 社区经验安全线。
+     *
+     * 微博没有公开的频率契约，但实测与超话管理规范高度一致：评论「1 分钟内超过 5 条」
+     * 很容易弹「操作频繁」，超话发帖普遍要求两帖间隔 ≥5 分钟。取一个明显宽松、
+     * 但仍能挡住「连点」的门槛用于提示。
+     */
+    const val SAFE_POST_GAP_MS = 15_000L
+    const val SAFE_COMMENT_GAP_MS = 5_000L
+
+    /**
+     * 间隔风险提示：发帖下限 <15 秒或评论下限 <5 秒时返回人话，否则 null。
+     *
+     * **只提示不拦截**——用户明确要求默认就是 5–15 秒 / 1–10 秒，
+     * 这里的作用是把「可能被限流」这件事说清楚，而不是替用户改配置。
+     */
+    fun riskHint(config: EngageConfig): String? {
+        val risky = ArrayList<String>(2)
+        if (config.postGapMinMs < SAFE_POST_GAP_MS) risky.add("发帖")
+        if (config.commentGapMinMs < SAFE_COMMENT_GAP_MS) risky.add("评论")
+        if (risky.isEmpty()) return null
+        return "${risky.joinToString("、")}间隔低于社区经验安全线" +
+            "（建议发帖 ≥15 秒、评论 ≥5 秒），容易触发 20016「发布过于频繁」；" +
+            "无人值守时建议切到「均衡」或更慢的档位。"
+    }
 
     /** 一次写请求的平均耗时估计，只用于「预计一轮多久」，不参与调度。 */
     private const val REQUEST_COST_MS = 1_500L
@@ -53,33 +84,51 @@ object EngagePacing {
 
     /** 各档预设的具体数值。**这就是 [EngageConfig] 默认值的来源**，改这里要同步改默认值。 */
     fun gapsOf(pace: EngagePace): Gaps? = when (pace) {
-        EngagePace.GENTLE -> Gaps(
+        // 0.12.x 的默认值，原样保留：这是「觉得太快了」的退路
+        EngagePace.SLOW -> Gaps(
             actionGap = 5_000L..20_000L,
             post = 5 * 60_000L..8 * 60_000L,
             comment = 25_000L..60_000L,
             repost = 60_000L..180_000L,
             like = 15_000L..40_000L,
         )
-        EngagePace.BALANCED -> Gaps(
+        // 0.13.x 的默认值
+        EngagePace.GENTLE -> Gaps(
             actionGap = 3_000L..8_000L,
             post = 60_000L..120_000L,
             comment = 10_000L..20_000L,
             repost = 20_000L..45_000L,
             like = 8_000L..15_000L,
         )
-        EngagePace.FAST -> Gaps(
+        // 0.13.x 的「快速」档
+        EngagePace.BALANCED -> Gaps(
             actionGap = 1_000L..3_000L,
             post = 30_000L..60_000L,
             comment = 5_000L..10_000L,
             repost = 10_000L..20_000L,
             like = 3_000L..8_000L,
         )
+        // 0.14.0 的新默认
+        EngagePace.FAST -> Gaps(
+            actionGap = 1_000L..3_000L,
+            post = 5_000L..15_000L,
+            comment = 1_000L..10_000L,
+            repost = 5_000L..12_000L,
+            like = 2_000L..6_000L,
+        )
+        EngagePace.TURBO -> Gaps(
+            actionGap = 1_000L..2_000L,
+            post = 2_000L..5_000L,
+            comment = 1_000L..3_000L,
+            repost = 2_000L..5_000L,
+            like = 1_000L..3_000L,
+        )
         EngagePace.CUSTOM -> null
     }
 
     /** 当前配置落在哪一档；与预设不完全一致即 [EngagePace.CUSTOM]。 */
     fun presetOf(config: EngageConfig): EngagePace {
-        for (pace in listOf(EngagePace.GENTLE, EngagePace.BALANCED, EngagePace.FAST)) {
+        for (pace in EngagePace.entries) {
             val g = gapsOf(pace) ?: continue
             if (g.actionGap == config.actionGapRange() &&
                 g.post == config.gapRangeOf(EngageAction.POST) &&
@@ -112,9 +161,7 @@ object EngagePacing {
 
     /** 取某一项间隔。[action] 为 null 表示「动作之间」的通用间隔。 */
     fun gapOf(config: EngageConfig, action: EngageAction?): LongRange =
-        if (action == null) config.actionGapRange() else config.gapRangeOf(action)
-
-    /** 写回某一项间隔，自动夹到 `[0, MAX_GAP_MS]` 并保证 `min <= max`。 */
+        if (action == null) config.actionGapRange() else config.gapRangeOf(action)    /** 写回某一项间隔，自动夹到 `[0, MAX_GAP_MS]` 并保证 `min <= max`。 */
     fun withGap(config: EngageConfig, action: EngageAction?, range: LongRange): EngageConfig {
         val fixed = normalize(range)
         return when (action) {

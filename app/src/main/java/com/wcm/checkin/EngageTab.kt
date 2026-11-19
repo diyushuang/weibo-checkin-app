@@ -13,7 +13,8 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun EngageTab(
     viewModel: EngageViewModel,
-    onOpenTexts: () -> Unit,
+    onOpenTexts: (TextKind) -> Unit,
+    onOpenTask: (EngageAction) -> Unit,
     onOpenPosts: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
@@ -44,13 +45,12 @@ fun EngageTab(
         onSelectAccount = { viewModel.selectAccount(it) },
         onSelectTopic = { viewModel.selectTopic(it) },
         onRefreshTopics = { viewModel.refreshTopics() },
-        onSetCount = { action, n -> viewModel.setCount(action, n) },
-        onSetMode = { action, mode -> viewModel.setMode(action, mode) },
         onApplyPace = { pace -> viewModel.applyPace(pace) },
         onAdjustGap = { action, delta -> viewModel.adjustGap(action, delta) },
         onUpdate = { transform -> viewModel.update(transform) },
         onNextPreview = { viewModel.nextPreview() },
         onOpenTexts = onOpenTexts,
+        onOpenTask = onOpenTask,
         onOpenPosts = onOpenPosts,
         onClearAll = { viewModel.clearAll() },
     )

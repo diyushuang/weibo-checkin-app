@@ -506,7 +506,6 @@
     <string name="engage_time_quiet_value">%1$d 点 – %2$d 点不执行</string>
 
     <string name="engage_post_title">发帖设置</string>
-    <string name="engage_post_video">视频链接（仅作为正文文本，不上传）</string>
     <string name="engage_post_sync">同步到个人主页</string>
     <string name="engage_post_confirm">发帖前需要我确认</string>
     <string name="engage_post_background">后台定时也允许发帖</string>
@@ -561,5 +560,47 @@
     <string name="engage_danger_title">关闭与清理</string>
     <string name="engage_disable">关闭任务</string>
     <string name="engage_clear_data">清除任务数据</string>
-    <string name="engage_clear_confirm">将删除配置、文案库、运行记录与发帖台账，不可恢复。确定继续？</string>
+    <string name="engage_clear_confirm">将删除配置、三套文案库、运行记录与发帖台账，不可恢复。确定继续？</string>
+
+    <!-- ===== 0.14.0 三套文案库 / 四个子任务页面 ===== -->
+    <string name="engage_back">返回</string>
+    <string name="engage_texts_manage">管理</string>
+    <string name="engage_texts_disabled">已关闭（转发不带文案）</string>
+    <string name="engage_texts_of_kind">%1$s文案 %2$d 条</string>
+    <string name="engage_texts_of_kind_title">%1$s文案库</string>
+    <string name="engage_texts_pick_title">取用方式</string>
+    <string name="engage_texts_mode_label">取用</string>
+    <string name="engage_texts_limit_note">单条上限 %1$d 字</string>
+    <string name="engage_texts_body">文案正文</string>
+    <string name="engage_texts_save">保存</string>
+    <string name="engage_texts_paste_here">粘贴文案</string>
+    <string name="engage_texts_fill_from_post">从发帖库补齐</string>
+    <string name="engage_texts_fill_from_post_hint">把发帖库里不超过 %1$d 字的文案复制进来（自动跳过已有的）</string>
+    <string name="engage_texts_fill_do">补齐</string>
+
+    <string name="engage_tasks_title">子任务</string>
+    <string name="engage_task_detail">详情</string>
+    <string name="engage_task_config">任务配置</string>
+    <string name="engage_task_count">每日次数</string>
+    <string name="engage_task_status">运行状态</string>
+    <string name="engage_task_today">今日 %1$d / %2$d</string>
+    <string name="engage_task_left">今日还可做 %1$d 次</string>
+    <string name="engage_task_pending_post">上次发帖结果未知，今日暂停</string>
+    <string name="engage_task_last">最近 %1$s</string>
+    <string name="engage_task_no_record">本次进程里还没有执行记录</string>
+    <string name="engage_task_pace">执行间隔</string>
+    <string name="engage_task_pace_note">上面的预设会同时改四个动作的间隔；下面的 − / + 只调这个动作。</string>
+    <string name="engage_task_gap_suffix">间隔</string>
+    <string name="engage_task_gap_over_budget">这个间隔比单轮时间预算还长，本轮永远等不到它：请调大预算或调小间隔。</string>
+    <string name="engage_task_logs">独立日志</string>
+    <string name="engage_task_logs_own">本动作流水 %1$d 条</string>
+    <string name="engage_task_logs_empty">还没有与该动作相关的流水</string>
+    <string name="engage_task_logs_global">全局流水（登录、超话校验、免打扰等）：%1$d 条</string>
+    <string name="engage_task_logs_show_global">显示全局</string>
+    <string name="engage_task_logs_hide_global">隐藏全局</string>
+
+    <string name="engage_repost_text_enabled">带文案转发</string>
+    <string name="engage_repost_text_hint">关闭后执行空转发（平台允许转发附言留空）</string>
+    <string name="engage_repost_empty_hint">已关闭转发文案：将执行空转发，部分超话或账号可能拒绝。</string>
+    <string name="engage_like_no_text">点赞不需要文案，也不产生超话经验。</string>
 </resources>

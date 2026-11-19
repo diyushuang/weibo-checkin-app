@@ -71,6 +71,11 @@ class EngageViewModel @Inject constructor(
 
     private suspend fun <T> io(block: suspend () -> T): T = withContext(Dispatchers.IO) { block() }
 
+    /** 一次读齐三套文案库。三个 key 一定建全，界面取值不必判空。 */
+    private suspend fun loadTextLibraries(): Map<TextKind, List<EngageText>> = io {
+        TextKind.entries.associateWith { configPort.loadTexts(it) }
+    }
+
     override fun onCleared() {
         // 服务是单例，旧 ViewModel 被回收后不能再往里写状态
         service.onProgress = null
@@ -85,7 +90,13 @@ class EngageViewModel @Inject constructor(
             val accounts = io {
                 accountPort.load(appContext).map { EngageAccountOption(it.uid, it.name.ifEmpty { it.uid }) }
             }
-            val texts = io { configPort.loadTexts() }
+            val texts = loadTextLibraries()
+            val today = EngageSchedule.dayKey(System.currentTimeMillis())
+            val counter = if (cfg.accountUid.isNotEmpty()) {
+                io { runPort.loadCounter(cfg.accountUid, today) }
+            } else {
+                EngageDayCounter(day = today)
+            }
             val posts = loadPosts(cfg.accountUid)
             val runs = if (cfg.accountUid.isNotEmpty()) {
                 io { runPort.loadRuns(cfg.accountUid, 10) }
@@ -100,6 +111,8 @@ class EngageViewModel @Inject constructor(
                     config = cfg,
                     accounts = accounts,
                     texts = texts,
+                    today = today,
+                    counter = counter,
                     posts = posts,
                     runs = runs,
                     hints = EngagePlanner.quotaHints(cfg),
@@ -258,13 +271,14 @@ class EngageViewModel @Inject constructor(
     }
 
     fun setCount(action: EngageAction, value: Int) {
-        val n = value.coerceIn(0, 30)
+        val max = _state.value.config.maxCountOf(action)
+        val n = value.coerceIn(0, max)
         update {
             when (action) {
-                EngageAction.POST -> it.copy(postCount = n.coerceAtMost(10))
-                EngageAction.REPOST -> it.copy(repostCount = n.coerceAtMost(10))
-                EngageAction.COMMENT -> it.copy(commentCount = n.coerceAtMost(20))
-                EngageAction.LIKE -> it.copy(likeCount = n.coerceAtMost(30))
+                EngageAction.POST -> it.copy(postCount = n)
+                EngageAction.REPOST -> it.copy(repostCount = n)
+                EngageAction.COMMENT -> it.copy(commentCount = n)
+                EngageAction.LIKE -> it.copy(likeCount = n)
             }
         }
     }
@@ -314,39 +328,33 @@ class EngageViewModel @Inject constructor(
     }
 
     /**
-     * 组装预览。
+     * 组装发帖预览。
      *
-     * 与真正发帖走**同一个** `pick()` / `render()` / `compose()`，序号也取自当日
-     * 真实计数，所以预览的正文与「下一轮实际会发的那条」一致。
+     * 与真正发帖走**同一个** `ordered()` / `render()` / `compose()`，取用方式与随机种子
+     * 也一致，所以预览看到的就是「下一轮会发的那条」。
+     *
+     * 0.14.0 起预览只负责「展示效果」：**不再因为今日额度用完、免打扰或配置非法而把正文藏起来**。
+     * 那些状态由执行侧处理，预览里隐去反而让用户以为文案库坏了。
+     * 只有「发帖文案库为空」才给提示——那时确实没有东西可预览。
      */
-    private fun buildPreview(config: EngageConfig, texts: List<EngageText>): Triple<String, Int, String> {
-        val usable = texts.filter { !it.deleted }
-        if (usable.isEmpty()) return Triple("", 0, "")
+    private fun buildPreview(config: EngageConfig, texts: Map<TextKind, List<EngageText>>): Triple<String, Int, String> {
+        val pool = texts[TextKind.POST].orEmpty()
+        val empty = "发帖文案库为空，先添加文案才能预览"
+        if (EngageTextPool.availableCount(pool) == 0) return Triple("", 0, empty)
+
         val now = System.currentTimeMillis()
         val day = EngageSchedule.dayKey(now)
-        val counter = runPort.loadCounter(config.accountUid, day)
+        val ordered = EngageTextPool.ordered(
+            pool = pool,
+            forbiddenDays = EngageSchedule.forbiddenTextDays(day, config.strictTextGapDays),
+            mode = config.postTextMode,
+            random = EngageTextPool.randomFor(day, TextKind.POST),
+            offset = previewIndex,
+        )
+        val text = ordered.firstOrNull() ?: return Triple("", 0, empty)
 
-        // 用 planner 的**实际计划**推算"前面会消耗几条文案"。配置里的评论次数不等于
-        // 本轮真会发的条数（当日额度可能已经用完），拿配置值算会在额度用完时误报
-        // 「文案不足」，还会把预览指到一条根本不会发的文案上。
-        val plan = if (config.validate() == null) {
-            EngagePlanner.plan(config, counter, now, background = false)
-        } else {
-            null
-        }
-        val postUse = plan?.countOf(EngageAction.POST) ?: config.postCount.coerceAtLeast(1)
-        if (postUse == 0) {
-            return Triple("", 0, plan?.blocked?.ifEmpty { null } ?: "今日发帖额度已用完，本轮不会发帖")
-        }
-
-        // 发帖已排到执行序列最前（0.12.6），取的就是文案池的**第 1 条**；
-        // 评论/转发吃它后面的条目。之前按「评论+转发消耗之后」的偏移取，
-        // 那是发帖排最后的旧口径。
-        val ordered = EngageTextPool
-            .pick(usable, usable.size, EngageSchedule.forbiddenTextDays(day, config.strictTextGapDays))
-        if (ordered.isEmpty()) return Triple("", 0, "文案池已无可用文案，发帖会被跳过")
-        val text = ordered[previewIndex.mod(ordered.size)]
-        val seq = counter.doneOf(EngageAction.POST) + 1
+        // 序号取自当日真实计数，`{seq}` 占位符才不会与实际发出的一致性问题
+        val seq = runPort.loadCounter(config.accountUid, day).doneOf(EngageAction.POST) + 1
         val rendered = EngageTextPool.render(
             text.body,
             EngageTextPool.RenderContext(
@@ -355,25 +363,33 @@ class EngageViewModel @Inject constructor(
                 dateCn = EngageSchedule.dateCnLabel(now),
                 seq = seq,
                 time = EngageSchedule.clockLabel(now),
-                videoUrl = config.videoUrl,
             ),
         )
-        val composed = EngageTextPool.compose(config.topicName, rendered, config.videoUrl)
+        val composed = EngageTextPool.compose(config.topicName, rendered)
         return Triple(composed, composed.length, EngageTextPool.validate(composed, config.maxTextLen).orEmpty())
     }
 
-    // ---------- 文案 ----------
+    // ---------- 文案（三套库） ----------
 
-    fun importTexts(raw: String, mode: EngageTextPool.ImportMode, separator: String): String {
-        val cfg = _state.value.config
-        val parsed = EngageTextPool.splitBulk(raw, mode, separator, cfg.maxTextLen)
-        val existing = _state.value.texts.map { it.digest }.toSet()
+    /** 该库的单条上限：发帖按配置，评论与转发固定 140（平台硬限）。 */
+    fun maxLenOf(kind: TextKind): Int =
+        if (kind == TextKind.POST) _state.value.config.maxTextLen else EngageTextPool.COMMENT_LIMIT
+
+    fun importTexts(
+        kind: TextKind,
+        raw: String,
+        mode: EngageTextPool.ImportMode,
+        separator: String,
+    ): String {
+        val parsed = EngageTextPool.splitBulk(raw, mode, separator, maxLenOf(kind))
+        val existing = _state.value.textsOf(kind).map { it.digest }.toSet()
         val now = System.currentTimeMillis()
         val fresh = parsed.accepted
             .map {
                 EngageText(
-                    id = textId(now, EngageTextPool.digest(it)),
+                    id = textId(now, kind, EngageTextPool.digest(it)),
                     body = it,
+                    kind = kind,
                     createdAt = now,
                     source = TextSource.IMPORT,
                 )
@@ -383,54 +399,115 @@ class EngageViewModel @Inject constructor(
 
         if (fresh.isNotEmpty()) {
             viewModelScope.launch {
-                val merged = io { configPort.appendTexts(fresh) }
-                _state.update { it.copy(texts = merged) }
-                val preview = buildPreview(_state.value.config, merged)
-                _state.update {
-                    it.copy(preview = preview.first, previewLength = preview.second, previewError = preview.third)
-                }
+                val merged = io { configPort.appendTexts(kind, fresh) }
+                applyTexts(kind, merged)
             }
         }
         val skipped = parsed.accepted.size - fresh.size
         return if (skipped > 0) "${parsed.summary}（其中 $skipped 条与现有文案重复）" else parsed.summary
     }
 
-    fun addText(body: String) {
-        val cfg = _state.value.config
+    fun addText(kind: TextKind, body: String) {
         val normalized = EngageTextPool.normalize(body)
-        val bad = EngageTextPool.validate(normalized, cfg.maxTextLen)
+        val bad = EngageTextPool.validate(normalized, maxLenOf(kind))
         if (bad != null) {
             _state.update { it.copy(message = bad) }
             return
         }
         val digest = EngageTextPool.digest(normalized)
-        if (_state.value.texts.any { it.digest == digest && !it.deleted }) {
+        if (_state.value.textsOf(kind).any { it.digest == digest && !it.deleted }) {
             _state.update { it.copy(message = "已有相同文案") }
             return
         }
         val now = System.currentTimeMillis()
         val item = EngageText(
-            id = textId(now, digest),
+            id = textId(now, kind, digest),
             body = normalized,
+            kind = kind,
             createdAt = now,
             source = TextSource.MANUAL,
         )
         viewModelScope.launch {
-            val merged = io { configPort.appendTexts(listOf(item)) }
-            _state.update { it.copy(texts = merged, message = "已添加") }
+            val merged = io { configPort.appendTexts(kind, listOf(item)) }
+            applyTexts(kind, merged)
+            _state.update { it.copy(message = "已添加") }
         }
     }
 
-    /** id 用 digest 派生：同毫秒批量导入时 `hashCode` 会撞，digest 不会。 */
-    private fun textId(now: Long, digest: String): String = "t${now}_$digest"
+    /**
+     * 从发帖库挑出「≤140 字」的文案补进评论 / 转发库。
+     *
+     * 老池拆分时就按这个规则筛过，但用户可能一直在发帖库里加短文案；
+     * 没有这个入口，评论库空着只能一条条手工重录。
+     */
+    fun importFromPostLibrary(kind: TextKind): String {
+        if (kind == TextKind.POST) return "发帖库不需要补齐"
+        val source = _state.value.textsOf(TextKind.POST)
+            .filter { !it.deleted && it.body.length <= EngageTextPool.COMMENT_LIMIT }
+        if (source.isEmpty()) return "发帖库里没有 ≤${EngageTextPool.COMMENT_LIMIT} 字的文案"
 
-    fun deleteText(id: String) {
+        val existing = _state.value.textsOf(kind).map { it.digest }.toSet()
+        val now = System.currentTimeMillis()
+        val fresh = source
+            .filter { it.digest !in existing }
+            .distinctBy { it.digest }
+            .map {
+                EngageText(
+                    id = textId(now, kind, it.digest),
+                    body = it.body,
+                    kind = kind,
+                    createdAt = now,
+                    source = TextSource.IMPORT,
+                )
+            }
+        if (fresh.isEmpty()) return "没有可补的文案（这些文案已在${kind.label}库里）"
+
         viewModelScope.launch {
-            val updated = _state.value.texts.map { if (it.id == id) it.copy(deleted = true) else it }
-            io { configPort.saveTexts(updated) }
-            _state.update { it.copy(texts = updated) }
+            val merged = io { configPort.appendTexts(kind, fresh) }
+            applyTexts(kind, merged)
+        }
+        return "已补入 ${fresh.size} 条"
+    }
+
+    /** 把某一套库的最新内容写回状态，并重算预览（预览只依赖发帖库）。 */
+    private fun applyTexts(kind: TextKind, list: List<EngageText>) {
+        val texts = _state.value.texts + (kind to list)
+        val preview = buildPreview(_state.value.config, texts)
+        _state.update {
+            it.copy(
+                texts = texts,
+                preview = preview.first,
+                previewLength = preview.second,
+                previewError = preview.third,
+            )
         }
     }
+
+    fun deleteText(kind: TextKind, id: String) {
+        viewModelScope.launch {
+            // 走 mutateTexts：软删发生在锁内，不会与执行侧写使用统计互相覆盖
+            val updated = io {
+                configPort.mutateTexts(kind) { pool ->
+                    pool.map { if (it.id == id) it.copy(deleted = true) else it }
+                }
+            }
+            applyTexts(kind, updated)
+        }
+    }
+
+    /** 切换某套库的取用方式（顺序 / 随机）。 */
+    fun setPickMode(kind: TextKind, mode: TextPickMode) {
+        persist(_state.value.config.withTextMode(kind, mode))
+    }
+
+    /** 关闭后转发走空正文（平台允许）。 */
+    fun setRepostTextEnabled(enabled: Boolean) {
+        persist(_state.value.config.copy(repostTextEnabled = enabled))
+    }
+
+    /** id 用 digest 派生：同毫秒批量导入时 `hashCode` 会撞，digest 不会；带库名避免跨库撞。 */
+    private fun textId(now: Long, kind: TextKind, digest: String): String =
+        "t${now}_${kind.key}_$digest"
 
     // ---------- 执行 ----------
 

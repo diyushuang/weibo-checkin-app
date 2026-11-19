@@ -284,24 +284,59 @@ class EngageService(
                 "本轮预算 ${EngagePacing.formatDuration(budgetMs)}",
         )
 
-        // ---- 文案池 ----
+        // ---- 文案（三套独立库：发帖 / 评论 / 转发）----
+        //
+        // 0.14.0 之前是一个池子按「评论+转发+发帖」总量取、再顺序弹给三类动作，
+        // 于是 1200 字的发帖文案会被当成评论发出去（再被 140 字校验拦掉）。
+        // 现在按动作各取各库，转发可以整库关闭（走空转发）。
         stepStart(STEP_TEXT, "准备文案")
-        val pool = configPort.loadTexts()
         val forbiddenDays = EngageSchedule.forbiddenTextDays(day, config.strictTextGapDays)
-        val needTexts = plan.countOf(EngageAction.COMMENT) +
-            plan.countOf(EngageAction.REPOST) +
-            plan.countOf(EngageAction.POST)
-        val picked = EngageTextPool.pick(pool, needTexts, forbiddenDays)
-        val textQueue = ArrayDeque(picked)
-        val textEnough = picked.size >= needTexts
-        stepEnd(
-            STEP_TEXT,
-            if (textEnough) EngageStepState.OK else EngageStepState.WARN,
-            "取到 ${picked.size}/$needTexts 条",
-        )
+        val postNeed = plan.countOf(EngageAction.POST)
+        val commentNeed = plan.countOf(EngageAction.COMMENT)
+        val repostNeed = plan.countOf(EngageAction.REPOST)
+        val repostNeedsText = config.repostTextEnabled
+
+        val postPool = configPort.loadTexts(TextKind.POST)
+        val commentPool = configPort.loadTexts(TextKind.COMMENT)
+        val repostPool = if (repostNeedsText) configPort.loadTexts(TextKind.REPOST) else emptyList()
+
+        fun pickFrom(kind: TextKind, pool: List<EngageText>, count: Int): List<EngageText> =
+            EngageTextPool.pick(
+                pool = pool,
+                count = count,
+                forbiddenDays = forbiddenDays,
+                mode = config.textModeOf(kind),
+                random = EngageTextPool.randomFor(day, kind),
+            )
+
+        val postPicked = pickFrom(TextKind.POST, postPool, postNeed)
+        val commentPicked = pickFrom(TextKind.COMMENT, commentPool, commentNeed)
+        val repostPicked = if (repostNeedsText) pickFrom(TextKind.REPOST, repostPool, repostNeed) else emptyList()
+
+        val postQueue = ArrayDeque(postPicked)
+        val commentQueue = ArrayDeque(commentPicked)
+        val repostQueue = ArrayDeque(repostPicked)
+
+        val textShort = postPicked.size < postNeed ||
+            commentPicked.size < commentNeed ||
+            (repostNeedsText && repostPicked.size < repostNeed)
+        val textDetail = buildString {
+            append("发帖 ").append(postPicked.size).append('/').append(postNeed)
+            append(" · 评论 ").append(commentPicked.size).append('/').append(commentNeed)
+            append(" · 转发 ")
+            if (repostNeedsText) {
+                append(repostPicked.size).append('/').append(repostNeed)
+            } else {
+                append("不带文案")
+            }
+        }
+        stepEnd(STEP_TEXT, if (textShort) EngageStepState.WARN else EngageStepState.OK, textDetail)
         log(
-            if (textEnough) EngageLogLevel.INFO else EngageLogLevel.WARN,
-            "文案池可用 ${pool.count { !it.deleted }} 条，本轮需要 $needTexts 条，取到 ${picked.size} 条",
+            if (textShort) EngageLogLevel.WARN else EngageLogLevel.INFO,
+            "本轮文案：$textDetail" +
+                "（发帖库 ${EngageTextPool.availableCount(postPool)} 条 / " +
+                "评论库 ${EngageTextPool.availableCount(commentPool)} 条 / " +
+                (if (repostNeedsText) "转发库 ${EngageTextPool.availableCount(repostPool)} 条）" else "转发不带文案）"),
         )
 
         // ---- 互动目标 ----
@@ -352,7 +387,9 @@ class EngageService(
         val runId = "r$startedAt"
         val records = ArrayList<EngageActionRecord>(plan.actions.size)
         val guard = EngageGuard(config.failStreakAbort)
-        val usedTextIds = LinkedHashSet<String>()
+        // 按库汇总本轮用到的文案 id：写回统计时必须知道这条属于哪个库
+        val usedTextIds: MutableMap<TextKind, MutableSet<String>> =
+            TextKind.entries.associateWith { mutableSetOf<String>() }.toMutableMap()
         // 今日已存在的「待确认」发帖：这些槽位没进计数（还没发），但不能再建第二条，
         // 否则每次运行都会用同一个台账 id 覆盖上一条待确认内容。
         val awaitingIds = runPort.loadPosts(account.uid, day)
@@ -460,20 +497,32 @@ class EngageService(
                 WeiboThrottle.await(throttleKey(planned.action), nominalWait)
                 emit { it.clearWait() }
 
-                val needsText = planned.action != EngageAction.LIKE
-                val text = if (needsText) textQueue.removeFirstOrNull() else null
+                // 点赞没有文案；转发在「不带文案」时也不取（空转发由 WeiboWriteApi 允许）
+                val textKind = config.textKindOf(planned.action)
+                val text = when (textKind) {
+                    TextKind.POST -> postQueue.removeFirstOrNull()
+                    TextKind.COMMENT -> commentQueue.removeFirstOrNull()
+                    TextKind.REPOST -> repostQueue.removeFirstOrNull()
+                    null -> null
+                }
 
-                // 文案缺失：发帖、评论、转发都做不了（先判，后面才能安全用 text!!）
-                if (needsText && text == null) {
-                    record(failedRecord(planned, EngageErrorKind.NO_TEXT, "文案池已无可用文案", clock()), idx + 1)
+                // 文案缺失：发帖、评论、带文案的转发都做不了（先判，后面才能安全用 text!!）
+                if (textKind != null && text == null) {
+                    record(
+                        failedRecord(
+                            planned, EngageErrorKind.NO_TEXT,
+                            "${textKind.label}文案库已无可用文案", clock(),
+                        ),
+                        idx + 1,
+                    )
                     continue
                 }
 
-                // 正文：发帖要「渲染 + 组装超话标签/视频行」，评论/转发只渲染占位符。
+                // 正文：发帖要「渲染 + 组装超话标签」，评论/转发只渲染占位符。
                 // 三者都不该把 `{topic}` 这类占位符原样发出去。
-                val rendered = if (needsText) renderForAction(text!!.body, planned, topicName, now, config) else ""
+                val rendered = if (text != null) renderForAction(text.body, planned, topicName, now) else ""
                 val body = if (planned.action == EngageAction.POST) {
-                    EngageTextPool.compose(topicName, rendered, config.videoUrl)
+                    EngageTextPool.compose(topicName, rendered)
                 } else {
                     rendered
                 }
@@ -481,8 +530,10 @@ class EngageService(
                 // 本地能判的先判，别浪费一次请求
                 val localBad = when (planned.action) {
                     EngageAction.POST -> EngageTextPool.validate(body, config.maxTextLen)
-                    EngageAction.COMMENT, EngageAction.REPOST ->
-                        EngageTextPool.validateComment(body, config.maxCommentLen)
+                    EngageAction.COMMENT -> EngageTextPool.validateComment(body)
+                    // 空转发是合法的（平台允许 comment 留空），不能过 validateComment：
+                    // 它会把空串判成「正文为空」而整条跳过。
+                    EngageAction.REPOST -> if (body.isNotBlank()) EngageTextPool.validateComment(body) else null
                     EngageAction.LIKE -> null
                 }
                 if (localBad != null) {
@@ -617,7 +668,7 @@ class EngageService(
                     )
                 }
 
-                if (text != null && state == ActionState.OK) usedTextIds.add(text.id)
+                if (text != null && state == ActionState.OK) usedTextIds.getValue(text.kind).add(text.id)
 
                 when (guard.onResult(result.kind)) {
                     Disposition.CONTINUE -> Unit
@@ -706,7 +757,12 @@ class EngageService(
                     append(action.label).append("帖子 ").append(target?.mid.orEmpty())
                 }
                 if (!head.isNullOrEmpty()) append("「").append(head).append("」")
-                if (action != EngageAction.LIKE) append("（").append(body.length).append(" 字）")
+                when {
+                    action == EngageAction.LIKE -> Unit
+                    // 关闭转发文案时正文为空，写成「0 字」会让人以为取文案失败了
+                    body.isBlank() -> append("（空转发）")
+                    else -> append("（").append(body.length).append(" 字）")
+                }
             }
         }
     }
@@ -787,7 +843,7 @@ class EngageService(
             runPort.savePost(updated)
             Log.i(TAG, "确认发送 #${record.seq} → $state ${result.kind} ${updated.message}")
             if (state == ActionState.OK && record.textId.isNotEmpty()) {
-                markTextsUsed(setOf(record.textId), clock(), day)
+                markTextsUsed(mapOf(TextKind.POST to setOf(record.textId)), clock(), day)
             }
             return PublishOutcome(record = updated)
         } finally {
@@ -847,7 +903,6 @@ class EngageService(
         planned: EngagePlanner.PlannedAction,
         topicName: String,
         now: Long,
-        config: EngageConfig,
     ): String = EngageTextPool.render(
         raw,
         EngageTextPool.RenderContext(
@@ -856,22 +911,28 @@ class EngageService(
             dateCn = EngageSchedule.dateCnLabel(now),
             seq = planned.seq,
             time = EngageSchedule.clockLabel(now),
-            videoUrl = config.videoUrl,
         ),
     )
 
-    /** 一轮结束后统一写一次使用统计（原来每个动作都整池读改写一次，最多 500 条 × 10 次）。 */
-    private fun markTextsUsed(ids: Set<String>, now: Long, day: String) {
-        if (ids.isEmpty()) return
-        val pool = configPort.loadTexts()
-        val updated = pool.map {
-            if (it.id in ids) {
-                it.copy(usedCount = it.usedCount + 1, lastUsedAt = now, lastUsedDay = day)
-            } else {
-                it
+    /**
+     * 一轮结束后统一写一次使用统计。
+     *
+     * 每库各做一次 `mutateTexts`（锁内读改写）：原来走「整池 load → 整池 save」，
+     * 中间只要用户导入一次文案，整池回写就会把新导入的条目悄悄覆盖掉。
+     */
+    private fun markTextsUsed(ids: Map<TextKind, Set<String>>, now: Long, day: String) {
+        for ((kind, set) in ids) {
+            if (set.isEmpty()) continue
+            configPort.mutateTexts(kind) { pool ->
+                pool.map {
+                    if (it.id in set) {
+                        it.copy(usedCount = it.usedCount + 1, lastUsedAt = now, lastUsedDay = day)
+                    } else {
+                        it
+                    }
+                }
             }
         }
-        configPort.saveTexts(updated)
     }
 
     private fun failedRecord(

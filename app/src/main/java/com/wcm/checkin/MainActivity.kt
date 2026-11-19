@@ -69,7 +69,12 @@ private const val ROUTE_REMOTE_PREVIEW = "remote_preview"
 private const val ROUTE_GALLERY_BROWSE = "gallery_browse"
 private const val ROUTE_IMAGE_PREVIEW = "image_preview"
 private const val ROUTE_ENGAGE = "engage"
+
+/** 三套文案库共用一条 route，`{kind}` 取 [TextKind.key]（post / comment / repost）。 */
 private const val ROUTE_ENGAGE_TEXTS = "engage_texts"
+
+/** 四个小任务共用一条 route，`{action}` 取 [EngageAction.key]。 */
+private const val ROUTE_ENGAGE_TASK = "engage_task"
 private const val ROUTE_ENGAGE_POSTS = "engage_posts"
 
 /**
@@ -527,14 +532,38 @@ private fun AppShell(
                 composable(ROUTE_ENGAGE) {
                     EngageTab(
                         viewModel = engageViewModel,
-                        onOpenTexts = { nav.navigate(ROUTE_ENGAGE_TEXTS) },
+                        onOpenTexts = { kind -> nav.navigate("$ROUTE_ENGAGE_TEXTS/${kind.key}") },
+                        onOpenTask = { action -> nav.navigate("$ROUTE_ENGAGE_TASK/${action.key}") },
                         onOpenPosts = { nav.navigate(ROUTE_ENGAGE_POSTS) },
                     )
                 }
-                composable(ROUTE_ENGAGE_TEXTS) {
+                composable(
+                    "$ROUTE_ENGAGE_TEXTS/{kind}",
+                    arguments = listOf(navArgument("kind") { type = NavType.StringType }),
+                ) { entry ->
+                    // 非法参数（深链/手改）回落发帖库，不让导航崩掉
+                    val kind = TextKind.ofKey(entry.arguments?.getString("kind")) ?: TextKind.POST
                     EngageTextScreen(
                         viewModel = engageViewModel,
+                        kind = kind,
                         onBack = { nav.popBackStack() },
+                    )
+                }
+                composable(
+                    "$ROUTE_ENGAGE_TASK/{action}",
+                    arguments = listOf(navArgument("action") { type = NavType.StringType }),
+                ) { entry ->
+                    // 这里必须复用 Activity 作用域的同一个 ViewModel：
+                    // EngageService.onProgress 是单值回调，第二个实例会把它抢走，
+                    // 表现就是「主页进度条不动、子页面在动」。
+                    val action = entry.arguments?.getString("action")
+                        ?.let { key -> EngageAction.entries.firstOrNull { it.key == key } }
+                        ?: EngageAction.POST
+                    EngageTaskDetailScreen(
+                        viewModel = engageViewModel,
+                        action = action,
+                        onBack = { nav.popBackStack() },
+                        onOpenTexts = { kind -> nav.navigate("$ROUTE_ENGAGE_TEXTS/${kind.key}") },
                     )
                 }
                 composable(ROUTE_ENGAGE_POSTS) {

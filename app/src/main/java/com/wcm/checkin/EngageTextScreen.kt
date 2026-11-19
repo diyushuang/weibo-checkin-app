@@ -1,5 +1,6 @@
 package com.wcm.checkin
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,22 +29,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import android.widget.Toast
-import androidx.compose.ui.platform.LocalContext
 
 /**
  * 文案库子页：手动录入 + 批量粘贴导入。
+ *
+ * 0.14.0 起按 [kind] 区分三套库。评论与转发库的单条上限是 140 字（平台硬限），
+ * 所以在录入、导入、列表展示三处都按各自上限处理；发帖库沿用配置里的正文长度上限。
  *
  * 关于「从百度输入法圈子获取」：圈子没有公开接口，这里**不做任何抓取**，
  * 只提供「用户自己复制 → 粘贴 → 拆分入库」。界面上明写这一点，
  * 免得用户以为应用会去联网取文案。
  */
 @Composable
-fun EngageTextScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
+fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -62,6 +65,9 @@ fun EngageTextScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
         }
     }
 
+    val limit = viewModel.maxLenOf(kind)
+    val list = state.textsOf(kind)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -71,13 +77,42 @@ fun EngageTextScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("返回") }
-            Text(stringResource(R.string.engage_texts_title), style = MaterialTheme.typography.titleLarge)
+            TextButton(onClick = onBack) { Text(stringResource(R.string.engage_back)) }
+            Text(
+                stringResource(R.string.engage_texts_of_kind_title, kind.label),
+                style = MaterialTheme.typography.titleLarge,
+            )
             Spacer(Modifier.weight(1f))
             Text(
-                stringResource(R.string.engage_texts_count, state.availableTexts, state.texts.size),
+                stringResource(R.string.engage_texts_count, state.availableTexts(kind), list.size),
                 style = MaterialTheme.typography.bodySmall,
             )
+        }
+
+        // ---- 取用方式 ----
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text(stringResource(R.string.engage_texts_pick_title), style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextPickMode.entries.forEach { m ->
+                        FilterChip(
+                            selected = state.config.textModeOf(kind) == m,
+                            onClick = { viewModel.setPickMode(kind, m) },
+                            label = { Text(m.label) },
+                        )
+                    }
+                }
+                Text(
+                    state.config.textModeOf(kind).hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.engage_texts_limit_note, limit),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         // ---- 手动新增 ----
@@ -87,8 +122,9 @@ fun EngageTextScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = newBody,
-                    onValueChange = { newBody = it },
-                    label = { Text("文案正文") },
+                    onValueChange = { newBody = it.take(limit) },
+                    label = { Text(stringResource(R.string.engage_texts_body)) },
+                    supportingText = { Text("${newBody.length} / $limit") },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -96,11 +132,11 @@ fun EngageTextScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
                     Spacer(Modifier.weight(1f))
                     TextButton(
                         onClick = {
-                            viewModel.addText(newBody)
+                            viewModel.addText(kind, newBody)
                             newBody = ""
                         },
                         enabled = newBody.isNotBlank(),
-                    ) { Text("保存") }
+                    ) { Text(stringResource(R.string.engage_texts_save)) }
                 }
             }
         }
@@ -144,7 +180,7 @@ fun EngageTextScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
                 OutlinedTextField(
                     value = importRaw,
                     onValueChange = { importRaw = it },
-                    label = { Text("粘贴文案") },
+                    label = { Text(stringResource(R.string.engage_texts_paste_here)) },
                     minLines = 4,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -156,7 +192,7 @@ fun EngageTextScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
                     Spacer(Modifier.weight(1f))
                     TextButton(
                         onClick = {
-                            lastResult = viewModel.importTexts(importRaw, mode, separator)
+                            lastResult = viewModel.importTexts(kind, importRaw, mode, separator)
                             importRaw = ""
                         },
                         enabled = importRaw.isNotBlank(),
@@ -168,15 +204,37 @@ fun EngageTextScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
             }
         }
 
+        // ---- 从发帖库补齐（评论 / 转发专用）----
+        if (kind != TextKind.POST) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        stringResource(R.string.engage_texts_fill_from_post),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        stringResource(R.string.engage_texts_fill_from_post_hint, EngageTextPool.COMMENT_LIMIT),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    TextButton(onClick = {
+                        lastResult = viewModel.importFromPostLibrary(kind)
+                        Toast.makeText(context, lastResult, Toast.LENGTH_SHORT).show()
+                    }) { Text(stringResource(R.string.engage_texts_fill_do)) }
+                }
+            }
+        }
+
         // ---- 列表 ----
-        if (state.texts.isEmpty()) {
+        if (list.isEmpty()) {
             Text(
                 stringResource(R.string.engage_texts_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        state.texts.forEach { text ->
+        list.forEach { text ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(
@@ -193,14 +251,15 @@ fun EngageTextScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            stringResource(R.string.engage_texts_used, text.usedCount),
+                            stringResource(R.string.engage_texts_used, text.usedCount) +
+                                " · ${text.body.length} / $limit",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.weight(1f))
                         if (!text.deleted) {
                             OutlinedButton(onClick = {
-                                viewModel.deleteText(text.id)
+                                viewModel.deleteText(kind, text.id)
                                 Toast.makeText(context, "已停用该文案", Toast.LENGTH_SHORT).show()
                             }) { Text(stringResource(R.string.engage_texts_delete)) }
                         }

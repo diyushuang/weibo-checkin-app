@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.random.Random
 
 /**
  * 文案池纯函数测试。
@@ -110,23 +111,25 @@ class EngageTextPoolTest {
     fun `占位符全部替换且未知占位符原样保留`() {
         val ctx = EngageTextPool.RenderContext(
             topicName = "棋手战鹰", date = "2026-11-16", dateCn = "11月16日",
-            seq = 3, time = "09:30", videoUrl = "https://v.example/1",
+            seq = 3, time = "09:30",
         )
-        val out = EngageTextPool.render("{topic} 第{seq}条 {date} {date_cn} {time} {video} {unknown}", ctx)
-        assertEquals("棋手战鹰 第3条 2026-11-16 11月16日 09:30 https://v.example/1 {unknown}", out)
+        val out = EngageTextPool.render("{topic} 第{seq}条 {date} {date_cn} {time} {unknown}", ctx)
+        assertEquals("棋手战鹰 第3条 2026-11-16 11月16日 09:30 {unknown}", out)
+    }
+
+    @Test
+    fun `视频占位符渲染为空而不是留字面量`() {
+        // 视频链接能力 0.14.0 下线：老文案里的 {video} 必须消失，
+        // 否则 `else -> m.value` 会把这七个字符原样发到微博。
+        val ctx = EngageTextPool.RenderContext("棋手战鹰", "2026-11-16", "11月16日", 1, "09:30")
+        assertEquals("正文 ", EngageTextPool.render("正文 {video}", ctx))
     }
 
     // ---------- compose ----------
 
     @Test
-    fun `无视频时只追加超话标签`() {
+    fun `只追加超话标签`() {
         assertEquals("今天也要加油\n\n#棋手战鹰#", EngageTextPool.compose("棋手战鹰", "今天也要加油"))
-    }
-
-    @Test
-    fun `有视频时插入视频行且保持固定顺序`() {
-        val out = EngageTextPool.compose("棋手战鹰", "今天也要加油", "https://v.example/1")
-        assertEquals("今天也要加油\n\n视频：https://v.example/1\n\n#棋手战鹰#", out)
     }
 
     @Test
@@ -139,13 +142,6 @@ class EngageTextPoolTest {
     fun `正文已含井号形式标签时不再重复追加`() {
         val body = "今天也要加油 #棋手战鹰#"
         assertEquals(body, EngageTextPool.compose("棋手战鹰", body))
-    }
-
-    @Test
-    fun `视频链接为空时整行删除不留空行`() {
-        val out = EngageTextPool.compose("棋手战鹰", "正文", "   ")
-        assertFalse(out.contains("视频："))
-        assertEquals("正文\n\n#棋手战鹰#", out)
     }
 
     // ---------- validate ----------
@@ -228,5 +224,78 @@ class EngageTextPoolTest {
     @Test
     fun `评论在限制内通过`() {
         assertNull(EngageTextPool.validateComment("好".repeat(140), 140))
+    }
+
+    // ---------- 顺序 / 随机取用 ----------
+
+    @Test
+    fun `顺序模式按最久未用优先`() {
+        val pool = listOf(text("a", 200), text("b", 100), text("c", 300))
+        assertEquals(listOf("b", "a", "c"), EngageTextPool.ordered(pool, emptySet()).map { it.id })
+    }
+
+    @Test
+    fun `随机模式只改顺序不改候选集合`() {
+        val pool = listOf(text("a"), text("b"), text("c"), text("d"), text("e"))
+        val out = EngageTextPool.ordered(pool, emptySet(), TextPickMode.RANDOM, Random(7))
+        assertEquals(pool.map { it.id }.toSet(), out.map { it.id }.toSet())
+        assertEquals(pool.size, out.size)
+    }
+
+    @Test
+    fun `同一天同一库的随机排列可复现`() {
+        // 预览与实发靠这一点保持一致：种子相同的两次调用必须给出同一顺序
+        val pool = (1..8).map { text("t$it") }
+        val day = "2026-11-19"
+        val first = EngageTextPool
+            .ordered(pool, emptySet(), TextPickMode.RANDOM, EngageTextPool.randomFor(day, TextKind.POST))
+            .map { it.id }
+        val second = EngageTextPool
+            .ordered(pool, emptySet(), TextPickMode.RANDOM, EngageTextPool.randomFor(day, TextKind.POST))
+            .map { it.id }
+        assertEquals(first, second)
+    }
+
+    @Test
+    fun `offset 在序列上整体轮转`() {
+        val pool = listOf(text("a", 100), text("b", 200), text("c", 300))
+        assertEquals("b", EngageTextPool.pick(pool, 1, emptySet(), offset = 1).single().id)
+        // 越界时按取模回到开头
+        assertEquals("b", EngageTextPool.pick(pool, 1, emptySet(), offset = 4).single().id)
+    }
+
+    // ---------- 老池拆分 ----------
+
+    @Test
+    fun `老池拆分保留发帖 id 且只把短文补进短库`() {
+        val legacy = listOf(
+            text("long").copy(body = "字".repeat(200)),
+            text("short").copy(body = "短文案"),
+            text("gone").copy(body = "已删文案", deleted = true),
+        )
+        val split = EngageTextPool.splitLegacy(legacy)
+
+        // 发帖库 id 原样保留：历史台账的 textId 不能断链
+        assertEquals(listOf("long", "short", "gone"), split.post.map { it.id })
+        assertTrue(split.post.all { it.kind == TextKind.POST })
+
+        // 超长与已删除的不进短库：进去也只会被 140 字校验拦掉，属于假库存
+        assertEquals(listOf("short" + EngageTextPool.SUFFIX_COMMENT), split.comment.map { it.id })
+        assertEquals(listOf("short" + EngageTextPool.SUFFIX_REPOST), split.repost.map { it.id })
+        assertTrue(split.comment.all { it.kind == TextKind.COMMENT })
+
+        // 派生副本是「全新文案」，不能继承今天已用过的统计
+        assertTrue(split.comment.all { it.usedCount == 0 && it.lastUsedDay.isEmpty() })
+    }
+
+    @Test
+    fun `老池拆分重复执行结果稳定`() {
+        // 迁移幂等的最后一道保险：即使标记丢了重跑一次，也不该长出 `~c~c`
+        val legacy = listOf(text("a").copy(body = "短"), text("b").copy(body = "也短"))
+        val first = EngageTextPool.splitLegacy(legacy)
+        val second = EngageTextPool.splitLegacy(legacy)
+        assertEquals(first.post, second.post)
+        assertEquals(first.comment, second.comment)
+        assertTrue(first.comment.none { it.id.endsWith("~c~c") })
     }
 }

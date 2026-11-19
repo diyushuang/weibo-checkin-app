@@ -229,22 +229,24 @@ data class EngageConfig(
     /**
      * 各类动作之间的间隔区间。
      *
-     * 默认值 = [EngagePace.BALANCED]（0.13.0 起）。0.12.x 的老默认值（发帖 5–8 分钟、
-     * 评论 25–60 秒…）现在保留成 [EngagePace.GENTLE]，用户可以在任务页一键切回去。
-     * 这套值此前没有任何 UI 入口，所以「存的就是旧默认值」只可能来自默认——
-     * `EngageCodec` 据此做一次性迁移（见 `LEGACY_GAPS`）。
+     * 默认值 = [EngagePace.FAST]（0.14.0 起）：发帖 5–15 秒、评论 1–10 秒。
+     * 更慢的三档（稳健/均衡/慢速）与更快的一档（极速）都保留成预设，用户可在任务页一键切换。
+     *
+     * 历史默认值有两代：0.12.x 的 `5–8 分钟`（现为 [EngagePace.SLOW]）与
+     * 0.13.x 的 `1–2 分钟`（现为 [EngagePace.GENTLE]）。这两代数值都只可能来自默认值
+     * （当时没有 UI 入口），所以 `EngageCodec` 按「整组相等」做一次性迁移（见 `GAP_VERSION`）。
      */
-    val postGapMinMs: Long = 60_000L,
-    val postGapMaxMs: Long = 120_000L,
-    val repostGapMinMs: Long = 20_000L,
-    val repostGapMaxMs: Long = 45_000L,
-    val commentGapMinMs: Long = 10_000L,
-    val commentGapMaxMs: Long = 20_000L,
-    val likeGapMinMs: Long = 8_000L,
-    val likeGapMaxMs: Long = 15_000L,
+    val postGapMinMs: Long = 5_000L,
+    val postGapMaxMs: Long = 15_000L,
+    val repostGapMinMs: Long = 5_000L,
+    val repostGapMaxMs: Long = 12_000L,
+    val commentGapMinMs: Long = 1_000L,
+    val commentGapMaxMs: Long = 10_000L,
+    val likeGapMinMs: Long = 2_000L,
+    val likeGapMaxMs: Long = 6_000L,
     /** 动作之间的额外间隔。 */
-    val actionGapMinMs: Long = 3_000L,
-    val actionGapMaxMs: Long = 8_000L,
+    val actionGapMinMs: Long = 1_000L,
+    val actionGapMaxMs: Long = 3_000L,
 
     /** 连续失败达到该值即熔断。 */
     val failStreakAbort: Int = 3,
@@ -258,16 +260,36 @@ data class EngageConfig(
 
     /** 发帖是否同步到个人主页（对应 `sync_mblog`）。默认不同步。 */
     val syncToTimeline: Boolean = false,
-    /** 追加到正文的视频链接；只作为文本，不上传、不校验域名。 */
-    val videoUrl: String = "",
+
+    /**
+     * 三套文案库各自的取用方式。
+     *
+     * 发帖适合「顺序」（自己能预判、便于核对），评论/转发适合「随机」
+     * （同一句话天天出现更像机器）。默认都用顺序：可预期、可测试。
+     */
+    val postTextMode: TextPickMode = TextPickMode.SEQUENTIAL,
+    val commentTextMode: TextPickMode = TextPickMode.SEQUENTIAL,
+    val repostTextMode: TextPickMode = TextPickMode.SEQUENTIAL,
+
+    /**
+     * 转发是否带文案。关闭时执行**空转发**（`comment` 留空）。
+     *
+     * 依据：`WeiboWriteApi.repost` 明确允许空正文，而发帖/评论都会拒绝空正文。
+     */
+    val repostTextEnabled: Boolean = true,
 
     /** 优先挑 0 评论帖（首评 +2 分）。 */
     val preferFirstComment: Boolean = true,
     /** >0 时同一条文案至少隔这么多天才复用。 */
     val strictTextGapDays: Int = 0,
-    /** 单条文案长度上限；超限拒绝发送而非截断。 */
+    /** 发帖单条正文长度上限；超限拒绝发送而非截断。 */
     val maxTextLen: Int = 1000,
-    /** 单条评论长度上限（微博评论正文限制）。超限跳过该条，不截断。 */
+    /**
+     * 已废弃：评论/转发长度上限改为固定 [EngageTextPool.COMMENT_LIMIT]（140 字）。
+     *
+     * 字段与校验区间都保留，是为了老配置（存过 `mcl=1000`）升级后仍然能通过
+     * [validate]——一旦这里收紧到 140，整份配置会判非法，任务直接不执行。
+     */
     val maxCommentLen: Int = 140,
     /**
      * 单轮时间预算。到达后主动收尾，把剩余动作留待下一轮。
@@ -288,6 +310,19 @@ data class EngageConfig(
         EngageAction.REPOST -> repostCount
         EngageAction.COMMENT -> commentCount
         EngageAction.LIKE -> likeCount
+    }
+
+    /**
+     * 单个动作每日次数的界面上限。
+     *
+     * 「+」按钮的可用状态与 [EngageConfig] 的写入夹取必须用同一个口径：
+     * 按钮写死 30、写入夹到 10 时，用户点到 10 以后按了没反应，只会以为页面卡住。
+     */
+    fun maxCountOf(action: EngageAction): Int = when (action) {
+        EngageAction.POST -> 10
+        EngageAction.REPOST -> 10
+        EngageAction.COMMENT -> 20
+        EngageAction.LIKE -> 30
     }
 
     fun enabledOf(action: EngageAction): Boolean = when (action) {
@@ -331,6 +366,31 @@ data class EngageConfig(
 
     /** 跨动作的通用间隔。 */
     fun actionGapRange(): LongRange = actionGapMinMs..actionGapMaxMs
+
+    /** 某一套文案库的取用方式。 */
+    fun textModeOf(kind: TextKind): TextPickMode = when (kind) {
+        TextKind.POST -> postTextMode
+        TextKind.COMMENT -> commentTextMode
+        TextKind.REPOST -> repostTextMode
+    }
+
+    fun withTextMode(kind: TextKind, mode: TextPickMode): EngageConfig = when (kind) {
+        TextKind.POST -> copy(postTextMode = mode)
+        TextKind.COMMENT -> copy(commentTextMode = mode)
+        TextKind.REPOST -> copy(repostTextMode = mode)
+    }
+
+    /**
+     * 该动作需要的文案库；返回 null 表示这个动作不消耗文案。
+     *
+     * 点赞没有文案；转发在 [repostTextEnabled] 关闭时做空转发，同样不取文案。
+     */
+    fun textKindOf(action: EngageAction): TextKind? = when (action) {
+        EngageAction.POST -> TextKind.POST
+        EngageAction.COMMENT -> TextKind.COMMENT
+        EngageAction.REPOST -> if (repostTextEnabled) TextKind.REPOST else null
+        EngageAction.LIKE -> null
+    }
 
     /** 配置是否具备执行条件。返回非空字符串即不可执行。 */
     fun validate(consentVersionExpected: Int = CONSENT_VERSION): String? = when {
@@ -376,7 +436,44 @@ data class EngageConfig(
 enum class TextSource { MANUAL, IMPORT }
 
 /**
- * 文案池里的一条。
+ * 文案库的种类。
+ *
+ * 0.13.x 及以前只有一个池子，发帖、评论、转发共用；三者的长度上限（发帖 1000 /
+ * 评论与转发 140）与语言风格差别很大，混在一起时「一条长文只能发帖、短句只能评论」，
+ * 用户无法分别管理。拆成三套库之后，每个库有自己的条数统计、淘汰上限与取用方式。
+ *
+ * [key] 同时用作路由参数与 prefs 键后缀，**不要改**（改了老数据就读不回来）。
+ */
+enum class TextKind(val key: String, val label: String) {
+    POST("post", "发帖"),
+    COMMENT("comment", "评论"),
+    REPOST("repost", "转发"),
+    ;
+
+    /** 该库单条正文的硬上限；0 表示「按配置里的 [EngageConfig.maxTextLen]」。 */
+    val limit: Int get() = if (this == POST) 0 else EngageTextPool.COMMENT_LIMIT
+
+    companion object {
+        fun ofKey(key: String?): TextKind? = entries.firstOrNull { it.key == key }
+    }
+}
+
+/**
+ * 文案取用方式。
+ *
+ * - [SEQUENTIAL]：按「最久未用优先」排队，用完排到队尾——等价于一个不用落盘的游标；
+ * - [RANDOM]：在同一批候选里打乱顺序，避免同一条文案天天出现。
+ *
+ * 两种模式共用同一套「今日/近 N 日已用排除」规则（`EngageSchedule.forbiddenTextDays`），
+ * 区别只在排序，所以预览与实发永远看到同一个结果。
+ */
+enum class TextPickMode(val label: String, val hint: String) {
+    SEQUENTIAL("顺序", "按导入顺序轮着用，用完排到队尾"),
+    RANDOM("随机", "每次从可用文案里随机挑，不易重复"),
+}
+
+/**
+ * 文案库里的一条。
  *
  * [digest] 是规范化正文的短哈希，用于去重（批量导入时最容易重复）。
  * 删除走软删（[deleted]），保留使用统计，便于用户判断哪些文案真的在用。
@@ -384,6 +481,8 @@ enum class TextSource { MANUAL, IMPORT }
 data class EngageText(
     val id: String,
     val body: String,
+    /** 所属库。老数据（拆库之前）一律按 [TextKind.POST] 读。 */
+    val kind: TextKind = TextKind.POST,
     val createdAt: Long = 0L,
     val usedCount: Int = 0,
     val lastUsedAt: Long = 0L,
@@ -487,7 +586,7 @@ data class PendingSlot(
 /**
  * 发帖台账：比运行记录活得更久，也更容易被人工核对。
  *
- * [body] 存的是**最终提交给服务端的完整正文快照**（含视频链接行与 `#超话名#`），
+ * [body] 存的是**最终提交给服务端的完整正文快照**（含 `#超话名#` 行），
  * 这样事后可以回答「我到底发了什么」，而预览与实发是否一致也能靠它验证。
  */
 data class EngagePostRecord(

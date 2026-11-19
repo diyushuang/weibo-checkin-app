@@ -36,7 +36,10 @@ class EngageCodecTest {
         requireConfirmBeforePost = true,
         postInBackground = false,
         syncToTimeline = true,
-        videoUrl = "https://v.example/1",
+        postTextMode = TextPickMode.RANDOM,
+        commentTextMode = TextPickMode.SEQUENTIAL,
+        repostTextMode = TextPickMode.RANDOM,
+        repostTextEnabled = false,
         preferFirstComment = false,
         strictTextGapDays = 3,
         maxTextLen = 800,
@@ -135,14 +138,33 @@ class EngageCodecTest {
     }
 
     @Test
-    fun `老默认间隔升级后迁移到均衡档`() {
-        // 旧默认值（= 稳健档）没有任何 UI 入口，存下来只可能来自默认，迁移是安全的。
+    fun `0_12 的老默认间隔升级后迁移到新默认档`() {
+        // 0.12.x 的默认值（发帖 5–8 分钟）当时没有任何 UI 入口，存下来只可能来自默认。
         // 不迁移的话用户抱怨的「间隔太长」升级后一点没变。
         val legacy = """{"v":1,"pg1":300000,"pg2":480000,"rg1":60000,"rg2":180000,
             "cg1":25000,"cg2":60000,"lg1":15000,"lg2":40000,"ag1":5000,"ag2":20000}"""
         val back = EngageCodec.configFromJson(legacy)!!
         assertEquals(EngageConfig(), back)
-        assertEquals(EngagePace.BALANCED, EngagePacing.presetOf(back))
+        assertEquals(EngagePace.FAST, EngagePacing.presetOf(back))
+    }
+
+    @Test
+    fun `0_13 的老默认间隔也迁移到新默认档`() {
+        // 0.13.x 的默认值（发帖 1–2 分钟），gv=1 标记说明它由新版写出，但值是默认档
+        val legacy = """{"v":1,"gv":1,"pg1":60000,"pg2":120000,"rg1":20000,"rg2":45000,
+            "cg1":10000,"cg2":20000,"lg1":8000,"lg2":15000,"ag1":3000,"ag2":8000}"""
+        val back = EngageCodec.configFromJson(legacy)!!
+        assertEquals(EngageConfig(), back)
+        assertEquals(EngagePace.FAST, EngagePacing.presetOf(back))
+    }
+
+    @Test
+    fun `已写入 gv2 的配置不会被再次迁移`() {
+        // 用户手动点回「稳健」后存下来的值，重启不能自己变回「快速」
+        val gentle = EngagePacing.apply(EngageConfig(), EngagePace.GENTLE)
+        val back = EngageCodec.configFromJson(EngageCodec.configToJson(gentle))!!
+        assertEquals(gentle, back)
+        assertEquals(EngagePace.GENTLE, EngagePacing.presetOf(back))
     }
 
     @Test
@@ -179,6 +201,31 @@ class EngageCodecTest {
         assertEquals(2, back[0].usedCount)
         assertEquals(TextSource.IMPORT, back[0].source)
         assertTrue(back[1].deleted)
+    }
+
+    @Test
+    fun `缺失 kind 的老文案按发帖库读`() {
+        val back = EngageCodec.textsFromJson("""[{"i":"1","b":"老文案"}]""")
+        assertEquals(TextKind.POST, back[0].kind)
+    }
+
+    @Test
+    fun `文案种类可以往返`() {
+        val list = listOf(
+            EngageText(id = "c", body = "评论", kind = TextKind.COMMENT),
+            EngageText(id = "r", body = "转发", kind = TextKind.REPOST),
+        )
+        val back = EngageCodec.textsFromJson(EngageCodec.textsToJson(list))
+        assertEquals(listOf(TextKind.COMMENT, TextKind.REPOST), back.map { it.kind })
+    }
+
+    @Test
+    fun `取用方式与转发文案开关可以往返`() {
+        val cfg = EngageConfig().copy(postTextMode = TextPickMode.RANDOM, repostTextEnabled = false)
+        val back = EngageCodec.configFromJson(EngageCodec.configToJson(cfg))!!
+        assertEquals(TextPickMode.RANDOM, back.postTextMode)
+        assertEquals(TextPickMode.SEQUENTIAL, back.commentTextMode)
+        assertFalse(back.repostTextEnabled)
     }
 
     @Test
