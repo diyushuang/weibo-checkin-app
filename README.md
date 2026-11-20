@@ -144,7 +144,13 @@ Material 3，底部导航：首页 / 超话 / 图片 / 设置 / 任务。颜色�
 界面自 v2.0 起对齐面板端 UI 系统：冷灰底 + 纯白微描边卡 + 玫红只占小面积，
 颜色 / 字体 / 间距 / 圆角全部令牌化；四档宽度（手机 / 横屏 / 平板 / 桌面）各自覆写尺寸，
 边到边 + 状态栏 / 导航栏 / 挖孔 / 键盘 / 深色模式统一在 `MainActivity` 的 Compose 壳处理。
-规范与映射表见 [`docs/design/ui-system-v2.0.md`](docs/design/ui-system-v2.0.md)。
+
+**v0.15.0 起是 v3.0**：配色沿用 v2.0，刻度做了减法 —— 页面标题 28→**22sp**、
+卡片圆角 4 档→**16dp 一档**、间距单级 10dp→**20/12/8 三级**，六个页面统一顶栏
+（任务页原来没有标题），空态统一成「结论 + 说明 + 动作」。
+同时补齐**桌面模式的键盘可用性**：2dp 聚焦环 + 显式 Tab 遍历顺序（底部 5 个 Tab 收成一站）。
+规范见 [`docs/design/ui-system-v3.0.md`](docs/design/ui-system-v3.0.md)，
+可视化对照见 [`docs/design/preview-v3.0.html`](docs/design/preview-v3.0.html)。
 
 ## 自动重登：账密或 ALC（默认开启，风险自担）
 
@@ -449,7 +455,9 @@ Android 只允许签名一致的 APK 覆盖安装，否则报「软件包与现�
 | [`docs/architecture.md`](docs/architecture.md) | **当前结构**：模块划分、依赖规则、状态与并发、DI、不变量、加新功能往哪放 |
 | [`docs/verification.md`](docs/verification.md) | **验证记录**：基线指标、门禁结果、已跑的运行时验证、待执行的登录态 E2E 清单 |
 | [`docs/review/refactor-audit-2026-11-15.md`](docs/review/refactor-audit-2026-11-15.md) | 重构完成度审查：旧功能逐条对照、真实差异、升级兼容 checklist |
-| [`docs/design/ui-system-v2.0.md`](docs/design/ui-system-v2.0.md) | UI 系统规范：令牌、四档尺寸映射、验收清单 |
+| [`docs/design/ui-system-v3.0.md`](docs/design/ui-system-v3.0.md) | **当前 UI 规范**：刻度收窄、统一骨架、四类页面分型、落地状态与调整清单 |
+| [`docs/design/preview-v3.0.html`](docs/design/preview-v3.0.html) | v3.0 四类页面的可视化对照（浏览器打开） |
+| [`docs/design/ui-system-v2.0.md`](docs/design/ui-system-v2.0.md) | UI 系统 v2.0（配色体系仍有效，刻度部分已被 v3.0 取代） |
 | [`docs/design/topic-fields.md`](docs/design/topic-fields.md) | 超话字段清单：三个接口能读到什么、怎么解析、怎么降级 |
 | [`docs/design/interactive-crawl-design.md`](docs/design/interactive-crawl-design.md) | 浏览/选图/批量勾选抓取的设计（v0.9.11 已实施） |
 | [`docs/design/full-scan-crawl.md`](docs/design/full-scan-crawl.md) | 单博主全量 / 增量抓取的设计（v0.9.12 已实施） |

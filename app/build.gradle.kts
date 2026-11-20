@@ -50,8 +50,8 @@ android {
         // · 0.13.0 —— 互动任务可用性：执行节奏可调（默认从 6 分钟压到 2 分钟）、
         //             动作三态（关闭/仅手动/自动）、单项执行、执行过程可视化。
         // 发版时这里只改 versionCode/versionName 两个数字，历史不要往这里堆。
-        versionCode = 45
-        versionName = "0.14.0"
+        versionCode = 46
+        versionName = "0.15.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
