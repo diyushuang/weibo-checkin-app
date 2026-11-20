@@ -32,14 +32,19 @@ import androidx.compose.ui.res.colorResource
  * 残留的 XML 页面（登录 WebView）生效；Compose 页面一律走本主题，**不跟随系统取色** ——
  * 品牌色是产品的识别部分，跟随取色会让四档宽度下的对比度不可控。
  *
- * ## 故意不映射的角色
+ * ## `error` 系列为什么现在映射了（v3.0）
  *
- * `error` / `onError` / `errorContainer` 没有映射到 `@color/danger*`，因为 Compose 页面
- * 的「出错」语义是直接取 `R.color.danger` / `danger_text` / `danger_soft` 这三个令牌
- * （见 `HomeCookieCard` 的 `PillTone.DANGER`、`GalleryScreen` 的停止按钮）。两边色值不同：
- * M3 默认红是 `#B3261E`，品牌语义红是 `@color/danger`。
- * **所以不要在 Compose 里写 `colorScheme.error`** —— 拿到的会是 M3 默认红而不是品牌红；
- * 要么继续用 `R.color.danger*`，要么先在这里把这三个角色映射上再统一改调用点。
+ * 早先这里**故意不映射** `error` / `errorContainer`：业务页面出错时直接取
+ * `R.color.danger*`，而 M3 默认红是 `#B3261E`、品牌语义红是 `#B42318`，两套红同时存在。
+ * 当时的结论是「不要在 Compose 里写 `colorScheme.error`」。
+ *
+ * 问题在于**组件自己会写**：`OutlinedTextField(isError = true)` 的边框、标签、错误文案
+ * 取的正是 `colorScheme.error`。设置页校验面板地址失败时，那一行是 M3 红，
+ * 而旁边 Cookie 卡片的失效行是品牌红 —— 同一个 App 里两个红。
+ *
+ * 所以 v3.0 把四个 error 角色映射到 `danger*` 令牌，并清掉了页面里 19 处
+ * 直接写 `colorScheme.error` 的调用点（统一改成 `R.color.danger_text`）。
+ * 现在两种写法得到同一个颜色，M3 组件与业务代码也不会再分叉。
  *
  * @param darkTheme 仅供预览/测试强制指定；运行时跟随系统。
  */
@@ -69,6 +74,11 @@ fun WcmTheme(
             onSurfaceVariant = colorResource(R.color.ink_2),
             outline = colorResource(R.color.line_2),
             outlineVariant = colorResource(R.color.line),
+            // 与业务侧 `R.color.danger*` 同源：M3 组件（输入框校验态等）才不会出现另一个红
+            error = colorResource(R.color.danger),
+            onError = colorResource(R.color.brand_on),
+            errorContainer = colorResource(R.color.danger_soft),
+            onErrorContainer = colorResource(R.color.danger_text),
         )
     } else {
         lightColorScheme(
@@ -91,6 +101,11 @@ fun WcmTheme(
             onSurfaceVariant = colorResource(R.color.ink_2),
             outline = colorResource(R.color.line_2),
             outlineVariant = colorResource(R.color.line),
+            // 与业务侧 `R.color.danger*` 同源：M3 组件（输入框校验态等）才不会出现另一个红
+            error = colorResource(R.color.danger),
+            onError = colorResource(R.color.brand_on),
+            errorContainer = colorResource(R.color.danger_soft),
+            onErrorContainer = colorResource(R.color.danger_text),
         )
     }
     MaterialTheme(

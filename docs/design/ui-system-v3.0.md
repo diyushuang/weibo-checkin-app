@@ -72,8 +72,9 @@ v3.0 的动词只有两个：**收（统一刻度与骨架）** 和 **分（四�
 | `WcmSpace.section` | **20dp** | 区块之间（标题组 ↔ 内容组 ↔ 下一区块） |
 | `WcmSpace.cardGap` | **12dp** | 同级卡片之间 |
 | `WcmSpace.cardPad` | **16dp** | 卡片内边距（唯一值，Hero 用 `heroPad` 20dp） |
-| `WcmSpace.rowV` | **12dp** | 列表行垂直内边距（列表页行更紧：10dp） |
+| `WcmSpace.rowV` | **12dp** | 列表行垂直内边距 |
 | `WcmSpace.pageBottom` | **24dp** | 滚动末端留白（替代贴边结束） |
+| ~~`pageTop`~~ | — | 已删除：首块的 `section` 就是顶栏到内容的间距，多给一个 8dp 会让首页实际变成 38dp |
 | `page_padding_horizontal` | 16 / 24 / 32（沿用 `dimens.xml` 四档） | 页面左右留白 |
 
 **节奏对比**
@@ -315,8 +316,6 @@ object WcmSpace {
     val cardPad = 16.dp      // 卡片内边距
     val heroPad = 20.dp      // Hero 卡内边距
     val rowV = 12.dp         // 列表行垂直内边距
-    val rowVTight = 10.dp    // 列表页行（更紧）
-    val pageTop = 8.dp
     val pageBottom = 24.dp
 }
 
@@ -598,7 +597,8 @@ LazyColumn(
     modifier = Modifier.fillMaxSize().background(colorResource(R.color.bg)),
     contentPadding = PaddingValues(
         start = pagePad, end = pagePad,
-        top = WcmSpace.pageTop, bottom = WcmSpace.pageBottom,
+        // 顶部不给留白：首块的 section(20) 就是「顶栏 → 内容」的间距
+        bottom = WcmSpace.pageBottom,
     ),
 ) {
     item(key = "header") { WcmTopBar(greeting, today) { /* 刷新 + ＋ */ } }
@@ -714,7 +714,40 @@ MaterialTheme(
 | 真机像素级验收（360×640 / 412×915 / 平板 / 深色） | 本机无设备与模拟器；当前验证为「资源编译 + Kotlin 编译 + 单元测试 + lint」 |
 | `type.xml` / `dimens.xml` 清理 | 仍被登录 WebView（XML 页面）与 `shape.xml` 引用，删了会连带登录页失效；待登录页也迁到 Compose 时一并处理 |
 
-### 11.5 验证
+### 11.5 自查修复（提交后的评审轮）
+
+提交 `79e3908` 之后又自查了一轮，修掉 6 个问题，其中 4 个是这次改版自己引入的：
+
+| # | 问题 | 性质 |
+|---|---|---|
+| 1 | 首页账号卡标题行漏了 `verticalAlignment`，15sp 标题与 12sp 提示变成顶对齐 | 改版引入 |
+| 2 | 无账号时空态放了品牌实底按钮，与「立即签到」同屏两个实底 —— 违反刚定的「一屏一块实底」 | 改版引入 |
+| 3 | 图库空态换成 `WcmEmptyState` 后只剩 `fillMaxWidth`，从「垂直居中」退化成「贴顶」 | 改版引入 |
+| 4 | 行尾菜单 `IconButton(Modifier.size(36.dp))` 把触控区从 48dp 压到 36dp，违反无障碍基线 | 改版引入 |
+| 5 | `WcmStatusPill` 空文案会画出一个纯色空壳（面板未配置时 `pillText` 是空串） | 既有缺陷暴露 |
+| 6 | 顶栏动作钮 `size(40.dp)` 同样压小触控区；`WcmShape.button` 定义了却没人用（M3 按钮不读 `shapes`，仍是 20dp） | 改版引入 |
+
+### 11.6 顺带做的三处优化
+
+1. **任务页每秒重组整页**：`nowMs` 原来以 `Long` 下传，导致「页面本体」读了这个状态，
+   运行中每秒重组十几张卡。改成 `mutableLongStateOf` + 下传 `State<Long>`，
+   只有真正读它的状态卡 / 过程卡重组；顺带免掉每秒一次装箱（lint 的
+   `AutoboxingStateCreation` 提示也一并消失）。
+2. **`Theme` 补上 error 四角色映射**。早先「故意不映射」的理由是业务码直接用
+   `R.color.danger*`，但**组件自己会写** `colorScheme.error` ——
+   `OutlinedTextField(isError = true)` 的边框与错误文案取的就是它。设置页校验失败时
+   那一行是 M3 红 `#B3261E`，旁边 Cookie 卡片是品牌红 `#B42318`。现在两者同源。
+3. **`pageTop` 令牌删除**：首块的 `section`(20) 已经是「顶栏 → 内容」的间距，
+   再叠一个 8dp 会让首页顶栏到 Hero 实际变成 38dp（规范写的是 20）。
+   同时清掉无人使用的 `rowVTight`。
+
+### 11.7 已知遗留
+
+- 任务页仍有十余处中文硬编码在 Kotlin 里（`"当前配置还不能执行：…"` 等），
+  没有走 `strings.xml`。这是 0.14.0 遗留的 i18n 债，与本次改版无关，没有混在这次里改。
+- 本轮只删了与 UI 无关文件里的导入是「顺手」，已回滚那 5 个文件，保持 diff 只覆盖本次范围。
+
+### 11.8 验证
 
 ```
 env -i JAVA_HOME=<jdk17> PATH=... TEMP=... ./gradlew \

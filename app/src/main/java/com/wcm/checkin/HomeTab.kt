@@ -10,9 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -22,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
@@ -110,7 +109,6 @@ fun HomeTab(
             contentPadding = PaddingValues(
                 start = pagePad,
                 end = pagePad,
-                top = WcmSpace.pageTop,
                 bottom = WcmSpace.pageBottom,
             ),
         ) {
@@ -122,7 +120,7 @@ fun HomeTab(
                         modifier = Modifier.padding(top = WcmSpace.cardGap),
                         horizontalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
                     ) {
-                        Button(
+                        WcmButton(
                             onClick = { viewModel.runAll(auto = false) },
                             modifier = Modifier.weight(1f),
                         ) {
@@ -133,7 +131,7 @@ fun HomeTab(
                                 ),
                             )
                         }
-                        OutlinedButton(
+                        WcmOutlinedButton(
                             onClick = { viewModel.syncOnly() },
                             modifier = Modifier.weight(1f),
                         ) {
@@ -223,7 +221,7 @@ private fun AccountsCard(
     onAdd: () -> Unit,
 ) {
     WcmCard {
-        Row {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,

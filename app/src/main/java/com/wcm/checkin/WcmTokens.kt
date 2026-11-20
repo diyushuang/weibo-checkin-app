@@ -51,13 +51,13 @@ object WcmSpace {
     /** 列表行垂直内边距 */
     val rowV = 12.dp
 
-    /** 列表页的行（比首页更紧，一屏多读一行） */
-    val rowVTight = 10.dp
-
-    /** 内容区顶部留白（顶栏已自带 10dp 呼吸） */
-    val pageTop = 8.dp
-
-    /** 滚动末端留白，替代「贴边结束」 */
+    /**
+     * 滚动末端留白，替代「贴边结束」。
+     *
+     * 顶部不给单独令牌：首块的 `section`（20dp）就是「顶栏到内容」的间距，
+     * 顶栏自己还带 10dp 的内边距。早先多给了一个 8dp 的 pageTop，
+     * 结果首页顶栏到 Hero 实际是 38dp，比规范松了近一倍。
+     */
     val pageBottom = 24.dp
 }
 
@@ -86,7 +86,9 @@ object WcmShape {
  * 这是防回归的安全网：以后谁再写 `Card(modifier = …)` 不带 shape，也不会冒出 12dp 圆角。
  */
 val WcmShapes = Shapes(
-    extraSmall = WcmShape.chip,
+    // M3 的 OutlinedTextField 取 extraSmall 当圆角，所以这里给 inner(10dp)；
+    // 徽章的 8dp（WcmShape.chip）在组件里显式指定，不靠这个角色
+    extraSmall = WcmShape.inner,
     small = WcmShape.inner,
     medium = WcmShape.card,
     large = WcmShape.card,

@@ -1,6 +1,5 @@
 package com.wcm.checkin
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,10 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,8 +60,7 @@ fun SettingsScreen(
                 .padding(
                     start = pagePad,
                     end = pagePad,
-                    top = WcmSpace.pageTop,
-                    bottom = WcmSpace.pageBottom,
+                        bottom = WcmSpace.pageBottom,
                 ),
         ) {
             Spacer(Modifier.height(WcmSpace.section))
@@ -161,7 +157,7 @@ private fun PanelCard(
         )
         Spacer(Modifier.height(WcmSpace.cardGap))
         // 保存：独占一行、紧跟字段，不贴底也不浮动
-        Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) {
+        WcmButton(onClick = onSave, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.settings_save))
         }
         Text(

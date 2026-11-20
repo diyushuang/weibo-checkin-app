@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -48,6 +47,9 @@ fun WcmStatusPill(
     tone: PillTone,
     modifier: Modifier = Modifier,
 ) {
+    // 空文案不画：胶囊只剩一个带色的空壳，看起来像"渲染坏了"。
+    // 卡头 pill 的来源是 ViewModel 拼出来的状态串，某些分支（未配置面板、加载中）会是空串。
+    if (text.isBlank()) return
     val (bg, fg) = when (tone) {
         PillTone.OK -> colorResource(R.color.ok_soft) to colorResource(R.color.ok_text)
         PillTone.WARN -> colorResource(R.color.warn_soft) to colorResource(R.color.warn_text)
@@ -71,6 +73,11 @@ fun WcmStatusPill(
  * @param title 一句话结论（「还没有账号」），不要写成「暂无数据」。
  * @param message 可空的补充说明（「先到首页添加账号」）。
  * @param actionText 有名字的动作；传 null 时不显示按钮，但**不要**在「空态 + 可行动」时省略。
+ * @param compact 卡片内的空态（不是整页空态）用紧凑版：图标托小一圈、上下留白 40→20。
+ *   整页空态保持 40dp，卡片内的用紧凑版，否则一张卡里能塞进半个屏的留白。
+ * @param primaryAction 动作按钮是否是品牌实底。**卡片内要传 false**（改用描边按钮）：
+ *   一屏只允许一块品牌实底，首页「立即签到」已经占了那个位置，
+ *   空态里再放一块实底就成了两个同等重量的主行动。
  */
 @Composable
 fun WcmEmptyState(
@@ -80,11 +87,16 @@ fun WcmEmptyState(
     message: String? = null,
     actionText: String? = null,
     onAction: (() -> Unit)? = null,
+    compact: Boolean = false,
+    primaryAction: Boolean = true,
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 40.dp),
+            .padding(
+                horizontal = 24.dp,
+                vertical = if (compact) 20.dp else 40.dp,
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -94,11 +106,11 @@ fun WcmEmptyState(
                 contentDescription = null,
                 tint = colorResource(R.color.brand_strong),
                 modifier = Modifier
-                    .padding(18.dp)
-                    .size(26.dp),
+                    .padding(if (compact) 13.dp else 18.dp)
+                    .size(if (compact) 20.dp else 26.dp),
             )
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(if (compact) 10.dp else 14.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.bodyLarge,
@@ -116,10 +128,44 @@ fun WcmEmptyState(
             )
         }
         if (actionText != null && onAction != null) {
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = onAction) { Text(actionText) }
+            Spacer(Modifier.height(if (compact) 12.dp else 16.dp))
+            if (primaryAction) {
+                WcmButton(onClick = onAction) { Text(actionText) }
+            } else {
+                WcmOutlinedButton(onClick = onAction) { Text(actionText) }
+            }
         }
     }
+}
+
+/**
+ * 空态（文案自带换行的重载）。
+ *
+ * 本工程的空态文案有两段式的约定：`结论\n下一步`（如「还没有账号\n先到首页添加账号」）。
+ * 直接整段当标题渲染，两行会用同样的 15sp/500，第二行读起来像第二句结论；
+ * 这里统一拆成「标题 + 12sp 辅助说明」，页面不用各写一遍 split。
+ */
+@Composable
+fun WcmEmptyState(
+    icon: Int,
+    text: String,
+    modifier: Modifier = Modifier,
+    actionText: String? = null,
+    onAction: (() -> Unit)? = null,
+    compact: Boolean = false,
+    primaryAction: Boolean = true,
+) {
+    val lines = text.split("\n", limit = 2)
+    WcmEmptyState(
+        icon = icon,
+        title = lines[0],
+        modifier = modifier,
+        message = lines.getOrNull(1),
+        actionText = actionText,
+        onAction = onAction,
+        compact = compact,
+        primaryAction = primaryAction,
+    )
 }
 
 /** 概览条的一格。 */

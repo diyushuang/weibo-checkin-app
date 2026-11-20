@@ -1,8 +1,6 @@
 package com.wcm.checkin
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -22,7 +19,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -87,7 +83,6 @@ fun GalleryScreen(
             contentPadding = PaddingValues(
                 start = pagePad,
                 end = pagePad,
-                top = WcmSpace.pageTop,
                 bottom = WcmSpace.pageBottom,
             ),
         ) {
@@ -212,7 +207,7 @@ private fun DirCard(state: GalleryUiState, onPickDir: () -> Unit) {
                     }
                 }
             }
-            OutlinedButton(onClick = onPickDir) {
+            WcmOutlinedButton(onClick = onPickDir) {
                 Text(stringResource(R.string.crawl_pick_dir))
             }
         }
@@ -310,7 +305,7 @@ private fun TargetRow(
             )
         }
         Box {
-            IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) {
+            IconButton(onClick = { menu = true }) {
                 Icon(
                     painter = painterResource(R.drawable.ic_more_vert),
                     contentDescription = stringResource(R.string.cd_more),
@@ -424,7 +419,7 @@ private fun RunCard(
         }
         Spacer(Modifier.height(12.dp))
         if (state.running) {
-            Button(
+            WcmButton(
                 onClick = onStop,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
@@ -435,7 +430,7 @@ private fun RunCard(
                 Text(stringResource(R.string.crawl_stop))
             }
         } else {
-            Button(
+            WcmButton(
                 onClick = onStart,
                 enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth(),
@@ -443,7 +438,7 @@ private fun RunCard(
                 Text(stringResource(R.string.crawl_start))
             }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(
+            WcmOutlinedButton(
                 onClick = onFull,
                 enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth(),
@@ -452,7 +447,7 @@ private fun RunCard(
             }
         }
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = onBrowse, modifier = Modifier.fillMaxWidth()) {
+        WcmOutlinedButton(onClick = onBrowse, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.browse_entry))
         }
         TextButton(

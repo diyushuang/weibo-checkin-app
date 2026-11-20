@@ -75,12 +75,15 @@ fun AccountList(
     onAdd: () -> Unit,
 ) {
     if (rows.isEmpty()) {
+        // 卡片内的空态：紧凑版 + 描边按钮（品牌实底留给「立即签到」）
         WcmEmptyState(
             icon = R.drawable.ic_add,
             title = stringResource(R.string.home_account_empty_title),
             message = stringResource(R.string.home_account_empty),
             actionText = stringResource(R.string.home_account_empty_action),
             onAction = onAdd,
+            compact = true,
+            primaryAction = false,
         )
         return
     }

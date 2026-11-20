@@ -22,32 +22,24 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -210,7 +202,7 @@ private fun InputRow(input: String, onInputChange: (String) -> Unit, onLoad: () 
             },
         )
         Spacer(Modifier.width(8.dp))
-        OutlinedButton(onClick = onLoad) {
+        WcmOutlinedButton(onClick = onLoad) {
             Text(stringResource(R.string.browse_load))
         }
     }
@@ -260,7 +252,7 @@ private fun PostList(
         contentPadding = PaddingValues(
             start = pagePad,
             end = pagePad,
-            top = WcmSpace.pageTop,
+            top = WcmSpace.section,
             bottom = WcmSpace.pageBottom,
         ),
         // 列表页签名：行距比首页卡片更紧
@@ -443,11 +435,11 @@ private fun SelectBar(state: BrowsingUiState, onExit: () -> Unit, onDownload: ()
                 color = colorResource(R.color.ink),
                 modifier = Modifier.weight(1f),
             )
-            OutlinedButton(onClick = onExit) {
+            WcmOutlinedButton(onClick = onExit) {
                 Text(stringResource(R.string.browse_exit_select))
             }
             Spacer(Modifier.width(8.dp))
-            Button(onClick = onDownload, enabled = state.selectedCount > 0 && !state.submitting) {
+            WcmButton(onClick = onDownload, enabled = state.selectedCount > 0 && !state.submitting) {
                 Text(stringResource(R.string.browse_download_fmt, state.selectedCount))
             }
         }

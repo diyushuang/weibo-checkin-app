@@ -1,6 +1,5 @@
 package com.wcm.checkin
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -20,14 +19,15 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,11 +58,12 @@ fun EngageTaskDetailScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
-    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    // 同 EngageScreen：传 State 而不是 Long，运行中只重组读它的状态卡
+    val nowMs = remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(state.running) {
         if (!state.running) return@LaunchedEffect
         while (true) {
-            nowMs = System.currentTimeMillis()
+            nowMs.longValue = System.currentTimeMillis()
             delay(1_000)
         }
     }
@@ -77,46 +78,46 @@ fun EngageTaskDetailScreen(
         subtitle = summary.mode.label,
         onBack = onBack,
     ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                start = pagePad,
-                end = pagePad,
-                top = WcmSpace.pageTop,
-                bottom = WcmSpace.pageBottom,
-            ),
-        verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
-    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    start = pagePad,
+                    end = pagePad,
+                    bottom = WcmSpace.pageBottom,
+                ),
+            verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
+        ) {
+            Spacer(Modifier.height(WcmSpace.section))
 
-        ActionConfigCard(
-            state = state,
-            action = action,
-            onSetCount = { viewModel.setCount(action, it) },
-            onSetMode = { viewModel.setMode(action, it) },
-            onUpdate = { transform -> viewModel.update(transform) },
-            onSetPickMode = { kind, mode -> viewModel.setPickMode(kind, mode) },
-            onSetRepostTextEnabled = { viewModel.setRepostTextEnabled(it) },
-            onOpenTexts = onOpenTexts,
-        )
+            ActionConfigCard(
+                state = state,
+                action = action,
+                onSetCount = { viewModel.setCount(action, it) },
+                onSetMode = { viewModel.setMode(action, it) },
+                onUpdate = { transform -> viewModel.update(transform) },
+                onSetPickMode = { kind, mode -> viewModel.setPickMode(kind, mode) },
+                onSetRepostTextEnabled = { viewModel.setRepostTextEnabled(it) },
+                onOpenTexts = onOpenTexts,
+            )
 
-        RunStatusCard(
-            state = state,
-            action = action,
-            nowMs = nowMs,
-            onRunOnly = { viewModel.runOnly(action) },
-        )
+            RunStatusCard(
+                state = state,
+                action = action,
+                nowMs = nowMs,
+                onRunOnly = { viewModel.runOnly(action) },
+            )
 
-        ActionPaceCard(
-            state = state,
-            action = action,
-            onApplyPace = { viewModel.applyPace(it) },
-            onAdjustGap = { delta -> viewModel.adjustGap(action, delta) },
-        )
+            ActionPaceCard(
+                state = state,
+                action = action,
+                onApplyPace = { viewModel.applyPace(it) },
+                onAdjustGap = { delta -> viewModel.adjustGap(action, delta) },
+            )
 
-        ActionLogCard(state, action)
-    }
+            ActionLogCard(state, action)
+        }
     }
 }
 
@@ -337,7 +338,7 @@ private fun TextLibraryConfig(
 private fun RunStatusCard(
     state: EngageUiState,
     action: EngageAction,
-    nowMs: Long,
+    nowMs: State<Long>,
     onRunOnly: () -> Unit,
 ) {
     val summary = state.summaryOf(action)
@@ -398,7 +399,7 @@ private fun RunStatusCard(
             Text(
                 buildString {
                     append(progress.done).append("/").append(progress.total)
-                    val waitLeft = progress.waitUntilMs - nowMs
+                    val waitLeft = progress.waitUntilMs - nowMs.value
                     if (waitLeft > 0) {
                         append(" · 等待 ").append((waitLeft + 999) / 1000).append(" 秒")
                     } else if (progress.stage.isNotEmpty()) {
@@ -411,7 +412,7 @@ private fun RunStatusCard(
         }
 
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(
+        WcmOutlinedButton(
             onClick = onRunOnly,
             enabled = state.enabled && !state.running && !summary.isOff,
             modifier = Modifier.fillMaxWidth(),

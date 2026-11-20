@@ -1,7 +1,6 @@
 package com.wcm.checkin
 
 import android.widget.Toast
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,10 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,196 +71,196 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
         subtitle = stringResource(R.string.engage_texts_count, state.availableTexts(kind), list.size),
         onBack = onBack,
     ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                start = pagePad,
-                end = pagePad,
-                top = WcmSpace.pageTop,
-                bottom = WcmSpace.pageBottom,
-            ),
-        verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
-    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    start = pagePad,
+                    end = pagePad,
+                    bottom = WcmSpace.pageBottom,
+                ),
+            verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
+        ) {
+            Spacer(Modifier.height(WcmSpace.section))
 
-        // ---- 取用方式 ----
-        WcmCard {
-            Column {
-                Text(stringResource(R.string.engage_texts_pick_title), style = MaterialTheme.typography.titleMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextPickMode.entries.forEach { m ->
-                        FilterChip(
-                            selected = state.config.textModeOf(kind) == m,
-                            onClick = { viewModel.setPickMode(kind, m) },
-                            label = { Text(m.label) },
-                        )
-                    }
-                }
-                Text(
-                    state.config.textModeOf(kind).hint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    stringResource(R.string.engage_texts_limit_note, limit),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        // ---- 手动新增 ----
-        WcmCard {
-            Column {
-                Text(stringResource(R.string.engage_texts_add), style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = newBody,
-                    onValueChange = { newBody = it.take(limit) },
-                    label = { Text(stringResource(R.string.engage_texts_body)) },
-                    supportingText = { Text("${newBody.length} / $limit") },
-                    minLines = 3,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row {
-                    Spacer(Modifier.weight(1f))
-                    TextButton(
-                        onClick = {
-                            viewModel.addText(kind, newBody)
-                            newBody = ""
-                        },
-                        enabled = newBody.isNotBlank(),
-                    ) { Text(stringResource(R.string.engage_texts_save)) }
-                }
-            }
-        }
-
-        // ---- 批量导入 ----
-        WcmCard {
-            Column {
-                Text(stringResource(R.string.engage_texts_import), style = MaterialTheme.typography.titleMedium)
-                Text(
-                    stringResource(R.string.engage_texts_import_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = mode == EngageTextPool.ImportMode.BLANK_LINE,
-                        onClick = { mode = EngageTextPool.ImportMode.BLANK_LINE },
-                        label = { Text(stringResource(R.string.engage_texts_import_mode_blank)) },
-                    )
-                    FilterChip(
-                        selected = mode == EngageTextPool.ImportMode.SINGLE_LINE,
-                        onClick = { mode = EngageTextPool.ImportMode.SINGLE_LINE },
-                        label = { Text(stringResource(R.string.engage_texts_import_mode_line)) },
-                    )
-                    FilterChip(
-                        selected = mode == EngageTextPool.ImportMode.CUSTOM,
-                        onClick = { mode = EngageTextPool.ImportMode.CUSTOM },
-                        label = { Text(stringResource(R.string.engage_texts_import_mode_custom)) },
-                    )
-                }
-                if (mode == EngageTextPool.ImportMode.CUSTOM) {
-                    OutlinedTextField(
-                        value = separator,
-                        onValueChange = { separator = it.take(8) },
-                        label = { Text(stringResource(R.string.engage_texts_import_separator)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                OutlinedTextField(
-                    value = importRaw,
-                    onValueChange = { importRaw = it },
-                    label = { Text(stringResource(R.string.engage_texts_paste_here)) },
-                    minLines = 4,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = {
-                        val text = clipboard.getText()?.text.orEmpty()
-                        if (text.isNotEmpty()) importRaw = text
-                    }) { Text(stringResource(R.string.engage_texts_paste)) }
-                    Spacer(Modifier.weight(1f))
-                    TextButton(
-                        onClick = {
-                            lastResult = viewModel.importTexts(kind, importRaw, mode, separator)
-                            importRaw = ""
-                        },
-                        enabled = importRaw.isNotBlank(),
-                    ) { Text(stringResource(R.string.engage_texts_import_do)) }
-                }
-                if (lastResult.isNotEmpty()) {
-                    Text(lastResult, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-
-        // ---- 从发帖库补齐（评论 / 转发专用）----
-        if (kind != TextKind.POST) {
+            // ---- 取用方式 ----
             WcmCard {
                 Column {
+                    Text(stringResource(R.string.engage_texts_pick_title), style = MaterialTheme.typography.titleMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextPickMode.entries.forEach { m ->
+                            FilterChip(
+                                selected = state.config.textModeOf(kind) == m,
+                                onClick = { viewModel.setPickMode(kind, m) },
+                                label = { Text(m.label) },
+                            )
+                        }
+                    }
                     Text(
-                        stringResource(R.string.engage_texts_fill_from_post),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        stringResource(R.string.engage_texts_fill_from_post_hint, EngageTextPool.COMMENT_LIMIT),
+                        state.config.textModeOf(kind).hint,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(6.dp))
-                    TextButton(onClick = {
-                        lastResult = viewModel.importFromPostLibrary(kind)
-                        Toast.makeText(context, lastResult, Toast.LENGTH_SHORT).show()
-                    }) { Text(stringResource(R.string.engage_texts_fill_do)) }
+                    Text(
+                        stringResource(R.string.engage_texts_limit_note, limit),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
-        }
 
-        // ---- 列表 ----
-        if (list.isEmpty()) {
-            WcmEmptyState(
-                icon = R.drawable.ic_nav_tasks,
-                title = stringResource(R.string.engage_texts_empty),
-            )
-        }
-        list.forEach { text ->
+            // ---- 手动新增 ----
             WcmCard {
                 Column {
-                    Text(
-                        text = text.body,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = if (text.deleted) 1 else 4,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (text.deleted) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
+                    Text(stringResource(R.string.engage_texts_add), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newBody,
+                        onValueChange = { newBody = it.take(limit) },
+                        label = { Text(stringResource(R.string.engage_texts_body)) },
+                        supportingText = { Text("${newBody.length} / $limit") },
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Row {
+                        Spacer(Modifier.weight(1f))
+                        TextButton(
+                            onClick = {
+                                viewModel.addText(kind, newBody)
+                                newBody = ""
+                            },
+                            enabled = newBody.isNotBlank(),
+                        ) { Text(stringResource(R.string.engage_texts_save)) }
+                    }
+                }
+            }
+
+            // ---- 批量导入 ----
+            WcmCard {
+                Column {
+                    Text(stringResource(R.string.engage_texts_import), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.engage_texts_import_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = mode == EngageTextPool.ImportMode.BLANK_LINE,
+                            onClick = { mode = EngageTextPool.ImportMode.BLANK_LINE },
+                            label = { Text(stringResource(R.string.engage_texts_import_mode_blank)) },
+                        )
+                        FilterChip(
+                            selected = mode == EngageTextPool.ImportMode.SINGLE_LINE,
+                            onClick = { mode = EngageTextPool.ImportMode.SINGLE_LINE },
+                            label = { Text(stringResource(R.string.engage_texts_import_mode_line)) },
+                        )
+                        FilterChip(
+                            selected = mode == EngageTextPool.ImportMode.CUSTOM,
+                            onClick = { mode = EngageTextPool.ImportMode.CUSTOM },
+                            label = { Text(stringResource(R.string.engage_texts_import_mode_custom)) },
+                        )
+                    }
+                    if (mode == EngageTextPool.ImportMode.CUSTOM) {
+                        OutlinedTextField(
+                            value = separator,
+                            onValueChange = { separator = it.take(8) },
+                            label = { Text(stringResource(R.string.engage_texts_import_separator)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    OutlinedTextField(
+                        value = importRaw,
+                        onValueChange = { importRaw = it },
+                        label = { Text(stringResource(R.string.engage_texts_paste_here)) },
+                        minLines = 4,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = {
+                            val text = clipboard.getText()?.text.orEmpty()
+                            if (text.isNotEmpty()) importRaw = text
+                        }) { Text(stringResource(R.string.engage_texts_paste)) }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(
+                            onClick = {
+                                lastResult = viewModel.importTexts(kind, importRaw, mode, separator)
+                                importRaw = ""
+                            },
+                            enabled = importRaw.isNotBlank(),
+                        ) { Text(stringResource(R.string.engage_texts_import_do)) }
+                    }
+                    if (lastResult.isNotEmpty()) {
+                        Text(lastResult, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
+            // ---- 从发帖库补齐（评论 / 转发专用）----
+            if (kind != TextKind.POST) {
+                WcmCard {
+                    Column {
                         Text(
-                            stringResource(R.string.engage_texts_used, text.usedCount) +
-                                " · ${text.body.length} / $limit",
+                            stringResource(R.string.engage_texts_fill_from_post),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            stringResource(R.string.engage_texts_fill_from_post_hint, EngageTextPool.COMMENT_LIMIT),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Spacer(Modifier.weight(1f))
-                        if (!text.deleted) {
-                            OutlinedButton(onClick = {
-                                viewModel.deleteText(kind, text.id)
-                                Toast.makeText(context, "已停用该文案", Toast.LENGTH_SHORT).show()
-                            }) { Text(stringResource(R.string.engage_texts_delete)) }
+                        Spacer(Modifier.height(6.dp))
+                        TextButton(onClick = {
+                            lastResult = viewModel.importFromPostLibrary(kind)
+                            Toast.makeText(context, lastResult, Toast.LENGTH_SHORT).show()
+                        }) { Text(stringResource(R.string.engage_texts_fill_do)) }
+                    }
+                }
+            }
+
+            // ---- 列表 ----
+            if (list.isEmpty()) {
+                WcmEmptyState(
+                    icon = R.drawable.ic_nav_tasks,
+                    title = stringResource(R.string.engage_texts_empty),
+                )
+            }
+            list.forEach { text ->
+                WcmCard {
+                    Column {
+                        Text(
+                            text = text.body,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = if (text.deleted) 1 else 4,
+                            overflow = TextOverflow.Ellipsis,
+                            color = if (text.deleted) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stringResource(R.string.engage_texts_used, text.usedCount) +
+                                    " · ${text.body.length} / $limit",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            if (!text.deleted) {
+                                WcmOutlinedButton(onClick = {
+                                    viewModel.deleteText(kind, text.id)
+                                    Toast.makeText(context, "已停用该文案", Toast.LENGTH_SHORT).show()
+                                }) { Text(stringResource(R.string.engage_texts_delete)) }
+                            }
                         }
                     }
                 }
             }
         }
-    }
     }
 }

@@ -13,18 +13,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -35,13 +31,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -70,9 +64,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -119,7 +111,9 @@ fun GalleryBrowseScreen(
             if (state.emptyVisible) {
                 WcmEmptyState(
                     icon = R.drawable.ic_image,
-                    title = state.emptyText,
+                    text = state.emptyText,
+                    // 网格区是 weight(1f) 撑满的，空态要自己居中（原来 EmptyState 用 fillMaxSize）
+                    modifier = Modifier.fillMaxSize(),
                     actionText = stringResource(R.string.gallery_empty_action),
                     onAction = onEmptyAction,
                 )
@@ -153,30 +147,45 @@ private fun TopBar(
                 description = refreshDesc,
                 onClick = onRefresh,
             )
+            // 菜单要挂在按钮上：Box 当锚点，DropdownMenu 跟随它定位
             Box {
-            WcmTopBarAction(
-                icon = R.drawable.ic_more_vert,
-                description = stringResource(R.string.cd_more),
-                onClick = { menu = true },
-            )
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(
-                    text = { Text(if (state.searchOpen) "关闭搜索" else "搜索") },
-                    onClick = {
-                        menu = false
-                        onToggleSearch(!state.searchOpen)
-                    },
+                WcmTopBarAction(
+                    icon = R.drawable.ic_more_vert,
+                    description = stringResource(R.string.cd_more),
+                    onClick = { menu = true },
                 )
-                DropdownMenuItem(
-                    text = { Text(if (state.selectMode) "退出多选" else "多选") },
-                    onClick = {
-                        menu = false
-                        onSelectModeToggle()
-                    },
-                )
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (state.searchOpen) R.string.gallery_search_close
+                                    else R.string.gallery_search_open,
+                                ),
+                            )
+                        },
+                        onClick = {
+                            menu = false
+                            onToggleSearch(!state.searchOpen)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (state.selectMode) R.string.gallery_select_exit
+                                    else R.string.gallery_select_enter,
+                                ),
+                            )
+                        },
+                        onClick = {
+                            menu = false
+                            onSelectModeToggle()
+                        },
+                    )
+                }
             }
-            }
-        }
+        },
     )
 }
 
@@ -484,11 +493,11 @@ private fun SelectBar(
                 color = colorResource(R.color.ink),
                 modifier = Modifier.weight(1f),
             )
-            OutlinedButton(onClick = onShare, enabled = state.selectedCount > 0) {
+            WcmOutlinedButton(onClick = onShare, enabled = state.selectedCount > 0) {
                 Text(stringResource(R.string.gallery_batch_share))
             }
             Spacer(Modifier.width(8.dp))
-            Button(onClick = onDelete, enabled = state.selectedCount > 0) {
+            WcmButton(onClick = onDelete, enabled = state.selectedCount > 0) {
                 Text(stringResource(R.string.gallery_batch_delete))
             }
             TextButton(onClick = onExit) {

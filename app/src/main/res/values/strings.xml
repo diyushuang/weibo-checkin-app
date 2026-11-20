@@ -22,7 +22,7 @@
     <string name="home_summary_empty">还没有账号，点「＋ 添加账号」用微博官方页面登录</string>    <string name="home_summary_fmt">%1$d 个账号 · 面板同步：%2$s · 后台每 6 小时保活</string>
     <string name="home_panel_ok">已配置</string>
     <string name="home_panel_off">未配置</string>
-    <string name="home_account_empty">点右上「＋ 添加账号」开始</string>
+    <string name="home_account_empty">用微博官方页面登录一次，之后在这里管签到和超话</string>
     <!-- v3.0：空态统一成「结论 + 说明 + 动作」三段，所以标题与按钮文案单独给 -->
     <string name="home_account_empty_title">还没有账号</string>
     <string name="home_account_empty_action">添加账号</string>
@@ -422,6 +422,11 @@
     <string name="gallery_filter_still">静图</string>
     <string name="gallery_filter_gif">动图</string>
     <string name="gallery_sort_label">排序方式</string>
+    <!-- 顶栏「更多」菜单（v3.0：原来这两对文案硬编码在 Kotlin 里） -->
+    <string name="gallery_search_open">搜索</string>
+    <string name="gallery_search_close">关闭搜索</string>
+    <string name="gallery_select_enter">多选</string>
+    <string name="gallery_select_exit">退出多选</string>
     <string name="gallery_sort_newest">最新在前</string>
     <string name="gallery_sort_oldest">最早在前</string>
     <string name="gallery_sort_name">按名称</string>

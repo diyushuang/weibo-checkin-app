@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -97,7 +95,6 @@ fun TopicScreen(
             contentPadding = PaddingValues(
                 start = pagePad,
                 end = pagePad,
-                top = WcmSpace.pageTop,
                 bottom = WcmSpace.pageBottom,
             ),
         ) {
@@ -141,9 +138,10 @@ fun TopicScreen(
             if (state.showEmpty) {
                 item(key = "empty") {
                     Box(Modifier.padding(top = WcmSpace.section)) {
+                        // 文案是「结论\n下一步」两段式，用 text 重载自动拆成标题 + 说明
                         WcmEmptyState(
                             icon = R.drawable.ic_nav_topics,
-                            title = state.emptyText,
+                            text = state.emptyText,
                             actionText = if (state.emptyActionVisible) {
                                 stringResource(R.string.topic_go_home)
                             } else {
@@ -328,7 +326,7 @@ private fun TopicRowCard(
             StatePill(row.done)
             Box {
                 val moreDesc = stringResource(R.string.cd_topic_more)
-                IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) {
+                IconButton(onClick = { menu = true }) {
                     Icon(
                         painter = painterResource(R.drawable.ic_more_vert),
                         contentDescription = moreDesc,
@@ -453,7 +451,7 @@ private fun MessageCard(text: String, action: String?, onAction: () -> Unit) {
             color = colorResource(R.color.danger_text),
         )
         if (action != null) {
-            Button(onClick = onAction, modifier = Modifier.padding(top = 10.dp)) {
+            WcmButton(onClick = onAction, modifier = Modifier.padding(top = 10.dp)) {
                 Text(action)
             }
         }

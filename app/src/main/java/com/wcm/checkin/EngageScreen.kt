@@ -24,13 +24,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -77,11 +78,14 @@ fun EngageScreen(
 ) {
     // 运行中每秒刷新一次「已用时间 / 等待倒计时 / 步骤耗时」。
     // 放在页面层而不是每个卡片里：一次 tick 同时驱动状态卡与过程卡，避免两套计时器不同步。
-    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    // 用 State<Long> 下传而不是直接传 Long：传值会让「页面本体」读到这个状态，
+    // 于是运行中每秒整页（十几张卡）重组一次；传 State 之后只有真正读它的
+    // 状态卡 / 过程卡重组。顺带用 mutableLongStateOf 免掉每秒一次装箱。
+    val nowMs = remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(state.running) {
         if (!state.running) return@LaunchedEffect
         while (true) {
-            nowMs = System.currentTimeMillis()
+            nowMs.longValue = System.currentTimeMillis()
             delay(1_000)
         }
     }
@@ -95,56 +99,56 @@ fun EngageScreen(
         title = stringResource(R.string.engage_title),
         subtitle = stringResource(R.string.engage_subtitle),
     ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                start = pagePad,
-                end = pagePad,
-                top = WcmSpace.pageTop,
-                bottom = WcmSpace.pageBottom,
-            ),
-        verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
-    ) {
-        // 1. 状态
-        StatusCard(state, nowMs, onToggleEnable, onRunNow)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    start = pagePad,
+                    end = pagePad,
+                    bottom = WcmSpace.pageBottom,
+                ),
+            verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
+        ) {
+            Spacer(Modifier.height(WcmSpace.section))
+            // 1. 状态
+            StatusCard(state, nowMs, onToggleEnable, onRunNow)
 
-        // 2. 告警（待处理事项合并成一张，避免两张色卡轮番占屏）
-        AlertCard(state, onOpenPosts)
+            // 2. 告警（待处理事项合并成一张，避免两张色卡轮番占屏）
+            AlertCard(state, onOpenPosts)
 
-        // 3. 文案库（三套）
-        TextLibCard(state, onOpenTexts)
+            // 3. 文案库（三套）
+            TextLibCard(state, onOpenTexts)
 
-        // 4. 预览
-        PreviewCard(state, onNextPreview, onOpenTexts)
+            // 4. 预览
+            PreviewCard(state, onNextPreview, onOpenTexts)
 
-        Spacer(Modifier.height(WcmSpace.section - WcmSpace.cardGap))
-        // 5. 任务配置
-        TargetCard(state, onSelectAccount, onSelectTopic, onRefreshTopics)
-        PostSettingsCard(state, onUpdate)
-        ScheduleCard(state, onUpdate)
+            Spacer(Modifier.height(WcmSpace.section - WcmSpace.cardGap))
+            // 5. 任务配置
+            TargetCard(state, onSelectAccount, onSelectTopic, onRefreshTopics)
+            PostSettingsCard(state, onUpdate)
+            ScheduleCard(state, onUpdate)
 
-        // 6. 间隔设置（预设 + 动作之间 + 预算；逐项间隔在各自子页面里）
-        PaceCard(state, onApplyPace, onAdjustGap, onUpdate)
+            // 6. 间隔设置（预设 + 动作之间 + 预算；逐项间隔在各自子页面里）
+            PaceCard(state, onApplyPace, onAdjustGap, onUpdate)
 
-        Spacer(Modifier.height(WcmSpace.section - WcmSpace.cardGap))
-        // 7. 子任务入口
-        ActionEntryCard(state, onOpenTask, onRunOnly)
+            Spacer(Modifier.height(WcmSpace.section - WcmSpace.cardGap))
+            // 7. 子任务入口
+            ActionEntryCard(state, onOpenTask, onRunOnly)
 
-        Spacer(Modifier.height(WcmSpace.section - WcmSpace.cardGap))
-        // 8. 日志与记录
-        TraceCard(state, nowMs)
-        RunsCard(state, openRunId) { id -> openRunId = if (openRunId == id) "" else id }
-        PostsCard(state, onOpenPosts)
+            Spacer(Modifier.height(WcmSpace.section - WcmSpace.cardGap))
+            // 8. 日志与记录
+            TraceCard(state, nowMs)
+            RunsCard(state, openRunId) { id -> openRunId = if (openRunId == id) "" else id }
+            PostsCard(state, onOpenPosts)
 
-        // 9. 危险操作
-        DangerCard(
-            enabled = state.enabled,
-            onDisable = { if (state.enabled) onToggleEnable() },
-            onClearAll = onClearAll,
-        )
-    }
+            // 9. 危险操作
+            DangerCard(
+                enabled = state.enabled,
+                onDisable = { if (state.enabled) onToggleEnable() },
+                onClearAll = onClearAll,
+            )
+        }
     }
 }
 
@@ -168,7 +172,13 @@ internal fun SectionCard(title: String, content: @Composable ColumnScope.() -> U
 // ============================ 状态 ============================
 
 @Composable
-private fun StatusCard(state: EngageUiState, nowMs: Long, onToggle: () -> Unit, onRunNow: () -> Unit) {
+private fun StatusCard(
+    state: EngageUiState,
+    nowMs: State<Long>,
+    onToggle: () -> Unit,
+    onRunNow: () -> Unit,
+) {
+    val now = nowMs.value
     WcmCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             // 标题已上提到顶栏，这里换成「此刻在做什么」——比重复一遍标题有用
@@ -186,69 +196,69 @@ private fun StatusCard(state: EngageUiState, nowMs: Long, onToggle: () -> Unit, 
             Switch(checked = state.enabled, onCheckedChange = { onToggle() })
         }
 
-            val progress = state.progress
-            if (state.running && progress != null) {
-                Spacer(Modifier.height(8.dp))
-                // 总体进度：一眼看出「还剩多少」，比一行文字更直观
-                LinearProgressIndicator(
-                    progress = { progress.fraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp),
-                )
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "${progress.done}/${progress.total} · ${progress.percent}%",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        buildString {
-                            append("已用 ").append(EngagePacing.formatDuration(progress.elapsedMs))
-                            val waitLeft = progress.waitUntilMs - nowMs
-                            when {
-                                waitLeft > 0 -> append(" · 等待 ").append((waitLeft + 999) / 1000).append(" 秒")
-                                else -> progress.etaLabel(nowMs).takeIf { it.isNotEmpty() }?.let {
-                                    append(" · ").append(it)
-                                }
-                            }
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
+        val progress = state.progress
+        if (state.running && progress != null) {
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onRunNow,
-                enabled = state.enabled && !state.running,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.engage_run_now))
-            }
-            // 配置不合法时把原因直接摊在按钮下面。
-            // 否则用户点了「单独执行」只看到一句「未选择账号」，还得自己去翻是哪一项没填。
-            val invalid = state.config.validate()
-            if (state.enabled && invalid != null) {
+            // 总体进度：一眼看出「还剩多少」，比一行文字更直观
+            LinearProgressIndicator(
+                progress = { progress.fraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "当前配置还不能执行：$invalid",
+                    "${progress.done}/${progress.total} · ${progress.percent}%",
                     style = MaterialTheme.typography.bodySmall,
-                    color = colorResource(R.color.danger_text),
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    buildString {
+                        append("已用 ").append(EngagePacing.formatDuration(progress.elapsedMs))
+                        val waitLeft = progress.waitUntilMs - now
+                        when {
+                            waitLeft > 0 -> append(" · 等待 ").append((waitLeft + 999) / 1000).append(" 秒")
+                            else -> progress.etaLabel(now).takeIf { it.isNotEmpty() }?.let {
+                                append(" · ").append(it)
+                            }
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        WcmOutlinedButton(
+            onClick = onRunNow,
+            enabled = state.enabled && !state.running,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.engage_run_now))
+        }
+        // 配置不合法时把原因直接摊在按钮下面。
+        // 否则用户点了「单独执行」只看到一句「未选择账号」，还得自己去翻是哪一项没填。
+        val invalid = state.config.validate()
+        if (state.enabled && invalid != null) {
             Text(
-                // 未开启时按钮是灰的，只说「未开启」用户不知道去哪开 —— 直接给下一步动作
-                text = if (!state.enabled && !state.running) {
-                    stringResource(R.string.engage_run_need_enable)
-                } else {
-                    stringResource(R.string.engage_run_hint)
-                },
+                text = "当前配置还不能执行：$invalid",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = colorResource(R.color.danger_text),
             )
+        }
+        Text(
+            // 未开启时按钮是灰的，只说「未开启」用户不知道去哪开 —— 直接给下一步动作
+            text = if (!state.enabled && !state.running) {
+                stringResource(R.string.engage_run_need_enable)
+            } else {
+                stringResource(R.string.engage_run_hint)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -745,7 +755,8 @@ private fun ActionEntryCard(
  * 避免首页一进来就被一块空白占掉。
  */
 @Composable
-private fun TraceCard(state: EngageUiState, nowMs: Long) {
+private fun TraceCard(state: EngageUiState, nowMs: State<Long>) {
+    val now = nowMs.value
     val progress = state.progress ?: return
     if (progress.steps.isEmpty() && progress.logs.isEmpty() && !state.running) return
 
@@ -760,7 +771,7 @@ private fun TraceCard(state: EngageUiState, nowMs: Long) {
                 if (progress.isFinished) {
                     "用时 " + EngagePacing.formatDuration(progress.elapsedMs)
                 } else {
-                    (progress.waitUntilMs - nowMs).takeIf { it > 0 }
+                    (progress.waitUntilMs - now).takeIf { it > 0 }
                         ?.let { "等待 ${(it + 999) / 1000} 秒" }
                         ?: "进行中 · " + EngagePacing.formatDuration(progress.elapsedMs)
                 },
@@ -771,7 +782,7 @@ private fun TraceCard(state: EngageUiState, nowMs: Long) {
         Spacer(Modifier.height(8.dp))
 
         progress.steps.forEach { step ->
-            StepRow(step, nowMs)
+            StepRow(step, now)
         }
 
         if (progress.logs.isNotEmpty()) {
@@ -791,7 +802,7 @@ private fun TraceCard(state: EngageUiState, nowMs: Long) {
 }
 
 @Composable
-private fun StepRow(step: EngageStep, nowMs: Long) {
+private fun StepRow(step: EngageStep, now: Long) {
     val color = when (step.state) {
         EngageStepState.OK -> MaterialTheme.colorScheme.primary
         EngageStepState.RUNNING -> MaterialTheme.colorScheme.primary
@@ -826,7 +837,7 @@ private fun StepRow(step: EngageStep, nowMs: Long) {
             overflow = TextOverflow.Ellipsis,
         )
         val detail = step.detail.ifEmpty {
-            if (step.startedAt > 0L) step.elapsedLabel(nowMs) else ""
+            if (step.startedAt > 0L) step.elapsedLabel(now) else ""
         }
         if (detail.isNotEmpty()) {
             Text(
@@ -1089,10 +1100,10 @@ private fun DangerCard(enabled: Boolean, onDisable: () -> Unit, onClearAll: () -
         )
         Spacer(Modifier.height(8.dp))
         if (enabled) {
-            OutlinedButton(onClick = onDisable) { Text(stringResource(R.string.engage_disable)) }
+            WcmOutlinedButton(onClick = onDisable) { Text(stringResource(R.string.engage_disable)) }
             Spacer(Modifier.height(8.dp))
         }
-        OutlinedButton(onClick = { confirming = true }) { Text(stringResource(R.string.engage_clear_data)) }
+        WcmOutlinedButton(onClick = { confirming = true }) { Text(stringResource(R.string.engage_clear_data)) }
     }
 
     if (confirming) {
