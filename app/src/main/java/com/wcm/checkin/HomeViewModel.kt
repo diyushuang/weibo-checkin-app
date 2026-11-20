@@ -155,9 +155,12 @@ class HomeViewModel @Inject constructor(
 
     private fun toast(text: String) = _events.tryEmit(HomeEvent.Toast(text))
 
-    private fun formatTime(at: Long): String = timeFmt.get().format(Date(at))
+    // ThreadLocal.get() 在 Kotlin 侧是平台类型（可空），withInitial 保证永不返回 null，
+    // 这里用 !! 把这个不变量写出来 —— 原先写成 `?: SimpleDateFormat(...)` 是为了消警告，
+    // 但那个分支永远不会执行，反而像是"可能拿不到格式器"。
+    private fun formatTime(at: Long): String = timeFmt.get()!!.format(Date(at))
 
-    private fun formatStamp(at: Long): String = stampFmt.get().format(Date(at))
+    private fun formatStamp(at: Long): String = stampFmt.get()!!.format(Date(at))
 
     private fun topicStateTime(atMs: Long): String = when {
         atMs <= 0L -> ""

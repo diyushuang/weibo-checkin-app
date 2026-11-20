@@ -177,10 +177,16 @@ class TopicViewModel @Inject constructor(
         AccountStore.markVerified(ctx, uid, cookie)
     }
 
+    // ThreadLocal.get() 在 Kotlin 侧是平台类型（可空），但 withInitial 保证首次访问就初始化，
+    // 运行期永不返回 null。集中在这里断一次，避免每个调用点各写一次 !! 或 ?: 兜底。
+    private fun fmtTime(at: Long): String = timeFmt.get()!!.format(Date(at))
+
+    private fun fmtDate(at: Long): String = dateFmt.get()!!.format(Date(at))
+
     private fun topicStateTime(at: Long): String = when {
         at <= 0L -> ""
-        TopicStore.isToday(at) -> timeFmt.get().format(Date(at))
-        else -> dateFmt.get().format(Date(at))
+        TopicStore.isToday(at) -> fmtTime(at)
+        else -> fmtDate(at)
     }
 
     // ========================= 渲染 =========================
@@ -312,7 +318,7 @@ class TopicViewModel @Inject constructor(
                             append(
                                 ctx.getString(
                                     R.string.topic_detail_fetched,
-                                    timeFmt.get().format(Date(detail.fetchedAt)),
+                                    fmtTime(detail.fetchedAt),
                                 )
                             )
                         }
@@ -614,7 +620,7 @@ class TopicViewModel @Inject constructor(
         val snap = TopicStore.snapshot(ctx, uid) ?: return
         if (snap.topics.isEmpty()) return
         // 调用点在 IO 线程；timeFmt 是 ThreadLocal，各线程各拿一份，这里直接复用
-        val at = timeFmt.get().format(Date())
+        val at = fmtTime(System.currentTimeMillis())
         AccountStore.setLastResult(
             ctx, uid,
             ctx.getString(R.string.home_status_signed_fmt, snap.done, snap.total, at),
