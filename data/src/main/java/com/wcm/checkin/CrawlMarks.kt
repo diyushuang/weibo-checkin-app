@@ -36,7 +36,6 @@ object CrawlMarks {
     /** 已抓取的图片 picId 与已完成（DONE / VOID）的帖 id。 */
     class Snapshot(val pics: Set<String>, val posts: Set<String>) {
         fun hasPic(picId: String): Boolean = picId.isNotEmpty() && pics.contains(picId)
-        fun isPostDone(postId: String): Boolean = postId.isNotEmpty() && posts.contains(postId)
     }
 
     private val EMPTY = Snapshot(emptySet(), emptySet())
@@ -117,10 +116,10 @@ object CrawlMarks {
         val idx = CrawlIndex.open(ctx.filesDir, tag)
         return try {
             idx.load()
-            val pics = HashSet<String>(idx.filesByPic.size)
-            pics.addAll(idx.filesByPic.keys)
+            // 加锁拷贝后再遍历：索引内部集合已私有，公开的快照 API 是唯一正确的读取口
+            val pics = idx.picIds()
             val posts = HashSet<String>()
-            idx.posts.forEach { (id, rec) -> if (rec.terminal) posts.add(id) }
+            idx.snapshotPosts().forEach { (id, rec) -> if (rec.terminal) posts.add(id) }
             Snapshot(pics, posts)
         } catch (e: Exception) {
             Log.w(TAG, "读取抓取索引失败（已抓取标记不可用）：${e.message}")

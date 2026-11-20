@@ -32,10 +32,9 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +48,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -111,20 +111,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** 跳到「超话」Tab 并选中指定账号（首页点账号行 / Hero 卡时调用）。 */
-    fun selectTopicTab(uid: String) {
-        topicViewModel.selectAccount(uid)
-        navigateTab("topics")
-    }
-
-    fun selectHomeTab() = navigateTab("home")
-
     fun selectSettingsTab() = navigateTab("settings")
-
-    /** 底栏「超话」上的待签角标；[count] 为 null 或 ≤0 时移除。 */
-    fun setTopicBadge(count: Int?) {
-        badgeState.value = if (count == null || count <= 0) null else count
-    }
 
     private fun navigateTab(route: String) {
         val nav = navController ?: return
@@ -149,12 +136,21 @@ private fun AppShell(
 ) {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route ?: ROUTE_HOME
-    val badge by badgeState.collectAsState()
+    val badge by badgeState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val density = LocalDensity.current
-    val imeVisible = WindowInsets.ime.getBottom(density) > 0
     val showBottomBar = route == ROUTE_HOME || route == ROUTE_TOPICS ||
         route == ROUTE_GALLERY || route == ROUTE_SETTINGS || route == ROUTE_ENGAGE
+    // 记住跳转 lambda：否则 AppShell 每次重组都会给底栏一个新回调引用，
+    // 底栏的 5 个 NavigationBarItem 全部白重组一遍。
+    val onSelectTab: (String) -> Unit = remember(nav) {
+        { target ->
+            nav.navigate(target) {
+                popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -243,7 +239,7 @@ private fun AppShell(
                     ),
                 ) { entry ->
                     val vm: BrowsingViewModel = hiltViewModel()
-                    val state by vm.state.collectAsState()
+                    val state by vm.state.collectAsStateWithLifecycle()
                     val initialUid = entry.arguments?.getString("uid").orEmpty()
                     LaunchedEffect(initialUid) { vm.start(initialUid) }
                     OnResume { vm.onResume() }
@@ -292,7 +288,7 @@ private fun AppShell(
                     ),
                 ) { entry ->
                     val vm: PostPickViewModel = hiltViewModel()
-                    val state by vm.state.collectAsState()
+                    val state by vm.state.collectAsStateWithLifecycle()
                     val bid = entry.arguments?.getString("bid").orEmpty()
                     var fullPreview by remember { mutableStateOf<Pair<String, String>?>(null) }
                     LaunchedEffect(bid) { vm.start(bid) }
@@ -340,7 +336,7 @@ private fun AppShell(
                     ),
                 ) { entry ->
                     val vm: RemotePreviewViewModel = hiltViewModel()
-                    val state by vm.state.collectAsState()
+                    val state by vm.state.collectAsStateWithLifecycle()
                     val urls = entry.arguments?.getString("urls").orEmpty()
                         .split("\n")
                         .filter { it.isNotEmpty() }
@@ -371,7 +367,7 @@ private fun AppShell(
                     ),
                 ) { entry ->
                     val vm: GalleryBrowseViewModel = hiltViewModel()
-                    val state by vm.state.collectAsState()
+                    val state by vm.state.collectAsStateWithLifecycle()
                     val tree = entry.arguments?.getString("tree").orEmpty()
                     var confirmDelete by remember { mutableStateOf(false) }
                     LaunchedEffect(Unit) { vm.start(tree) }
@@ -477,7 +473,7 @@ private fun AppShell(
                     ),
                 ) { entry ->
                     val vm: ImagePreviewViewModel = hiltViewModel()
-                    val state by vm.state.collectAsState()
+                    val state by vm.state.collectAsStateWithLifecycle()
                     val tree = entry.arguments?.getString("tree").orEmpty()
                     val index = entry.arguments?.getString("index")?.toIntOrNull() ?: 0
                     val name = entry.arguments?.getString("name").orEmpty()
@@ -575,82 +571,80 @@ private fun AppShell(
                 }
             }
         }
-        if (showBottomBar && !imeVisible) {
-            HorizontalDivider(thickness = 1.dp, color = colorResource(R.color.line))
-            // 5 个 Tab 收成一个 Tab 停靠点：否则从内容区穿到底栏要按 5 次，
-            // 方向键在组内走即可（这是桌面模式下底栏的常规行为）
-            NavigationBar(
-                containerColor = colorResource(R.color.surface),
-                tonalElevation = 0.dp,
-                modifier = Modifier.wcmFocusGroup(),
-            ) {
-                NavItem(
-                    selected = route == ROUTE_HOME,
-                    icon = R.drawable.ic_nav_home,
-                    label = R.string.nav_home,
-                    badge = null,
-                    onClick = {
-                        nav.navigate(ROUTE_HOME) {
-                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                )
-                NavItem(
-                    selected = route == ROUTE_TOPICS,
-                    icon = R.drawable.ic_nav_topics,
-                    label = R.string.nav_topics,
-                    badge = badge,
-                    onClick = {
-                        nav.navigate(ROUTE_TOPICS) {
-                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                )
-                NavItem(
-                    selected = route == ROUTE_GALLERY,
-                    icon = R.drawable.ic_nav_gallery,
-                    label = R.string.nav_gallery,
-                    badge = null,
-                    onClick = {
-                        nav.navigate(ROUTE_GALLERY) {
-                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                )
-                NavItem(
-                    selected = route == ROUTE_SETTINGS,
-                    icon = R.drawable.ic_nav_settings,
-                    label = R.string.nav_settings,
-                    badge = null,
-                    onClick = {
-                        nav.navigate(ROUTE_SETTINGS) {
-                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                )
-                NavItem(
-                    selected = route == ROUTE_ENGAGE,
-                    icon = R.drawable.ic_nav_tasks,
-                    label = R.string.nav_tasks,
-                    badge = null,
-                    onClick = {
-                        nav.navigate(ROUTE_ENGAGE) {
-                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                )
-            }
+        if (showBottomBar) {
+            WcmBottomBar(route = route, badge = badge, onSelect = onSelectTab)
         }
+    }
+}
+
+/**
+ * 底栏。
+ *
+ * 从 [AppShell] 抽出来的**唯一原因**是 IME 状态的作用域：`WindowInsets.ime` 在键盘
+ * 动画期间逐帧变化，而旧代码在 `AppShell` 的函数体里读它，等于每帧都让整个
+ * `AppShell`（含 14 条 route 的 `NavHost`）失效重组。
+ *
+ * 这里再套一层 `derivedStateOf`：把「逐帧变化的像素高度」收敛成「是否可见」这一个
+ * 布尔值，只有真正翻转时才重组。
+ */
+@Composable
+private fun WcmBottomBar(
+    route: String,
+    badge: Int?,
+    onSelect: (String) -> Unit,
+) {
+    val density = LocalDensity.current
+    // `WindowInsets.ime` 是 @Composable getter，必须在函数体里取；`getBottom()` 才是
+    // 读快照状态的那一步，可以放进 derivedStateOf 里做「逐帧像素 → 布尔」的收敛。
+    val ime = WindowInsets.ime
+    val imeVisible by remember(density, ime) {
+        derivedStateOf { ime.getBottom(density) > 0 }
+    }
+    if (imeVisible) return
+
+    HorizontalDivider(thickness = 1.dp, color = colorResource(R.color.line))
+    // 5 个 Tab 收成一个 Tab 停靠点：否则从内容区穿到底栏要按 5 次，
+    // 方向键在组内走即可（这是桌面模式下底栏的常规行为）
+    NavigationBar(
+        containerColor = colorResource(R.color.surface),
+        tonalElevation = 0.dp,
+        modifier = Modifier.wcmFocusGroup(),
+    ) {
+        NavItem(
+            selected = route == ROUTE_HOME,
+            icon = R.drawable.ic_nav_home,
+            label = R.string.nav_home,
+            badge = null,
+            onClick = { onSelect(ROUTE_HOME) },
+        )
+        NavItem(
+            selected = route == ROUTE_TOPICS,
+            icon = R.drawable.ic_nav_topics,
+            label = R.string.nav_topics,
+            badge = badge,
+            onClick = { onSelect(ROUTE_TOPICS) },
+        )
+        NavItem(
+            selected = route == ROUTE_GALLERY,
+            icon = R.drawable.ic_nav_gallery,
+            label = R.string.nav_gallery,
+            badge = null,
+            onClick = { onSelect(ROUTE_GALLERY) },
+        )
+        NavItem(
+            selected = route == ROUTE_SETTINGS,
+            icon = R.drawable.ic_nav_settings,
+            label = R.string.nav_settings,
+            badge = null,
+            onClick = { onSelect(ROUTE_SETTINGS) },
+        )
+        NavItem(
+            selected = route == ROUTE_ENGAGE,
+            icon = R.drawable.ic_nav_tasks,
+            label = R.string.nav_tasks,
+            badge = null,
+            onClick = { onSelect(ROUTE_ENGAGE) },
+        )
     }
 }
 

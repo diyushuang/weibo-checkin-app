@@ -1,7 +1,6 @@
 package com.wcm.checkin
 
 import android.content.Context
-import org.json.JSONObject
 
 /**
  * 时间线抓取：`107603<uid>` 分页 + 详情，Phase RETRY / 补新 / 补历史 / 全量扫描。

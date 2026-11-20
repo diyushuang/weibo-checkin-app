@@ -51,9 +51,6 @@ class SafTreeStore(private val resolver: ContentResolver, treeUri: Uri) {
 
     fun count(): Int = names.size
 
-    /** 精确匹配（旧行为，保留给日志与兼容）。 */
-    fun hasFile(name: String): Boolean = names.containsKey(name)
-
     /** 归一匹配：`x (1).jpg` 也算 `x.jpg` 已存在 —— SAF 撞名副本不会再被当成「没有」。 */
     fun hasCanonical(name: String): Boolean = canonicals.containsKey(AssetName.canonical(name))
 

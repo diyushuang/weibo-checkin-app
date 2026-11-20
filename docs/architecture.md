@@ -1,9 +1,11 @@
 # 架构说明
 
-> 适用版本：`0.11.0`（versionCode 35）
+> 适用版本：`0.15.0`（versionCode 46）
+> 规模数字由 `docs/testing.md` 的覆盖率报告与 `find` 统计得出，改代码后请一并更新。
 > 本文描述**当前真实结构**。迁移过程中的取舍与历史包袱不在这里叙述，见
 > [`docs/review/refactor-audit-2026-11-15.md`](review/refactor-audit-2026-11-15.md)；
-> 构建结果、运行时验证与待执行的端到端清单见 [`docs/verification.md`](verification.md)。
+> 构建结果、运行时验证与待执行的端到端清单见 [`docs/verification.md`](verification.md)；
+> 测试分布、覆盖率的现状与补测优先级见 [`docs/testing.md`](testing.md)。
 
 ## 1. 模块划分
 
@@ -11,10 +13,10 @@
 
 | 模块 | 规模 | 职责一句话 |
 | --- | --- | --- |
-| `:core` | 32 文件 / 约 5.4k 行 | 共享内核：模型、端口接口、纯算法、微博客户端、文件与媒体原语 |
-| `:data` | 10 文件 / 约 2.0k 行 | 需要 `Context` 的本地状态：账号表、抓取设置、超话缓存、凭证库、端口适配器 |
-| `:domain` | 11 文件 / 约 2.9k 行 | 服务编排：签到、保活、抓取、自动重登。只认端口，不认实现 |
-| `:app` | 43 文件 / 约 10.4k 行 | Compose UI、Navigation 壳、WorkManager、Hilt 组合根 |
+| `:core` | 43 文件 / 8,601 行 | 共享内核：模型、端口接口、纯算法、微博客户端、文件与媒体原语 |
+| `:data` | 11 文件 / 2,466 行 | 需要 `Context` 的本地状态：账号表、抓取设置、超话缓存、凭证库、端口适配器 |
+| `:domain` | 12 文件 / 4,004 行 | 服务编排：签到、保活、抓取、自动重登。只认端口，不认实现 |
+| `:app` | 61 文件 / 14,929 行 | Compose UI、Navigation 壳、WorkManager、Hilt 组合根 |
 
 ```
 :app
@@ -46,7 +48,7 @@
 | 类别 | 内容 |
 | --- | --- |
 | 模型 | `Account`、`CrawlTarget`、`CrawlIndex` 记录、`AccountStatusHead` |
-| 端口 | `AccountPort`（账号表读写）／`CrawlSettingsPort`／`TopicCachePort`／`PanelPort`／`CredentialPort` |
+| 端口 | `AccountPort`（账号表读写）／`CrawlSettingsPort`／`TopicCachePort`／`PanelPort`／`CredentialPort`／`ProbePort`（探活，签到链路专用） |
 | 纯算法 | `AssetName`、`Hashing`、`CrawlCursor`、`ReloginPolicy`、`CookieLife`、`PanelUrl` |
 | 微博客户端 | `WeiboHttp`（出站基座 + 域名白名单）、`WeiboAuthApi`、`WeiboTopicApi`、`WeiboPostApi`、`WeiboImageUrl`、`WeiboThrottle`、`WebAjax`、`GuestSession`、`WeiboPasswordLogin`、`WeiboAlcLogin` |
 | 超话互动任务 | `EngageModels`（模型）、`EngageTextPool`（文案与正文组装）、`EngagePlanner`（规划）、`EngageGuard`（熔断）、`EngageSchedule`（日期与排期）、`EngageCodec`（序列化）、`EngagePorts`（两个窄端口）、`WeiboWriteApi`（四动作+删除）、`WeiboFeedApi`（帖子流） |
@@ -58,7 +60,8 @@
 ### `:data` — 本地状态实现
 
 `AccountStore`、`CrawlSettings`、`PanelSettings`、`TopicStore`、`CrawlMarks`、`SafAccess`、
-`StorePrefs`、`SecretBox`（字段级加密）、`CredentialVault`（Keystore 凭证库）、
+`StorePrefs`、`SecretBox`（字段级加密）、`SecretHealth`（「本机加密不可用」的持久化标记）、
+`CredentialVault`（Keystore 凭证库）、
 `PortAdapters.kt`（5 个端口 32 个方法的转发）、`EngageStore`（互动任务：独立 prefs `wcm_engage`）。
 
 不放：View、网络客户端与纯算法（已在 `:core`）。
@@ -67,7 +70,7 @@
 
 | 服务 | 职责 |
 | --- | --- |
-| `CheckinService` | 账号循环 → 探活 → 列超话 → 逐条签到（3–8s 随机间隔）→ 写小结 |
+| `CheckinService` | 账号循环 → 探活（`ProbePort`）→ 列超话 → 逐条签到（3–8s 随机间隔）→ 写小结 |
 | `AccountMaintenanceService` | 探活落库、补昵称、面板同步。首页「Cookie 同步」与 `CheckInWorker` 共用这一份 |
 | `AutoRelogin` | 账密 / ALC 重签、退避与硬停策略 |
 | `CrawlService` | 抓取**单闸门**：全应用同一时刻只允许一个抓取任务 |
@@ -107,7 +110,8 @@
 
 ### 3.1 导航
 
-`MainActivity` 用 Navigation Compose + `NavigationBar`，12 条 route：
+`MainActivity` 用 Navigation Compose + `NavigationBar`，13 条 route 注册（14 个 route 常量，
+`engage_texts/{kind}` 带一段路径参数）：
 
 ```
 home ─┐
@@ -115,7 +119,8 @@ topic ─┤
 gallery ┼─ 五个 Tab（saveState/restoreState，切回保留滚动与筛选）
 settings ┤
 engage ─┘
-        └─ galleryBrowse / browsing / postPick / imagePreview / remotePreview / engage_texts / engage_posts（入栈子页）
+        └─ galleryBrowse / browsing / postPick / imagePreview / remotePreview /
+           engage_texts/{kind} / engage_task/{action} / engage_posts（入栈子页）
 ```
 
 五个 Tab 的 ViewModel 挂在 **Activity 作用域**，切 Tab 不丢状态；子页各用自己的
@@ -130,7 +135,7 @@ ViewModel。只有一个 Activity，只有登录页例外。
 | 超话快照 | `HomeViewModel.topicStates: StateFlow<Map<String, TopicState>>`，IO 写、主线程读，避免遍历时并发扩容 |
 | 抓取闸门 | `CrawlService` 单实例 + companion 里的 `GATE` / `STOP`，即使误配两个实例也不会出现两个闸门 |
 | 账号表并发 | `AccountStore` 的读改写在 `LOCK` 内；抓取设置由 `CrawlSettings.LOCK` 保护 |
-| 可测性 | 纯函数（`CrawlPlanner` / `CrawlCursor` / `CrawlProgress.reduce` / `AssetName` / `ReloginPolicy` / `CookieLife`）保持 JVM 可测，是 331 个 JVM 单测的主体 |
+| 可测性 | 纯函数（`CrawlPlanner` / `CrawlCursor` / `CrawlProgress.reduce` / `AssetName` / `ReloginPolicy` / `CookieLife`）保持 JVM 可测，是 603 个 JVM 单测的主体；编排服务（`CheckinService` / `AutoRelogin` / `EngageService` 全链路）已补上特征测试，可测性靠**不带 Context 的窄端口**（见 [`testing.md`](testing.md)） |
 
 ### 3.3 依赖注入
 
@@ -169,6 +174,18 @@ manifest 关闭 WorkManager 默认初始化，避免自定义 `HiltWorkerFactory
 6. **签到与面板同步解耦**：签到成功不因面板 5xx 被判失败。两件事的失败语义分开。
 7. **不调用 `sso/updatetgt.php`**：那条旧「更新链」会让原凭证在 5 秒内作废，
    是「续期变自杀」，见 `WeiboAlcLogin` 类注释。
+8. **挂起函数里的 `catch` 必须先重抛 `CancellationException`**：
+
+   ```kotlin
+   } catch (e: CancellationException) {
+       throw e
+   } catch (e: Exception) { … }
+   ```
+
+   吞掉它会把「用户点了停止 / 超时」记成一次业务失败。0.15.0 之前
+   `CheckinService` 的三处 catch 就少了这段（其余 4 个模块都有），一旦接上
+   「停止签到」按钮，剩余超话会在一瞬间全被记成失败并落一条假小结。
+   回归用例：`CheckinServiceTest.cancellationDuringPause_propagatesAndWritesNoSummary`。
 
 ## 5. 加新功能时往哪放
 
@@ -178,7 +195,7 @@ manifest 关闭 WorkManager 默认初始化，避免自定义 `HiltWorkerFactory
 | 新的纯计算逻辑 | `:core`，写成顶层纯函数 | 配套 JVM 单测，别塞进 ViewModel |
 | 新的持久化字段 | `:data` 的 `StorePrefs` 键集 + `:core` 的模型 | 必须给默认值，老数据要能读 |
 | 新的业务编排 | `:domain` 的新服务 | 依赖只允许是 `:core` 的端口 |
-| 新服务要读的本地状态 | 先在 `:core` 的 `Ports.kt` 加接口，再在 `:data` 的 `PortAdapters.kt` 实现 | 端口**不声明默认值**，默认值留实现类 |
+| 新服务要读的本地状态 | 先在 `:core` 的 `Ports.kt` 加接口，再在 `:data` 的 `PortAdapters.kt` 实现 | 端口**不声明默认值**，默认值留实现类；带 `Context` 的端口无法在 JVM 单测里假造，编排服务要可测就得像 `ProbePort` 那样另开窄口 |
 | 新页面 | `:app` 的 Screen + ViewModel + 一条 route | 长任务仍挂 `AppScope` |
 | 新的一次性后台任务 | `:app` 的 `@HiltWorker` + `DomainModule` | Worker 类名要进 `proguard-rules.pro` 的 keep 列表 |
 | 新颜色 / 新尺寸令牌 | `res/values/colors.xml` + `res/values-night/colors.xml` | 同时补 `values/themes.xml`（XML 页面）与 `Theme.kt`（Compose）；漏一处会出现「Compose 页新色、登录页旧色」 |

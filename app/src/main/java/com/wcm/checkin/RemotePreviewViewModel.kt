@@ -57,8 +57,6 @@ class RemotePreviewViewModel @Inject constructor(
         }
     }
 
-    fun urlAt(index: Int): String = _state.value.urls.getOrNull(index).orEmpty()
-
     fun onPageChanged(index: Int) {
         _state.update { it.copy(initialPage = index) }
     }

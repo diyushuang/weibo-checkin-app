@@ -207,12 +207,6 @@ object TopicStore {
         }
     }
 
-    fun clearDetail(ctx: Context, topicId: String) {
-        if (topicId.isEmpty()) return
-        synchronized(detailCache) { detailCache.remove(topicId) }
-        prefs(ctx).edit { remove(DETAIL_PREFIX + topicId) }
-    }
-
     /** 详情是否还在新鲜期内（[now] 可注入，便于单测）。 */
     fun isFresh(at: Long, now: Long = System.currentTimeMillis(), ttlMs: Long = DETAIL_TTL_MS): Boolean =
         at > 0L && now - at in 0 until ttlMs

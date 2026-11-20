@@ -4,38 +4,51 @@
 > [`docs/architecture.md`](architecture.md)，功能对照见
 > [`docs/review/refactor-audit-2026-11-15.md`](review/refactor-audit-2026-11-15.md)。
 
-## 1. 当前基线（0.11.0 / versionCode 35）
+## 1. 当前基线（0.15.0 / versionCode 46，2026-11-20 实测）
 
 | 项 | 数值 |
 | --- | --- |
-| JVM 单测 | 331 个（23 个测试类），0 失败 |
+| JVM 单测 | **603 个（39 个测试类），0 失败 / 0 跳过** |
+| 覆盖率（JaCoCo，行） | **4,150 / 16,302 ≈ 25.5%**（明细与补测优先级见 [`testing.md`](testing.md)） |
 | 仪器测试 | 7 个（需要设备/模拟器，CI 未接入 emulator） |
 | lint | 四个模块 `lintDebug` 均 0 errors / 0 warnings（`NewApi` 为硬错误，`GradleDependency` 等版本提示已显式关闭，理由见各模块 `build.gradle.kts`） |
-| release APK | 约 3.63 MB（4 模块化 + R8 + 资源收缩前为 6.55 MB） |
-| release 冷启动 | 864 ms（热安装）/ 3195 ms（全新安装） |
+| detekt | 三模块 0 违规（`:core`/`:data`/`:domain`；仅开 `LongMethod`/`LargeClass`/`LongParameterList` 三条规则，6 条抓取链路存量违规圈进 baseline，见 `core/config/detekt/`） |
+| Kotlin 编译告警 | 0（`-Pkotlin.compiler.execution.strategy=in-process`） |
+| debug APK | **14.66 MB** |
+| release APK | **3.92 MB**（R8 + 资源收缩；0.15.0 发版产物是 4.11 MB，差异来自死资源清理与 R8 回归） |
+| release 冷启动 | 864 ms（热安装）/ 3195 ms（全新安装）——**0.11.0 的数据，未复测** |
 
-## 2. 最近一次全量门禁
+> 上一版基线（0.11.0：331 单测 / release 3.63 MB）已作废，只在 git 历史里可查。
+> 数字口径：模块规模与路由数由 `find` / `grep` 统计，覆盖率由
+> `./gradlew :app:jacocoTestReport` 生成，**不要手抄旧值**。
+
+## 2. 最近一次全量门禁（2026-11-20）
 
 ```
-./gradlew --offline clean testDebugUnitTest lintDebug assembleRelease assembleDebugAndroidTest
-BUILD SUCCESSFUL in 9m 24s
+JAVA_HOME=$JDK17_HOME ./gradlew clean :app:testDebugUnitTest :app:assembleDebug \
+  :app:assembleRelease :app:lintDebug :app:jacocoTestReport detekt
+BUILD SUCCESSFUL
 ```
 
 | 任务 | 结果 |
 | --- | --- |
-| `:app:testDebugUnitTest` | 331 用例 / 0 失败 / 0 跳过 |
+| `:app:testDebugUnitTest` | 603 用例 / 0 失败 / 0 跳过 |
 | `lintDebug`（app / core / data / domain） | 四模块均 0 errors / 0 warnings |
-| `:app:assembleRelease` | `app-release.apk` 3,630,532 B |
-| `:app:assembleDebugAndroidTest` | 编译通过（仪器测试未被重构打散） |
+| `detekt`（core / data / domain） | 三模块均 0 违规（6 条存量在 baseline 里） |
+| `:app:assembleDebug` | `app-debug.apk` 14.66 MB |
+| `:app:assembleRelease` | `app-release.apk` 3.92 MB |
+| `:app:jacocoTestReport` | 行覆盖 25.5% |
 
 产物核验（`app/build/outputs/mapping/release/mapping.txt`）：
 
 - `com.wcm.checkin.CheckInWorker -> com.wcm.checkin.CheckInWorker`：类名保留，
   升级后 WorkManager 库里那条旧 `WorkSpec` 仍能按类名反射实例化。
-- `com.wcm.checkin.HomeViewModel -> n6.j8`：正常混淆，说明 R8 生效。
+- `com.wcm.checkin.HomeViewModel -> o6.md`：正常混淆，说明 R8 生效。
 - `WcmApp` 保留、`debuggable` 未开启。
 
 ## 3. 运行时验证（2026-11-14，Android 14 模拟器）
+
+> 注意：以下记录对应 0.11.0–0.13.0 期间的行为，0.15.0 未复测。
 
 以下为重构落地后实际在模拟器上走过并确认的项，不是静态推导。
 
@@ -92,6 +105,8 @@ BUILD SUCCESSFUL in 9m 24s
 | TalkBack 实听 | 无障碍描述已补（见重构审计 §3.6），未做真人实听 |
 | lint 全量 | 仅跑构建期 `lintVital` 与 `lintDebug`，未跑 `lint` 全变体 |
 | 升级路径的真机验证 | 签名指纹已核对一致（SHA-256 `05b5a60b…c380edd`），但未做真实覆盖安装回归 |
+| 「本机加密不可用」提示的真机表现 | 需要一台 Keystore 异常的设备才能触发，未构造 |
+| 签到/重登的新单测以外的编排路径 | `CrawlSaver` / `CrawlService` / `AlbumCrawler` / `TimelineCrawler` 仍为 0 覆盖，见 [`testing.md`](testing.md) §5 |
 
 **升级前建议动作**：`adb install -r app-release.apk` 覆盖安装 → 确认账号列表、
 Cookie 有效期、抓取目标与索引「已抓」标记仍在 → 跑一轮签到 → 抓一轮增量。

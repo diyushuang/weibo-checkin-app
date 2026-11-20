@@ -11,6 +11,72 @@
 
 ---
 
+## [未发布] — 2026-11-20 全量审查后的修复批次
+
+来源：[`docs/review/code-audit-2026-11-20.md`](docs/review/code-audit-2026-11-20.md) 的 9 条 P2/P3。
+**没有 P0/P1**，因此本批不含功能变更，只有正确性收口与工程基础设施。
+
+### 修复
+
+- **签到途中被取消会被记成「失败」**（P2）：`CheckinService` 的三处 `catch` 吞掉了
+  `CancellationException`。现在与其余 4 个模块一致先重抛——否则接上「停止签到」按钮后，
+  剩余超话会在一瞬间全被记成失败，并落一条「签到 0/N」的假小结。
+- **凭据明文落盘不再静默**（P2）：`SecretBox.sealOrPlain` 在 Keystore 异常时仍会降级写明文
+  （可用性优先，这一点不变），但现在会写一条 `SecretHealth` 标记，首页 Cookie 卡下方
+  直接提示「本机加密不可用，凭据已以明文保存」；后续全量重写成功后自动消失。
+- **面板地址的私网判定补三类**（P3）：`100.64/10`（Tailscale / ZeroTier 默认网段）、
+  IPv6 ULA `fc00::/7`、链路本地 `fe80::/10`。此前用 `http://100.x.y.z:8080` 的自建面板
+  会被误判公网而强制 https，直接不可用。
+
+### 变更（用户能感知的）
+
+- **切到后台不再空转**：五个 Tab 的状态收集改为 `collectAsStateWithLifecycle()`，
+  页面进后台（切登录 WebView、按 Home）后停止收集。此前签到进度、首页每秒计时器、
+  日志流在后台仍持续驱动重组。
+- **键盘弹出更省**：底栏的 IME 判定下沉到底栏自身并用 `derivedStateOf` 收敛，
+  键盘动画不再逐帧重组整个 `NavShell`（含 13 条 route 的 `NavHost`）。
+
+### 工程
+
+- **覆盖率可测了**：接入 JaCoCo（`./gradlew :app:jacocoTestReport`），当前行覆盖 22.5%。
+  没用 Kover——它在 Windows 中文路径下会把 `-javaagent` 参数写成 `E://???//...`，
+  单测直接起不来。
+- **编排层不再是零测试**：`CheckinService` 抽出 `:core` 的 `ProbePort`（此前直接依赖
+  final 具体类，JVM 造不出来），新增 `CheckinServiceTest`（7 例）与 `AutoReloginTest`（9 例）。
+  单测总数 573 → 593（另有 `PanelUrlTest` +4）。测试分布与补测优先级见新增的 [`docs/testing.md`](docs/testing.md)。
+- **lint 回到 0 warning**：清掉 14 个 `engage_*` 死资源；Kotlin 编译 0 告警
+  （删掉三个未使用参数，其中 `EngageSchedule.forbiddenTextDays(zone)` 是误导性 API）。
+- **文档与实测对齐**：`architecture.md` / `verification.md` 落后 4 个版本的数字全部更新。
+- 其他：`CrawlIndex` 的 5 个内部 `HashMap` 改私有（对外提供 `snapshotPosts()` / `picIds()`）；
+  `EngageService.execute()` 拆成 `executePost` / `executeOnTarget`，消除三处 `target!!`；
+  `WebAjax` 复用 `WeiboHttp.client`；6 处空 `catch` 补上「为什么可以吞」的注释。
+- **拆掉 `runInternal` 这个 605 行的巨型函数**：先补 10 个特征测试
+  （`EngageServiceRunTest`，手写 fake + 可覆写 `EngageGateway` 薄层，不加 mockk）锁住
+  现有行为——含「文案耗尽走 NO_TEXT 不进熔断计数」这类此前未文档化的真实行为——
+  然后拆成 ~46 行编排器 + 新文件 `EngageRunExecution.kt`（配置/登录/计划/执行/收尾五段 +
+  单条动作执行）。拆分全程 603 用例全绿，行为零变化。单测总数 593 → 603（39 类）；
+  编排层覆盖从 12.4%（71/574）升到 `EngageService.kt` 77.5% + `EngageRunExecution.kt` 91.3%，
+  全项目行覆盖 22.5% → 25.4%。
+- **接入 detekt 静态检查**：只开 `LongMethod(100)` / `LargeClass(650)` / `LongParameterList(≤8)`
+  三条规则，配置在 `core/config/detekt/detekt.yml`（`:app` 是 Compose 声明式 UI 暂不纳入）。
+  6 条抓取链路存量违规圈进 `core/config/detekt/baseline.xml`（对应 `testing.md` §5 的
+  「先补测试再重构」区域），baseline 外新违规直接拦；CI `build-apk.yml` 加 detekt 门禁步骤。
+  顺带把 `ReloginPolicy.shouldAttempt` 的 8 个参数捆成 `Facts` + `State` 两个数据类
+  （8 → 5 参）、`WeiboPasswordLogin.login` 的 122 行拆成三段——这两处是拆分时暴露的
+  同类问题。
+- **清一轮死代码与无用依赖**：删掉 7 个零引用声明（`MainActivity` 的
+  `selectTopicTab` / `selectHomeTab` / `setTopicBadge`——角标写入已被 HomeTab 回调链
+  取代、`RemotePreviewViewModel.urlAt`、`SafTreeStore.hasFile`、`CrawlMarks.isPostDone`、
+  `TopicStore.clearDetail`）、31 个未使用 import（Compose 属性委托的
+  `getValue` / `setValue` 保留）、`:data` 的 okhttp 依赖（该模块无任何 okhttp3 引用，
+  网络调用全在 :core/:domain）。lifecycle / profileinstaller 等版本钉保留并在
+  `:domain` 补齐「版本钉不要按引用删」的注释；detekt baseline 注释修正为实际条目数
+  （6 个函数，AlbumCrawler×2 / CrawlSaver×3 / TimelineCrawler×1，都在 :domain）。
+  顺带修掉拆分遗留的 `EngageRunExecution.kt` 一处未使用变量告警；清理后全项目
+  行覆盖 25.5%。
+
+---
+
 ## [0.15.0] - 2026-11-20 — 界面系统 v3.0：一句「收紧」落到底
 
 这一版不动任何业务逻辑（签到、抓取、面板同步、互动任务一行未改），只把界面做了一次系统性的收口：
