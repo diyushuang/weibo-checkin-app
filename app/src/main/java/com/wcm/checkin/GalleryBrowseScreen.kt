@@ -226,11 +226,11 @@ private fun SearchRow(
                 }
             },
         )
+        // semantics{} 不是 @Composable 作用域，描述文案必须先在外面取好
+        val closeDesc = stringResource(R.string.gallery_search_close)
         IconButton(
             onClick = { onToggleSearch(false) },
-            modifier = Modifier.semantics {
-                contentDescription = "关闭搜索"
-            },
+            modifier = Modifier.semantics { contentDescription = closeDesc },
         ) {
             Icon(
                 painter = painterResource(R.drawable.ic_close),
@@ -285,7 +285,7 @@ private fun FilterRow(
         }
         Box {
             TextButton(onClick = { groupOpen = true }) {
-                Text("分组", color = colorResource(R.color.ink_2))
+                Text(stringResource(R.string.gallery_group_label), color = colorResource(R.color.ink_2))
             }
             DropdownMenu(expanded = groupOpen, onDismissRequest = { groupOpen = false }) {
                 GalleryGroupMode.values().forEach { mode ->

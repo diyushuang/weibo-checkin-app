@@ -576,6 +576,35 @@
     <string name="engage_clear_data">清除任务数据</string>
     <string name="engage_clear_confirm">将删除配置、三套文案库、运行记录与发帖台账，不可恢复。确定继续？</string>
 
+    <!-- ===== v3.0：任务页原先硬编码在 Kotlin 里的文案 =====
+         补齐口径：本来就在 strings.xml 的保持不动，这里只搬原先写死在代码里的。
+         占位符沿用本文件既有的 %1$s / %1$d / %% 风格。 -->
+    <string name="engage_progress_pct">%1$d/%2$d · %3$d%%</string>
+    <string name="engage_used_fmt">已用 %1$s</string>
+    <string name="engage_wait_fmt">· 等待 %1$d 秒</string>
+    <string name="engage_eta_fmt">· %1$s</string>
+    <string name="engage_invalid_fmt">当前配置还不能执行：%1$s</string>
+    <string name="engage_text_limit_fmt">· 上限 %1$d 字</string>
+    <string name="engage_no_account_hint">还没有已登录的账号</string>
+    <string name="common_loading">加载中…</string>
+    <string name="common_collapse">收起</string>
+    <string name="engage_auto_note">打开 App 时，若今天还没有一次成功的运行，会自动执行一轮；设为「仅手动」的动作不会被带上。</string>
+    <string name="engage_pace_custom_applied">已逐项调整间隔。</string>
+    <string name="engage_pace_estimate_fmt">按当前次数估算一轮约 %1$s。</string>
+    <string name="engage_pace_preset_note">预设会同时改四个动作的间隔；单个动作的间隔在那张子页面里单独调。</string>
+    <string name="engage_pace_over_budget_fmt">%1$s 的间隔已超过单轮时间预算（%2$s），这一轮很可能等不到它。把预算调大，或把间隔调短。</string>
+    <string name="engage_minutes_fmt">%1$d 分钟</string>
+    <string name="engage_quota_full_suffix">· 今日额度已满</string>
+    <string name="engage_elapsed_fmt">用时 %1$s</string>
+    <string name="engage_waiting_fmt">等待 %1$d 秒</string>
+    <string name="engage_running_fmt">进行中 · %1$s</string>
+    <string name="engage_log_count_fmt">· %1$d 条日志</string>
+    <string name="engage_recent_flow">最近流水</string>
+    <string name="engage_task_limit_post">上限按发帖设置里的正文长度</string>
+    <string name="engage_task_limit_hard_fmt">单条上限 %1$d 字（平台硬限）</string>
+    <string name="engage_texts_deleted">已停用该文案</string>
+    <string name="gallery_group_label">分组</string>
+
     <!-- ===== 0.14.0 三套文案库 / 四个子任务页面 ===== -->
     <string name="engage_back">返回</string>
     <string name="engage_texts_manage">管理</string>

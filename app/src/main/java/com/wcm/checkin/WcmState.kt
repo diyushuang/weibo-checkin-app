@@ -24,6 +24,7 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
@@ -215,6 +216,9 @@ fun WcmMetricStrip(
                     style = WcmType.metric,
                     color = if (metric.highlight) colorResource(R.color.warn_text)
                     else colorResource(R.color.ink),
+                    // 三列各占 1/3，四位数在 360dp 上会折行把整条撑高
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }

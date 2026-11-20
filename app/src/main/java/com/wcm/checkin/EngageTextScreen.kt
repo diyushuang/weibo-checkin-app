@@ -254,7 +254,7 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
                             if (!text.deleted) {
                                 WcmOutlinedButton(onClick = {
                                     viewModel.deleteText(kind, text.id)
-                                    Toast.makeText(context, "已停用该文案", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, R.string.engage_texts_deleted, Toast.LENGTH_SHORT).show()
                                 }) { Text(stringResource(R.string.engage_texts_delete)) }
                             }
                         }

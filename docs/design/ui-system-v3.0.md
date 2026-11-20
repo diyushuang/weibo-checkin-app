@@ -741,7 +741,47 @@ MaterialTheme(
    再叠一个 8dp 会让首页顶栏到 Hero 实际变成 38dp（规范写的是 20）。
    同时清掉无人使用的 `rowVTight`。
 
-### 11.7 已知遗留
+### 11.7 文案与暗色核查（第三轮）
+
+**文案迁移（只搬界面层）**。Compose 页面里原本硬编码的中文全部迁进 `strings.xml`，
+新增 29 条（`engage_*` / `common_*` / `gallery_*`），Compose 层现在 `grep` 不出中文字面量。
+
+两条落地时踩到的规则，记下来：
+
+1. **`Modifier.semantics { }` 不是 `@Composable` 作用域**，`stringResource` 不能写在里面
+   （`contentDescription = stringResource(...)` 直接编译失败），必须先在外面取成局部变量。
+   `buildString { }` / `let { }` 是内联 lambda，反而可以。
+2. **新增资源名要和既有键查重**。这次 `engage_pace_note` 撞了既有键
+   （既有值是「间隔越短越容易被限流…」），资源合并在 `mergeDebugResources` 才报
+   `Found item String/... more than one time`。补资源前先
+   `grep 'name="新键名"' strings.xml`。
+
+**ViewModel 层的 102 处中文没有迁**，理由不是「来不及」，是**不该迁**：
+
+- 抽样后发现绝大多数是 `log("==== 刷新超话状态 … ====")` 这类**运行日志**——
+  它们是诊断追踪，不是界面文案。每行都插值 3–5 个变量，迁进资源后
+  `ctx.getString(R.string.x, a, b, c)` 既难读，又多出一层 `%1$s` 类型错位的运行时风险
+  （错了只在真机抛 `IllegalFormatConversionException`，单测抓不到）。
+- 真正面向用户的少数几条（如「时间未知」「超话列表失败」）随功能迭代再逐步搬，
+  不与本次 UI 改版混在一起。
+
+**暗色令牌核查**：`values-night/colors.xml` 比 `values/colors.xml` 少 7 个键，
+逐个核对后确认**都是「两套主题恒定」的刻意设计**（`console_bg`/`console_ink` 终端块、
+`preview_bar_scrim`/`on_preview_*` 全屏预览、`ic_launcher_background`），
+Android 会自动回落到 `values/`，不是缺色。
+
+### 11.8 详情页分组的落地
+
+`SectionCard`（标题在卡内）保留给任务主页那类「一页多张同级卡」的场景；
+新增 `SectionBlock`（标题在卡外 + 一张卡），用于**任务详情页**的四个分组，
+组间间距同时从 `cardGap`(12) 改成 `section`(20)。
+这样「表单页（设置）/ 详情页（任务详情）用卡外标题、列表页用卡内标题」的区分才真正落地，
+不再只是设计稿上的说法。
+
+另修：`WcmMetricStrip` 的数字加 `maxLines = 1` —— 三列各占 1/3，
+四位数（如关注 1024 个超话）在 360dp 上会折行，把整条撑高两行。
+
+### 11.9 已知遗留
 
 - 任务页仍有十余处中文硬编码在 Kotlin 里（`"当前配置还不能执行：…"` 等），
   没有走 `strings.xml`。这是 0.14.0 遗留的 i18n 债，与本次改版无关，没有混在这次里改。

@@ -87,7 +87,8 @@ fun EngageTaskDetailScreen(
                     end = pagePad,
                     bottom = WcmSpace.pageBottom,
                 ),
-            verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
+            // 详情页按「分组」读：组与组之间 20dp（卡内才是 12dp）
+            verticalArrangement = Arrangement.spacedBy(WcmSpace.section),
         ) {
             Spacer(Modifier.height(WcmSpace.section))
 
@@ -139,7 +140,7 @@ private fun ActionConfigCard(
     val mode = config.modeOf(action)
     val count = config.countOf(action)
 
-    SectionCard(stringResource(R.string.engage_task_config)) {
+    SectionBlock(stringResource(R.string.engage_task_config)) {
         // 次数
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -296,9 +297,9 @@ private fun TextLibraryConfig(
             )
             Text(
                 if (kind == TextKind.POST) {
-                    "上限按发帖设置里的正文长度"
+                    stringResource(R.string.engage_task_limit_post)
                 } else {
-                    "单条上限 ${EngageTextPool.COMMENT_LIMIT} 字（平台硬限）"
+                    stringResource(R.string.engage_task_limit_hard_fmt, EngageTextPool.COMMENT_LIMIT)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -345,7 +346,7 @@ private fun RunStatusCard(
     val progress = state.progress
     val runningThis = state.running && progress?.action == action
 
-    SectionCard(stringResource(R.string.engage_task_status)) {
+    SectionBlock(stringResource(R.string.engage_task_status)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 stringResource(R.string.engage_task_today, summary.done, summary.count),
@@ -401,9 +402,9 @@ private fun RunStatusCard(
                     append(progress.done).append("/").append(progress.total)
                     val waitLeft = progress.waitUntilMs - nowMs.value
                     if (waitLeft > 0) {
-                        append(" · 等待 ").append((waitLeft + 999) / 1000).append(" 秒")
+                        append(stringResource(R.string.engage_wait_fmt, (waitLeft + 999) / 1000))
                     } else if (progress.stage.isNotEmpty()) {
-                        append(" · ").append(progress.stage)
+                        append(stringResource(R.string.engage_eta_fmt, progress.stage))
                     }
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -443,7 +444,7 @@ private fun ActionPaceCard(
     val range = config.gapRangeOf(action)
     val pace = EngagePacing.presetOf(config)
 
-    SectionCard(stringResource(R.string.engage_task_pace)) {
+    SectionBlock(stringResource(R.string.engage_task_pace)) {
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -508,7 +509,7 @@ private fun ActionLogCard(state: EngageUiState, action: EngageAction) {
     val own = state.logsOf(action, includeGlobal = false)
     val global = state.logsOf(action, includeGlobal = true).filter { it.action == null }
 
-    SectionCard(stringResource(R.string.engage_task_logs)) {
+    SectionBlock(stringResource(R.string.engage_task_logs)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 stringResource(R.string.engage_task_logs_own, own.size),

@@ -209,19 +209,31 @@ private fun StatusCard(
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${progress.done}/${progress.total} · ${progress.percent}%",
+                    stringResource(
+                        R.string.engage_progress_pct,
+                        progress.done,
+                        progress.total,
+                        progress.percent,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Medium,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
                     buildString {
-                        append("已用 ").append(EngagePacing.formatDuration(progress.elapsedMs))
+                        append(
+                            stringResource(
+                                R.string.engage_used_fmt,
+                                EngagePacing.formatDuration(progress.elapsedMs),
+                            ),
+                        )
                         val waitLeft = progress.waitUntilMs - now
                         when {
-                            waitLeft > 0 -> append(" · 等待 ").append((waitLeft + 999) / 1000).append(" 秒")
+                            waitLeft > 0 -> append(
+                                stringResource(R.string.engage_wait_fmt, (waitLeft + 999) / 1000),
+                            )
                             else -> progress.etaLabel(now).takeIf { it.isNotEmpty() }?.let {
-                                append(" · ").append(it)
+                                append(stringResource(R.string.engage_eta_fmt, it))
                             }
                         }
                     },
@@ -244,7 +256,7 @@ private fun StatusCard(
         val invalid = state.config.validate()
         if (state.enabled && invalid != null) {
             Text(
-                text = "当前配置还不能执行：$invalid",
+                text = stringResource(R.string.engage_invalid_fmt, invalid),
                 style = MaterialTheme.typography.bodySmall,
                 color = colorResource(R.color.danger_text),
             )
@@ -332,7 +344,12 @@ private fun TextLibCard(state: EngageUiState, onOpenTexts: (TextKind) -> Unit) {
                                 append(stringResource(R.string.engage_texts_count, available, total))
                                 append(" · ").append(state.config.textModeOf(kind).label)
                                 if (kind != TextKind.POST) {
-                                    append(" · 上限 ").append(EngageTextPool.COMMENT_LIMIT).append(" 字")
+                                    append(
+                                        stringResource(
+                                            R.string.engage_text_limit_fmt,
+                                            EngageTextPool.COMMENT_LIMIT,
+                                        ),
+                                    )
                                 }
                             }
                         },
@@ -413,7 +430,7 @@ private fun TargetCard(
     SectionCard(stringResource(R.string.engage_account_label)) {
         if (state.accounts.isEmpty()) {
             Text(
-                text = "还没有已登录的账号",
+                text = stringResource(R.string.engage_no_account_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = colorResource(R.color.danger_text),
             )
@@ -439,7 +456,10 @@ private fun TargetCard(
             TextButton(onClick = onRefreshTopics) { Text(stringResource(R.string.engage_refresh_topics)) }
         }
         if (state.topicsLoading) {
-            Text("加载中…", style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = stringResource(R.string.common_loading),
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
         if (state.topics.isEmpty() && !state.topicsLoading) {
             Text(
@@ -523,8 +543,7 @@ private fun ScheduleCard(state: EngageUiState, onUpdate: ((EngageConfig) -> Enga
             )
         } else {
             Text(
-                "打开 App 时，若今天还没有一次成功的运行，会自动执行一轮；" +
-                    "设为「仅手动」的动作不会被带上。",
+                stringResource(R.string.engage_auto_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -595,13 +614,19 @@ private fun PaceCard(
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            (if (pace == EngagePace.CUSTOM) "已逐项调整间隔。" else pace.hint + "。") +
-                "按当前次数估算一轮约 ${EngagePacing.formatDuration(estimate)}。",
+            (if (pace == EngagePace.CUSTOM) {
+                stringResource(R.string.engage_pace_custom_applied)
+            } else {
+                pace.hint + "。"
+            }) + stringResource(
+                R.string.engage_pace_estimate_fmt,
+                EngagePacing.formatDuration(estimate),
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            "预设会同时改四个动作的间隔；单个动作的间隔在那张子页面里单独调。",
+            stringResource(R.string.engage_pace_preset_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -629,9 +654,11 @@ private fun PaceCard(
         if (overBudget.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
             Text(
-                text = overBudget.joinToString("、") { it.label } +
-                    " 的间隔已超过单轮时间预算（${EngagePacing.formatDuration(config.maxRunDurationMs)}），" +
-                    "这一轮很可能等不到它。把预算调大，或把间隔调短。",
+                text = stringResource(
+                    R.string.engage_pace_over_budget_fmt,
+                    overBudget.joinToString("、") { it.label },
+                    EngagePacing.formatDuration(config.maxRunDurationMs),
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = colorResource(R.color.danger_text),
             )
@@ -661,7 +688,7 @@ private fun BudgetRow(budgetMs: Long, onSet: (Long) -> Unit) {
             modifier = Modifier.weight(1f),
         )
         Text(
-            "$minutes 分钟",
+            stringResource(R.string.engage_minutes_fmt, minutes),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(88.dp),
@@ -729,7 +756,9 @@ private fun ActionEntryCard(
                             append(summary.mode.label)
                             val last = summary.lastLabel(state.today)
                             if (last.isNotEmpty()) append(" · ").append(last)
-                            if (!summary.isOff && summary.remaining == 0) append(" · 今日额度已满")
+                            if (!summary.isOff && summary.remaining == 0) {
+                                append(stringResource(R.string.engage_quota_full_suffix))
+                            }
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -769,11 +798,17 @@ private fun TraceCard(state: EngageUiState, nowMs: State<Long>) {
             )
             Text(
                 if (progress.isFinished) {
-                    "用时 " + EngagePacing.formatDuration(progress.elapsedMs)
+                    stringResource(
+                        R.string.engage_elapsed_fmt,
+                        EngagePacing.formatDuration(progress.elapsedMs),
+                    )
                 } else {
                     (progress.waitUntilMs - now).takeIf { it > 0 }
-                        ?.let { "等待 ${(it + 999) / 1000} 秒" }
-                        ?: "进行中 · " + EngagePacing.formatDuration(progress.elapsedMs)
+                        ?.let { stringResource(R.string.engage_waiting_fmt, (it + 999) / 1000) }
+                        ?: stringResource(
+                            R.string.engage_running_fmt,
+                            EngagePacing.formatDuration(progress.elapsedMs),
+                        )
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
@@ -957,14 +992,26 @@ private fun RunsCard(state: EngageUiState, openRunId: String, onToggle: (String)
                                     if (run.durationMs > 0L) {
                                         append(" · ").append(EngagePacing.formatDuration(run.durationMs))
                                     }
-                                    if (run.logs.isNotEmpty()) append(" · ").append(run.logs.size).append(" 条日志")
+                                    if (run.logs.isNotEmpty()) {
+                                        append(
+                                            stringResource(
+                                                R.string.engage_log_count_fmt,
+                                                run.logs.size,
+                                            ),
+                                        )
+                                    }
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         TextButton(onClick = { onToggle(run.runId) }) {
-                            Text(if (expanded) "收起" else "详情")
+                            Text(
+                                stringResource(
+                                    if (expanded) R.string.common_collapse
+                                    else R.string.engage_task_detail,
+                                ),
+                            )
                         }
                     }
                     if (run.finishedAt == 0L) {
@@ -1004,7 +1051,7 @@ private fun RunsCard(state: EngageUiState, openRunId: String, onToggle: (String)
                         if (run.logs.isNotEmpty()) {
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "最近流水",
+                                stringResource(R.string.engage_recent_flow),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

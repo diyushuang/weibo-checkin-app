@@ -92,6 +92,28 @@ fun WcmSectionLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
+ * 「卡外标题 + 卡片」的一个分组（详情页 / 表单页的签名）。
+ *
+ * 与 [WcmCard] 自带标题（`SectionCard` 那种写法）的区别：标题在卡片外面。
+ * 卡内同时有「标题」和「字段」时两者视觉平级，用户扫视时找不到「从哪开始读/填」；
+ * 标题搬到卡外之后，卡片本身变成纯粹的一块内容，分组一眼可辨。
+ *
+ * 组与组之间由外层 `Arrangement.spacedBy(WcmSpace.section)` 给 20dp，
+ * 这里不要再自己加间距。
+ */
+@Composable
+fun SectionBlock(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(modifier) {
+        WcmSectionLabel(title)
+        WcmCard { content() }
+    }
+}
+
+/**
  * 卡内分隔线。
  *
  * 用 `line_soft` 而不是 `line`：卡片外框已经是 `line`，内部再用同样重的线，
