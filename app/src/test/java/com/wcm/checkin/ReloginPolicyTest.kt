@@ -35,22 +35,22 @@ class ReloginPolicyTest {
         val s = state()
         assertFalse(
             ReloginPolicy.shouldAttempt(
-                false, true, true, false, s, now, false, 3
+                ReloginPolicy.Facts(false, true, true, false), s, now, false, 3
             ).allowed
         )
         assertFalse(
             ReloginPolicy.shouldAttempt(
-                true, false, true, false, s, now, false, 3
+                ReloginPolicy.Facts(true, false, true, false), s, now, false, 3
             ).allowed
         )
         assertFalse(
             ReloginPolicy.shouldAttempt(
-                true, true, false, false, s, now, false, 3
+                ReloginPolicy.Facts(true, true, false, false), s, now, false, 3
             ).allowed
         )
         assertTrue(
             ReloginPolicy.shouldAttempt(
-                true, true, true, false, s, now, false, 3
+                ReloginPolicy.Facts(true, true, true, false), s, now, false, 3
             ).allowed
         )
     }
@@ -58,19 +58,19 @@ class ReloginPolicyTest {
     /** 重登只在 cookie 失效 / 临期时触发：仍可用的账号自动模式必须跳过。 */
     @Test
     fun shouldAttempt_skipsHealthyCookie() {
-        val d = ReloginPolicy.shouldAttempt(true, true, true, true, state(), now, false, 3)
+        val d = ReloginPolicy.shouldAttempt(ReloginPolicy.Facts(true, true, true, true), state(), now, false, 3)
         assertFalse(d.allowed)
         assertEquals("not_needed", d.skipCode)
         // 用户手动点「立即重登」不受「仍可用」限制
         assertTrue(
-            ReloginPolicy.shouldAttempt(true, true, true, true, state(), now, true, 3).allowed
+            ReloginPolicy.shouldAttempt(ReloginPolicy.Facts(true, true, true, true), state(), now, true, 3).allowed
         )
     }
 
     @Test
     fun shouldAttempt_blocksDuringBackoff() {
         val d = ReloginPolicy.shouldAttempt(
-            true, true, true, false,
+            ReloginPolicy.Facts(true, true, true, false),
             state(nextAt = now + hour), now, false, 3,
         )
         assertFalse(d.allowed)
@@ -78,7 +78,7 @@ class ReloginPolicyTest {
         // force 越过退避
         assertTrue(
             ReloginPolicy.shouldAttempt(
-                true, true, true, false,
+                ReloginPolicy.Facts(true, true, true, false),
                 state(nextAt = now + hour), now, true, 3,
             ).allowed
         )
@@ -88,7 +88,7 @@ class ReloginPolicyTest {
     fun shouldAttempt_blocksWhenDailyCapReached() {
         val attempts = listOf(now - 2 * hour, now - 1 * hour, now - 30 * 60_000L)
         val d = ReloginPolicy.shouldAttempt(
-            true, true, true, false,
+            ReloginPolicy.Facts(true, true, true, false),
             state(attempts = attempts), now, false, 3,
         )
         assertFalse(d.allowed)
@@ -98,7 +98,7 @@ class ReloginPolicyTest {
     @Test
     fun shouldAttempt_ignoresAttemptsOutside24h() {
         val d = ReloginPolicy.shouldAttempt(
-            true, true, true, false,
+            ReloginPolicy.Facts(true, true, true, false),
             state(attempts = listOf(now - 25 * hour, now - 2 * hour)), now, false, 3,
         )
         assertTrue(d.allowed)
@@ -109,15 +109,15 @@ class ReloginPolicyTest {
         // 密码错误：自动与人手动都不该再硬试
         val bad = state(blocked = true, code = ReloginPolicy.CODE_BAD_CREDENTIALS)
         assertFalse(
-            ReloginPolicy.shouldAttempt(true, true, true, false, bad, now, false, 3).allowed
+            ReloginPolicy.shouldAttempt(ReloginPolicy.Facts(true, true, true, false), bad, now, false, 3).allowed
         )
         assertFalse(
-            ReloginPolicy.shouldAttempt(true, true, true, false, bad, now, true, 3).allowed
+            ReloginPolicy.shouldAttempt(ReloginPolicy.Facts(true, true, true, false), bad, now, true, 3).allowed
         )
         // 验证码 / 二次验证同理：停在「需人工扫码/手动处理」
         val manual = state(blocked = true, code = ReloginPolicy.CODE_NEEDS_MANUAL)
         assertFalse(
-            ReloginPolicy.shouldAttempt(true, true, true, false, manual, now, true, 3).allowed
+            ReloginPolicy.shouldAttempt(ReloginPolicy.Facts(true, true, true, false), manual, now, true, 3).allowed
         )
     }
 
@@ -129,11 +129,11 @@ class ReloginPolicyTest {
             code = ReloginPolicy.CODE_RISK_CONTROL,
             lastAttemptAt = now - 2 * 60_000L,
         )
-        val d = ReloginPolicy.shouldAttempt(true, true, true, false, risk, now, true, 3)
+        val d = ReloginPolicy.shouldAttempt(ReloginPolicy.Facts(true, true, true, false), risk, now, true, 3)
         assertFalse(d.allowed)
         assertEquals("cooldown", d.skipCode)
         val later = ReloginPolicy.shouldAttempt(
-            true, true, true, false, risk, now + 10 * 60_000L, true, 3,
+            ReloginPolicy.Facts(true, true, true, false), risk, now + 10 * 60_000L, true, 3,
         )
         assertTrue(later.allowed)
     }

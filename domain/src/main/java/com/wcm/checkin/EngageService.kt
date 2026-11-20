@@ -4,7 +4,6 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
-import kotlin.random.Random
 
 /**
  * 账号来源：把「按 uid 取一个可用账号」这件事从 `:domain` 里解耦出来。
@@ -45,6 +44,58 @@ data class PublishOutcome(
 )
 
 /**
+ * 一轮互动里所有出站网络调用的间接层。
+ *
+ * 存在的唯一理由是**可测性**：`WeiboAuthApi` / `WeiboTopicApi` / `WeiboFeedApi` /
+ * `WeiboWriteApi` 都是 object，单测里没法注入假实现，硬测只能变成真实 HTTP 集成
+ * 测试（此前 `EngageServiceTest` 因此只敢测「到达网络之前」的拒绝分支）。生产代码
+ * 永远用默认实例——逐条转发给对应 object；`EngageServiceRunTest` 子类化它，把每个
+ * 出口换成内存假响应，整轮 run 就能在 JVM 上跑通。
+ *
+ * 这里刻意**不带任何逻辑**：多一层逻辑就多一层要测的东西，违背它存在的初衷。
+ * （public 而非 internal：EngageService 的构造器是 public，参数类型也必须可见。）
+ */
+open class EngageGateway {
+    open fun verify(cookie: String, force: Boolean): WeiboAuthApi.Verify =
+        WeiboAuthApi.verify(cookie, force)
+
+    open suspend fun listTopics(
+        session: WeiboHttp.WeiboSession,
+        maxPages: Int = 20,
+    ): List<WeiboTopicApi.Topic> = WeiboTopicApi.listTopics(session, maxPages)
+
+    open suspend fun listTopicFeed(
+        session: WeiboHttp.WeiboSession,
+        topicId: String,
+    ): List<WeiboFeedApi.FeedPost> = WeiboFeedApi.listTopicFeed(session, topicId)
+
+    open fun pickTargets(
+        posts: List<WeiboFeedApi.FeedPost>,
+        selfUid: String,
+        limit: Int,
+        preferFirstComment: Boolean,
+    ): List<WeiboFeedApi.FeedPost> =
+        WeiboFeedApi.pickTargets(posts = posts, selfUid = selfUid, limit = limit, preferFirstComment = preferFirstComment)
+
+    open fun publishTopicPost(
+        session: WeiboHttp.WeiboSession,
+        topicId: String,
+        content: String,
+        syncToTimeline: Boolean,
+    ): WeiboWriteApi.WriteResult =
+        WeiboWriteApi.publishTopicPost(session, topicId, content, syncToTimeline)
+
+    open fun comment(session: WeiboHttp.WeiboSession, mid: String, text: String): WeiboWriteApi.WriteResult =
+        WeiboWriteApi.comment(session, mid, text)
+
+    open fun repost(session: WeiboHttp.WeiboSession, mid: String, text: String): WeiboWriteApi.WriteResult =
+        WeiboWriteApi.repost(session, mid, text)
+
+    open fun like(session: WeiboHttp.WeiboSession, mid: String): WeiboWriteApi.WriteResult =
+        WeiboWriteApi.like(session, mid)
+}
+
+/**
  * 超话互动任务的编排。
  *
  * 阶段：配置校验 → 账号 → 登录态 → 超话关注校验 → 配额与计划 → 文案与目标
@@ -64,6 +115,8 @@ class EngageService(
     private val accountSource: EngageAccountSource,
     private val accountSink: EngageAccountSink,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** 出站网络调用的可替换缝：生产用默认实例（直连 object），单测换成假响应。 */
+    private val gateway: EngageGateway = EngageGateway(),
 ) {
 
     private val gate = Mutex()
@@ -151,6 +204,13 @@ class EngageService(
 
     // ========================= 一轮执行 =========================
 
+    /**
+     * 一轮的编排器：准备（配置/账号/登录态/超话/计划/文案/目标）→ 执行 → 收尾。
+     *
+     * 原本 605 行全在这里（30+ 个可变局部状态互相纠缠），拆分后这个函数只保留
+     * 「阶段顺序 + 共享对象的组装」，每个阶段的具体机械看对应函数；执行期的全部
+     * 可变状态收进 [RunExecution]，进度发射收进 [RunContext]。
+     */
     private suspend fun runInternal(
         background: Boolean,
         budgetCapMs: Long? = null,
@@ -163,73 +223,67 @@ class EngageService(
             else -> EngageTrigger.MANUAL_ALL
         }
 
-        // 全过程只有一个可变进度对象 p，每次变更立刻推给界面。
-        //
-        // 局部函数而不是字段：一轮结束后进度要留在界面上供回看，下一轮从空白开始，
-        // 不需要跨轮保留状态；同时这些函数天然共享本次的 clock 与 report，不用传参。
-        var p = EngageProgress(startedAt = startedAt, trigger = trigger)
+        // 全过程只有一个可变进度对象：轮次结束后留在界面上供回看，下一轮从空白开始，
+        // 不需要跨轮保留状态。发射器收进 RunContext（原来是一组闭包共享 var p）。
+        val ctx = RunContext(startedAt, trigger, only, clock, ::report)
 
-        fun emit(change: (EngageProgress) -> EngageProgress) {
-            p = change(p)
-            report(p)
+        // 准备阶段：任一步被拒即整轮中止（进度里已给出可读原因）。
+        val access = prepareAccess(ctx, trigger, only) ?: return ctx.blockedOutcome()
+        val plannedRun = preparePlan(ctx, access, background, budgetCapMs, only) ?: return ctx.blockedOutcome()
+        val texts = prepareTextQueues(ctx, access.config, plannedRun.plan, plannedRun.day)
+        val targets = prepareTargetSupply(ctx, access, plannedRun.plan)
+
+        val ex = RunExecution(ctx, access, plannedRun, texts, targets, runId = "r$startedAt", runPort, gateway)
+        try {
+            ctx.stepStart(STEP_RUN, "执行动作")
+            ex.runLoop()
+        } finally {
+            // 收尾必须在 finally 里：异常/取消时换发 cookie 与运行记录同样不能丢。
+            finishRun(ex)
         }
+        return EngageOutcome(
+            run = ex.snapshot(clock()),
+            notes = if (targets.feedError.isEmpty()) plannedRun.plan.notes else plannedRun.plan.notes + targets.feedError,
+        )
+    }
 
-        fun log(level: EngageLogLevel, text: String, action: EngageAction? = null, seq: Int = 0) {
-            emit { it.log(clock(), level, text, action, seq) }
-        }
-
-        fun stepStart(id: String, title: String) {
-            emit { it.stepStart(id, title, clock()) }
-        }
-
-        fun stepEnd(id: String, state: EngageStepState, detail: String = "") {
-            emit { it.stepFinish(id, state, clock(), detail) }
-        }
-
-        /** 提前收场：把没走完的步骤标成失败，并给出可读原因（界面不能永远停在「进行中」）。 */
-        fun abort(reason: String): EngageOutcome {
-            log(EngageLogLevel.ERROR, "本轮中止：$reason")
-            val now = clock()
-            emit {
-                it.closeOpenSteps(EngageStepState.FAILED, now, reason)
-                    .copy(stage = "已中止", message = reason)
-                    .finish(now)
-            }
-            Log.w(TAG, "本轮不执行：$reason")
-            return EngageOutcome(blockedReason = reason)
-        }
-
+    /** 配置与账号、登录态、超话关注校验。任一步不过即整轮中止（返回 null）。 */
+    private suspend fun prepareAccess(
+        ctx: RunContext,
+        trigger: EngageTrigger,
+        only: Set<EngageAction>,
+    ): AccessPrep? {
         // ---- 配置与账号 ----
-        stepStart(STEP_PREPARE, "读取配置")
-        log(
+        ctx.stepStart(STEP_PREPARE, "读取配置")
+        ctx.log(
             EngageLogLevel.INFO,
             "开始执行（${trigger.label}）" +
                 if (only.isEmpty()) "" else "，仅做 ${only.joinToString("、") { it.label }}",
         )
         val config = configPort.loadConfig()
-        config.validate()?.let { return abort(it) }
+        config.validate()?.let { return ctx.abort(it) }
 
         val account = accountSource.byUid(config.accountUid)
-            ?: return abort("账号不存在或已删除")
-        if (account.dead) return abort("账号登录态已失效")
-        if (account.cookie.isBlank()) return abort("账号缺少 Cookie")
-        stepEnd(STEP_PREPARE, EngageStepState.OK, config.accountUid)
-        log(EngageLogLevel.INFO, "执行账号：${account.name.ifEmpty { account.uid }}")
+            ?: return ctx.abort("账号不存在或已删除")
+        if (account.dead) return ctx.abort("账号登录态已失效")
+        if (account.cookie.isBlank()) return ctx.abort("账号缺少 Cookie")
+        ctx.stepEnd(STEP_PREPARE, EngageStepState.OK, config.accountUid)
+        ctx.log(EngageLogLevel.INFO, "执行账号：${account.name.ifEmpty { account.uid }}")
 
         // ---- 登录态 ----
-        stepStart(STEP_AUTH, "校验登录态")
+        ctx.stepStart(STEP_AUTH, "校验登录态")
         val verified = try {
-            WeiboAuthApi.verify(account.cookie, force = true)
+            gateway.verify(account.cookie, force = true)
         } catch (e: Exception) {
             val detail = WeiboHttp.safeBodyExcerpt(e.message ?: "", 60)
-            stepEnd(STEP_AUTH, EngageStepState.FAILED, "网络异常")
-            return abort("登录态校验失败：$detail")
+            ctx.stepEnd(STEP_AUTH, EngageStepState.FAILED, "网络异常")
+            return ctx.abort("登录态校验失败：$detail")
         }
         if (!verified.login) {
-            stepEnd(STEP_AUTH, EngageStepState.FAILED, "登录态已失效")
-            return abort("登录态已失效，请重新登录")
+            ctx.stepEnd(STEP_AUTH, EngageStepState.FAILED, "登录态已失效")
+            return ctx.abort("登录态已失效，请重新登录")
         }
-        stepEnd(STEP_AUTH, EngageStepState.OK, "有效")
+        ctx.stepEnd(STEP_AUTH, EngageStepState.OK, "有效")
 
         val session = WeiboHttp.WeiboSession.of(account.cookie, account.cookieDomains)
         session.merge(verified.cookie)
@@ -237,59 +291,78 @@ class EngageService(
         // ---- 超话关注校验（计分前置条件）----
         // 两边都归一成 containerid 再比：`Topic.topicId` 是去掉 100808 的 hash，
         // 配置里存的是完整 containerid，直接 == 永远匹配不上。
-        stepStart(STEP_TOPIC, "校验目标超话")
+        ctx.stepStart(STEP_TOPIC, "校验目标超话")
         val container = EngageSchedule.topicContainerId(config.topicId)
         val topics = try {
-            WeiboTopicApi.listTopics(session)
+            gateway.listTopics(session)
         } catch (e: Exception) {
             val detail = WeiboHttp.safeBodyExcerpt(e.message ?: "", 60)
-            stepEnd(STEP_TOPIC, EngageStepState.FAILED, "读取超话列表失败")
-            return abort("读取超话列表失败：$detail")
+            ctx.stepEnd(STEP_TOPIC, EngageStepState.FAILED, "读取超话列表失败")
+            return ctx.abort("读取超话列表失败：$detail")
         }
         val topic = topics.firstOrNull { EngageSchedule.topicContainerId(it.topicId) == container }
-            ?: return abort("未关注该超话，请先在微博内关注后再运行")
+            ?: return ctx.abort("未关注该超话，请先在微博内关注后再运行")
         val topicName = topic.name.ifEmpty { config.topicName }
-        stepEnd(STEP_TOPIC, EngageStepState.OK, "#$topicName#")
-        log(EngageLogLevel.INFO, "目标超话：#$topicName#（已关注 ${topics.size} 个）")
+        ctx.stepEnd(STEP_TOPIC, EngageStepState.OK, "#$topicName#")
+        ctx.log(EngageLogLevel.INFO, "目标超话：#$topicName#（已关注 ${topics.size} 个）")
 
-        // ---- 计划 ----
-        stepStart(STEP_PLAN, "生成执行计划")
+        return AccessPrep(config, account, session, container, topicName)
+    }
+
+    /** 计划与预算。plan.blocked 非空即整轮中止（返回 null）。 */
+    private fun preparePlan(
+        ctx: RunContext,
+        access: AccessPrep,
+        background: Boolean,
+        budgetCapMs: Long?,
+        only: Set<EngageAction>,
+    ): PlannedRun? {
+        ctx.stepStart(STEP_PLAN, "生成执行计划")
         val now = clock()
         val day = EngageSchedule.dayKey(now)
-        val counter = runPort.loadCounter(account.uid, day)
-        val plan = EngagePlanner.plan(config, counter, now, background, only)
+        val counter = runPort.loadCounter(access.account.uid, day)
+        val plan = EngagePlanner.plan(access.config, counter, now, background, only)
         if (plan.blocked.isNotEmpty()) {
-            stepEnd(STEP_PLAN, EngageStepState.WARN, plan.blocked)
-            return abort(plan.blocked)
+            ctx.stepEnd(STEP_PLAN, EngageStepState.WARN, plan.blocked)
+            return ctx.abort(plan.blocked)
         }
         val total = plan.actions.size
-        emit { it.progress(0, total) }
-        stepEnd(STEP_PLAN, EngageStepState.OK, "$total 个动作")
-        log(
+        ctx.emit { it.progress(0, total) }
+        ctx.stepEnd(STEP_PLAN, EngageStepState.OK, "$total 个动作")
+        ctx.log(
             EngageLogLevel.INFO,
             "本轮计划 $total 个动作：" + EngageAction.entries
                 .mapNotNull { a -> plan.countOf(a).takeIf { n -> n > 0 }?.let { "${a.label} $it" } }
                 .joinToString(" · "),
         )
-        plan.notes.forEach { log(EngageLogLevel.WARN, it) }
+        plan.notes.forEach { ctx.log(EngageLogLevel.WARN, it) }
 
         // 预算取「配置值」与「调用方上限」的较小者：后台执行不能超过 Worker 的系统上限
-        val budgetMs = minOf(config.maxRunDurationMs, budgetCapMs ?: Long.MAX_VALUE)
-        val deadline = startedAt + budgetMs
-        val estimate = EngagePacing.estimateRunMs(config, plan)
-        emit { it.copy(etaMs = estimate) }
-        log(
+        val budgetMs = minOf(access.config.maxRunDurationMs, budgetCapMs ?: Long.MAX_VALUE)
+        val deadline = ctx.startedAt + budgetMs
+        val estimate = EngagePacing.estimateRunMs(access.config, plan)
+        ctx.emit { it.copy(etaMs = estimate) }
+        ctx.log(
             EngageLogLevel.INFO,
             "按当前节奏预计 ${EngagePacing.formatDuration(estimate)}，" +
                 "本轮预算 ${EngagePacing.formatDuration(budgetMs)}",
         )
+        return PlannedRun(plan, total, budgetMs, deadline, now, day)
+    }
 
-        // ---- 文案（三套独立库：发帖 / 评论 / 转发）----
-        //
-        // 0.14.0 之前是一个池子按「评论+转发+发帖」总量取、再顺序弹给三类动作，
-        // 于是 1200 字的发帖文案会被当成评论发出去（再被 140 字校验拦掉）。
-        // 现在按动作各取各库，转发可以整库关闭（走空转发）。
-        stepStart(STEP_TEXT, "准备文案")
+    /**
+     * 三套文案库各取各的（0.14.0 起拆库，防把 1200 字的发帖文案当评论发出去）。
+     *
+     * 文案不够**不拦整轮**：缺哪类记哪类的 WARN，执行到那条动作时自然按 NO_TEXT
+     * 失败并放弃剩余（那个分支不进熔断计数，见 EngageGuard）。
+     */
+    private fun prepareTextQueues(
+        ctx: RunContext,
+        config: EngageConfig,
+        plan: EngagePlanner.Plan,
+        day: String,
+    ): TextQueues {
+        ctx.stepStart(STEP_TEXT, "准备文案")
         val forbiddenDays = EngageSchedule.forbiddenTextDays(day, config.strictTextGapDays)
         val postNeed = plan.countOf(EngageAction.POST)
         val commentNeed = plan.countOf(EngageAction.COMMENT)
@@ -313,10 +386,6 @@ class EngageService(
         val commentPicked = pickFrom(TextKind.COMMENT, commentPool, commentNeed)
         val repostPicked = if (repostNeedsText) pickFrom(TextKind.REPOST, repostPool, repostNeed) else emptyList()
 
-        val postQueue = ArrayDeque(postPicked)
-        val commentQueue = ArrayDeque(commentPicked)
-        val repostQueue = ArrayDeque(repostPicked)
-
         val textShort = postPicked.size < postNeed ||
             commentPicked.size < commentNeed ||
             (repostNeedsText && repostPicked.size < repostNeed)
@@ -330,451 +399,116 @@ class EngageService(
                 append("不带文案")
             }
         }
-        stepEnd(STEP_TEXT, if (textShort) EngageStepState.WARN else EngageStepState.OK, textDetail)
-        log(
+        ctx.stepEnd(STEP_TEXT, if (textShort) EngageStepState.WARN else EngageStepState.OK, textDetail)
+        ctx.log(
             if (textShort) EngageLogLevel.WARN else EngageLogLevel.INFO,
             "本轮文案：$textDetail" +
                 "（发帖库 ${EngageTextPool.availableCount(postPool)} 条 / " +
                 "评论库 ${EngageTextPool.availableCount(commentPool)} 条 / " +
                 (if (repostNeedsText) "转发库 ${EngageTextPool.availableCount(repostPool)} 条）" else "转发不带文案）"),
         )
+        return TextQueues(ArrayDeque(postPicked), ArrayDeque(commentPicked), ArrayDeque(repostPicked))
+    }
 
-        // ---- 互动目标 ----
-        val targetDemand = EngagePlanner.targetDemand(plan)
+    /**
+     * 拉取互动目标流（评论/转发/点赞的目标）。
+     *
+     * 目标流拿不到**不拦整轮**：评论/转发/点赞会逐个按 TARGET_GONE 失败并放弃剩余，
+     * feedError 会进进度日志和 notes——不再静默吞掉（此前用户只看到一句「0/0」）。
+     */
+    private suspend fun prepareTargetSupply(
+        ctx: RunContext,
+        access: AccessPrep,
+        plan: EngagePlanner.Plan,
+    ): TargetSupply {
+        val demand = EngagePlanner.targetDemand(plan)
+        if (demand == 0) {
+            ctx.log(EngageLogLevel.INFO, "本轮没有互动动作，跳过帖子流拉取")
+            return TargetSupply(ArrayDeque(), "")
+        }
+        ctx.stepStart(STEP_FEED, "拉取超话帖子流")
         var feedError = ""
         var feedCandidates = 0
-        val targets: List<WeiboFeedApi.FeedPost>
-        if (targetDemand > 0) {
-            stepStart(STEP_FEED, "拉取超话帖子流")
-            targets = try {
-                // 三类动作各弹一个目标，需求量是**次数之和**而不是最大值：
-                // 用 max 时默认配置（4 评论 + 2 转发 + 3 点赞）只取 6 个目标，
-                // 后面的点赞必然全部落空。
-                val posts = WeiboFeedApi.listTopicFeed(session, container)
-                feedCandidates = posts.size
-                WeiboFeedApi.pickTargets(
-                    posts = posts,
-                    selfUid = account.uid,
-                    limit = targetDemand + TARGET_SLACK,
-                    preferFirstComment = config.preferFirstComment,
-                )
-            } catch (e: Exception) {
-                // 不再静默吞掉：目标流拿不到时，评论/转发/点赞都会逐个空转等待，
-                // 最后只留下一句「0/0」，用户完全无从判断。
-                feedError = "超话帖子流不可用：${WeiboHttp.safeBodyExcerpt(e.message ?: "", 60)}"
-                emptyList()
-            }
-            if (targets.isEmpty() && feedError.isEmpty()) {
-                feedError = "超话帖子流没有可用目标（可能被风控或接口改版）"
-            }
-            stepEnd(
-                STEP_FEED,
-                if (targets.isEmpty()) EngageStepState.WARN else EngageStepState.OK,
-                "${targets.size} 条可用目标",
+        val picked: List<WeiboFeedApi.FeedPost> = try {
+            // 三类动作各弹一个目标，需求量是**次数之和**而不是最大值：
+            // 用 max 时默认配置（4 评论 + 2 转发 + 3 点赞）只取 6 个目标，
+            // 后面的点赞必然全部落空。
+            val posts = gateway.listTopicFeed(access.session, access.container)
+            feedCandidates = posts.size
+            gateway.pickTargets(
+                posts = posts,
+                selfUid = access.account.uid,
+                limit = demand + TARGET_SLACK,
+                preferFirstComment = access.config.preferFirstComment,
             )
-            log(
-                if (targets.isEmpty()) EngageLogLevel.WARN else EngageLogLevel.INFO,
-                "候选帖 $feedCandidates 条，过滤自己与转发帖后可用 ${targets.size} 条（需要 $targetDemand 条）",
-            )
-            if (feedError.isNotEmpty()) log(EngageLogLevel.ERROR, feedError)
-        } else {
-            targets = emptyList()
-            log(EngageLogLevel.INFO, "本轮没有互动动作，跳过帖子流拉取")
+        } catch (e: Exception) {
+            feedError = "超话帖子流不可用：${WeiboHttp.safeBodyExcerpt(e.message ?: "", 60)}"
+            emptyList()
         }
-        val targetQueue = ArrayDeque(targets)
-
-        // ---- 执行 ----
-        val runId = "r$startedAt"
-        val records = ArrayList<EngageActionRecord>(plan.actions.size)
-        val guard = EngageGuard(config.failStreakAbort)
-        // 按库汇总本轮用到的文案 id：写回统计时必须知道这条属于哪个库
-        val usedTextIds: MutableMap<TextKind, MutableSet<String>> =
-            TextKind.entries.associateWith { mutableSetOf<String>() }.toMutableMap()
-        // 今日已存在的「待确认」发帖：这些槽位没进计数（还没发），但不能再建第二条，
-        // 否则每次运行都会用同一个台账 id 覆盖上一条待确认内容。
-        val awaitingIds = runPort.loadPosts(account.uid, day)
-            .filter { it.state == ActionState.AWAITING_CONFIRM }
-            .map { it.id }
-            .toMutableSet()
-        var currentAction: EngageAction? = null
-        var skipAction: EngageAction? = null
-        var skipReason = ""
-        var breakFrom = -1
-        var stopReason = ""
-
-        /** 一轮进行中的运行记录快照：`finishedAt = 0` 表示还没跑完。 */
-        fun snapshot(finishedAtValue: Long): EngageRun = EngageRun(
-            runId = runId,
-            accountUid = account.uid,
-            topicId = config.topicId,
-            topicName = topicName,
-            startedAt = startedAt,
-            finishedAt = finishedAtValue,
-            stopReason = guard.currentStopReason,
-            records = records.toList(),
-            trigger = trigger,
-            only = only.toList(),
-            steps = p.steps,
-            logs = p.logs,
+        if (picked.isEmpty() && feedError.isEmpty()) {
+            feedError = "超话帖子流没有可用目标（可能被风控或接口改版）"
+        }
+        ctx.stepEnd(
+            STEP_FEED,
+            if (picked.isEmpty()) EngageStepState.WARN else EngageStepState.OK,
+            "${picked.size} 条可用目标",
         )
-
-        /**
-         * 记一条动作结果：落内存 → 推进度写流水 → **立刻写一份草稿运行记录**。
-         *
-         * 草稿这一步是排查能力的关键：原来只在 `finally` 写一次，跑的过程中
-         * 「运行记录」永远是空的，界面上除了一行「正在执行…」什么都看不到。
-         */
-        fun record(rec: EngageActionRecord, done: Int) {
-            records.add(rec)
-            emit { it.copy(done = done, total = total, action = rec.action, message = rec.message) }
-            val level = when (rec.state) {
-                ActionState.OK -> EngageLogLevel.OK
-                ActionState.FAILED -> EngageLogLevel.ERROR
-                ActionState.UNCERTAIN -> EngageLogLevel.WARN
-                ActionState.SKIPPED, ActionState.AWAITING_CONFIRM -> EngageLogLevel.INFO
-            }
-            log(
-                level,
-                rec.state.label + if (rec.message.isEmpty()) "" else "：${rec.message}",
-                rec.action,
-                rec.seq,
-            )
-            Log.i(TAG, "[$done/$total] ${rec.action.label}#${rec.seq} ${rec.state} ${rec.errorKind} ${rec.message}")
-            runCatching { runPort.saveRun(snapshot(0L)) }
-        }
-
-        try {
-            stepStart(STEP_RUN, "执行动作")
-            for ((idx, planned) in plan.actions.withIndex()) {
-                if (guard.isStopped) {
-                    stopReason = guard.currentStopReason.ifEmpty { "已熔断" }
-                    breakFrom = idx
-                    break
-                }
-                if (planned.action == skipAction) {
-                    // 该动作已判定放弃，剩余次数不再空转等待，但记录要补齐，
-                    // 否则摘要里只看得到「0/1」，看不出原本计划了几条。
-                    record(skippedRecord(planned, skipReason, clock()), idx + 1)
-                    continue
-                }
-
-                val switching = currentAction != planned.action
-                if (switching) {
-                    guard.nextAction()
-                    currentAction = planned.action
-                    log(
-                        EngageLogLevel.STEP,
-                        "开始${planned.action.label}（本轮计划 ${plan.countOf(planned.action)} 次）",
-                        planned.action,
-                    )
-                }
-
-                // 动作间隔：同一动作用该动作的间隔区间，跨动作再加一段通用抖动。
-                // **预算必须按「实际还要等多久」判**：同一个 key 的首次请求根本不等待，
-                // 按配置的理论间隔去扣，会把当天第一条帖子直接判死。
-                val gapRange = config.gapRangeOf(planned.action)
-                val nominalWait = randomIn(gapRange) +
-                    if (switching) randomIn(config.actionGapRange()) else 0L
-                val realWait = WeiboThrottle.remaining(throttleKey(planned.action), nominalWait)
-                if (clock() + realWait + REQUEST_MARGIN_MS > deadline) {
-                    stopReason = "本轮已达时间预算（${budgetMs / 60_000} 分钟），剩余动作留待下一轮"
-                    guard.trip(stopReason)
-                    log(EngageLogLevel.WARN, "$stopReason（还要等 ${(realWait + 999) / 1000} 秒）")
-                    breakFrom = idx
-                    break
-                }
-                if (realWait > 0) {
-                    // 等间隔是整轮里最长的一段「什么都不发生」，必须让界面看到倒计时，
-                    // 否则用户会以为卡死。
-                    emit { it.waiting(clock() + realWait) }
-                    log(
-                        EngageLogLevel.WAIT,
-                        "等待 ${(realWait + 999) / 1000} 秒（${planned.action.label}间隔 ${EngagePacing.describe(gapRange)}）",
-                        planned.action,
-                        planned.seq,
-                    )
-                }
-                WeiboThrottle.await(throttleKey(planned.action), nominalWait)
-                emit { it.clearWait() }
-
-                // 点赞没有文案；转发在「不带文案」时也不取（空转发由 WeiboWriteApi 允许）
-                val textKind = config.textKindOf(planned.action)
-                val text = when (textKind) {
-                    TextKind.POST -> postQueue.removeFirstOrNull()
-                    TextKind.COMMENT -> commentQueue.removeFirstOrNull()
-                    TextKind.REPOST -> repostQueue.removeFirstOrNull()
-                    null -> null
-                }
-
-                // 文案缺失：发帖、评论、带文案的转发都做不了（先判，后面才能安全用 text!!）
-                if (textKind != null && text == null) {
-                    record(
-                        failedRecord(
-                            planned, EngageErrorKind.NO_TEXT,
-                            "${textKind.label}文案库已无可用文案", clock(),
-                        ),
-                        idx + 1,
-                    )
-                    continue
-                }
-
-                // 正文：发帖要「渲染 + 组装超话标签」，评论/转发只渲染占位符。
-                // 三者都不该把 `{topic}` 这类占位符原样发出去。
-                val rendered = if (text != null) renderForAction(text.body, planned, topicName, now) else ""
-                val body = if (planned.action == EngageAction.POST) {
-                    EngageTextPool.compose(topicName, rendered)
-                } else {
-                    rendered
-                }
-
-                // 本地能判的先判，别浪费一次请求
-                val localBad = when (planned.action) {
-                    EngageAction.POST -> EngageTextPool.validate(body, config.maxTextLen)
-                    EngageAction.COMMENT -> EngageTextPool.validateComment(body)
-                    // 空转发是合法的（平台允许 comment 留空），不能过 validateComment：
-                    // 它会把空串判成「正文为空」而整条跳过。
-                    EngageAction.REPOST -> if (body.isNotBlank()) EngageTextPool.validateComment(body) else null
-                    EngageAction.LIKE -> null
-                }
-                if (localBad != null) {
-                    record(failedRecord(planned, EngageErrorKind.CONTENT_REJECTED, localBad, clock()), idx + 1)
-                    continue
-                }
-
-                // 目标缺失：评论/转发/点赞做不了。**整个动作提前放弃**：
-                // 目标流为空时，按原逻辑每条都要白等几十秒，用户只看到「什么都没执行」。
-                val target = if (planned.action == EngageAction.POST) null else targetQueue.removeFirstOrNull()
-                if (planned.action != EngageAction.POST && target == null) {
-                    val reason = feedError.ifEmpty { "没有可互动的帖子" }
-                    record(failedRecord(planned, EngageErrorKind.TARGET_GONE, reason, clock()), idx + 1)
-                    skipAction = planned.action
-                    skipReason = "已放弃剩余${planned.action.label}：$reason"
-                    Log.w(TAG, skipReason)
-                    continue
-                }
-
-                // 人工确认模式：只组正文、落台账，不预占也不发请求
-                if (planned.action == EngageAction.POST && config.requireConfirmBeforePost) {
-                    val recId = postIdOf(account.uid, day, planned.seq)
-                    val at = clock()
-                    if (recId in awaitingIds) {
-                        record(
-                            failedRecord(
-                                planned, EngageErrorKind.DUPLICATE_ACTION,
-                                "已有一条待确认发帖，请先在发帖记录里处理", at,
-                            ),
-                            idx + 1,
-                        )
-                        continue
-                    }
-                    awaitingIds.add(recId)
-                    runPort.savePost(
-                        buildPostRecord(
-                            config = config, account = account, topicName = topicName, day = day,
-                            runId = runId, seq = planned.seq, at = at, body = body,
-                            text = text, state = ActionState.AWAITING_CONFIRM,
-                        )
-                    )
-                    record(
-                        EngageActionRecord(
-                            action = EngageAction.POST,
-                            seq = planned.seq,
-                            state = ActionState.SKIPPED,
-                            textId = text?.id.orEmpty(),
-                            message = "正文已组好，等待你在发帖记录里确认发送",
-                            at = at,
-                        ),
-                        idx + 1,
-                    )
-                    continue
-                }
-
-                // 预占：占不到就跳过（并发或重放）
-                val reserved = runPort.reserveSlot(
-                    uid = account.uid, day = day, action = planned.action,
-                    seq = planned.seq, textId = text?.id.orEmpty(), now = clock(),
-                )
-                if (!reserved) {
-                    record(failedRecord(planned, EngageErrorKind.DUPLICATE_ACTION, "槽位已被占用，跳过", clock()), idx + 1)
-                    continue
-                }
-
-                // 发帖：**请求前**先把台账落成 UNCERTAIN 占位。
-                // 否则进程在请求途中被杀时，计数里有 pending、台账里却没有记录，
-                // 用户既看不到也收敛不了，「已确认发出/未发出」的入口根本不会出现。
-                // 占位与最终写入必须用同一个时间戳：台账按 `dayKey(at)` 分桶，
-                // 跨零点时用两个时间戳会把同一条帖子拆到两天的文件里。
-                var ledgerAt = 0L
-                if (planned.action == EngageAction.POST) {
-                    ledgerAt = clock()
-                    runPort.savePost(
-                        buildPostRecord(
-                            config = config, account = account, topicName = topicName, day = day,
-                            runId = runId, seq = planned.seq, at = ledgerAt, body = body,
-                            text = text, state = ActionState.UNCERTAIN,
-                        )
-                    )
-                }
-
-                log(EngageLogLevel.INFO, "提交中：${submitHint(planned.action, target, body, text)}", planned.action, planned.seq)
-                val sentAt = clock()
-                val result = execute(planned, session, config, target, body)
-                val costMs = clock() - sentAt
-
-                val state = when {
-                    result.ok -> ActionState.OK
-                    result.outcomeUnknown && planned.action == EngageAction.POST -> ActionState.UNCERTAIN
-                    else -> ActionState.FAILED
-                }
-
-                when (state) {
-                    ActionState.OK -> runPort.commitSlot(account.uid, day, planned.action, planned.seq, clock())
-                    ActionState.FAILED -> runPort.releaseSlot(account.uid, day, planned.action, planned.seq)
-                    ActionState.UNCERTAIN, ActionState.AWAITING_CONFIRM ->
-                        runPort.markUncertain(account.uid, day, planned.action, planned.seq, clock())
-                    ActionState.SKIPPED -> Unit
-                }
-
-                val at = clock()
-                val detail = listOfNotNull(
-                    WeiboHttp.safeBodyExcerpt(result.message, 100).takeIf { it.isNotEmpty() },
-                    "用时 ${costLabel(costMs)}",
-                ).joinToString(" · ")
-                val actionRecord = EngageActionRecord(
-                    action = planned.action,
-                    seq = planned.seq,
-                    state = state,
-                    errorKind = result.kind,
-                    targetMid = target?.mid.orEmpty(),
-                    remoteId = result.remoteId,
-                    textId = text?.id.orEmpty(),
-                    message = detail,
-                    at = at,
-                )
-                record(actionRecord, idx + 1)
-
-                // 发帖台账（无论成败都留痕，UNCERTAIN 尤其重要）
-                if (planned.action == EngageAction.POST) {
-                    runPort.savePost(
-                        buildPostRecord(
-                            config = config, account = account, topicName = topicName, day = day,
-                            runId = runId, seq = planned.seq, at = ledgerAt, body = body,
-                            text = text, state = state,
-                        ).copy(
-                            remoteId = result.remoteId,
-                            errorKind = result.kind,
-                            message = WeiboHttp.safeBodyExcerpt(result.message, 120),
-                        )
-                    )
-                }
-
-                if (text != null && state == ActionState.OK) usedTextIds.getValue(text.kind).add(text.id)
-
-                when (guard.onResult(result.kind)) {
-                    Disposition.CONTINUE -> Unit
-                    // 只放弃这个动作的剩余部分，其它动作照跑（契约见 EngageGuard）
-                    Disposition.ABORT_ACTION -> {
-                        skipAction = planned.action
-                        skipReason = "已放弃剩余${planned.action.label}：${result.kind.label}"
-                        log(EngageLogLevel.WARN, skipReason)
-                    }
-                    Disposition.ABORT_RUN, Disposition.REQUIRE_HUMAN, Disposition.RETRY_LATER -> {
-                        stopReason = guard.currentStopReason.ifEmpty { result.kind.label }
-                        breakFrom = idx + 1
-                        log(EngageLogLevel.WARN, "本轮提前结束：$stopReason")
-                        break
-                    }
-                }
-            }
-        } finally {
-            // 收尾必须在 finally 里：异常/取消时换发 cookie 与运行记录同样不能丢。
-            val finishedAt = clock()
-
-            // 被提前终止时把没走到的计划补齐成 SKIPPED：
-            // 摘要里要能看出「发帖 0/1 是被预算砍掉的」，而不是只剩一个 0/0。
-            if (breakFrom in 0 until plan.actions.size && stopReason.isNotEmpty()) {
-                for (i in breakFrom until plan.actions.size) {
-                    record(skippedRecord(plan.actions[i], stopReason, clock()), i + 1)
-                }
-            }
-
-            val ok = records.count { it.state == ActionState.OK }
-            val failed = records.count { it.state == ActionState.FAILED }
-            val uncertain = records.count { it.state == ActionState.UNCERTAIN }
-            stepEnd(
-                STEP_RUN,
-                if (failed > 0 || uncertain > 0) EngageStepState.WARN else EngageStepState.OK,
-                "$ok/$total 成功",
-            )
-
-            stepStart(STEP_FINISH, "保存结果")
-            markTextsUsed(usedTextIds, finishedAt, day)
-            runPort.saveRun(snapshot(finishedAt))
-            runCatching { runPort.prune(account.uid, day) }
-            // 换发回写：整轮结束时把会话里吸收到的 Set-Cookie 落回账号
-            runCatching { accountSink.updateCookie(account.uid, session.cookie, session.domainHints) }
-            stepEnd(STEP_FINISH, EngageStepState.OK, "已保存")
-
-            log(
-                if (failed > 0 || uncertain > 0) EngageLogLevel.WARN else EngageLogLevel.OK,
-                buildString {
-                    append("本轮结束：成功 ").append(ok)
-                    if (failed > 0) append(" · 失败 ").append(failed)
-                    if (uncertain > 0) append(" · 结果未知 ").append(uncertain)
-                    append(" · 总用时 ").append(EngagePacing.formatDuration(finishedAt - startedAt))
-                },
-            )
-            emit {
-                it.closeOpenSteps(EngageStepState.SKIPPED, finishedAt)
-                    .copy(stage = if (guard.isStopped) "已结束（${guard.currentStopReason}）" else "已完成")
-                    .finish(finishedAt)
-            }
-            Log.i(TAG, "本轮结束 records=${records.size} stop=${guard.currentStopReason}")
-        }
-
-        return EngageOutcome(
-            run = snapshot(clock()),
-            blockedReason = "",
-            notes = if (feedError.isEmpty()) plan.notes else plan.notes + feedError,
+        ctx.log(
+            if (picked.isEmpty()) EngageLogLevel.WARN else EngageLogLevel.INFO,
+            "候选帖 $feedCandidates 条，过滤自己与转发帖后可用 ${picked.size} 条（需要 $demand 条）",
         )
+        if (feedError.isNotEmpty()) ctx.log(EngageLogLevel.ERROR, feedError)
+        return TargetSupply(ArrayDeque(picked), feedError)
     }
 
-    /** 请求前一行的「在做什么」，尽量带上目标与正文规模，便于事后追。 */
-    private fun submitHint(
-        action: EngageAction,
-        target: WeiboFeedApi.FeedPost?,
-        body: String,
-        text: EngageText?,
-    ): String {
-        val head = target?.let { WeiboHttp.safeBodyExcerpt(it.text.replace('\n', ' '), 18) }
-        return if (action == EngageAction.POST) {
-            "发帖 ${body.length} 字（文案 ${text?.id?.takeLast(6).orEmpty()}）"
-        } else {
+    /** 收尾：补记 SKIPPED → 汇总 → 落运行记录 → 换发回写。异常/取消同样走这里。 */
+    private fun finishRun(ex: RunExecution) {
+        val ctx = ex.ctx
+        val finishedAt = clock()
+
+        // 被提前终止时把没走到的计划补齐成 SKIPPED：
+        // 摘要里要能看出「发帖 0/1 是被预算砍掉的」，而不是只剩一个 0/0。
+        if (ex.breakFrom in 0 until ex.planned.plan.actions.size && ex.stopReason.isNotEmpty()) {
+            for (i in ex.breakFrom until ex.planned.plan.actions.size) {
+                ex.record(skippedRecord(ex.planned.plan.actions[i], ex.stopReason, clock()), i + 1)
+            }
+        }
+
+        val ok = ex.records.count { it.state == ActionState.OK }
+        val failed = ex.records.count { it.state == ActionState.FAILED }
+        val uncertain = ex.records.count { it.state == ActionState.UNCERTAIN }
+        ctx.stepEnd(
+            STEP_RUN,
+            if (failed > 0 || uncertain > 0) EngageStepState.WARN else EngageStepState.OK,
+            "$ok/${ex.planned.total} 成功",
+        )
+
+        ctx.stepStart(STEP_FINISH, "保存结果")
+        markTextsUsed(ex.usedTextIds, finishedAt, ex.planned.day)
+        runPort.saveRun(ex.snapshot(finishedAt))
+        runCatching { runPort.prune(ex.access.account.uid, ex.planned.day) }
+        // 换发回写：整轮结束时把会话里吸收到的 Set-Cookie 落回账号
+        runCatching {
+            accountSink.updateCookie(ex.access.account.uid, ex.access.session.cookie, ex.access.session.domainHints)
+        }
+        ctx.stepEnd(STEP_FINISH, EngageStepState.OK, "已保存")
+
+        ctx.log(
+            if (failed > 0 || uncertain > 0) EngageLogLevel.WARN else EngageLogLevel.OK,
             buildString {
-                if (action == EngageAction.LIKE) {
-                    append("点赞帖子 ").append(target?.mid.orEmpty())
-                } else {
-                    append(action.label).append("帖子 ").append(target?.mid.orEmpty())
-                }
-                if (!head.isNullOrEmpty()) append("「").append(head).append("」")
-                when {
-                    action == EngageAction.LIKE -> Unit
-                    // 关闭转发文案时正文为空，写成「0 字」会让人以为取文案失败了
-                    body.isBlank() -> append("（空转发）")
-                    else -> append("（").append(body.length).append(" 字）")
-                }
-            }
+                append("本轮结束：成功 ").append(ok)
+                if (failed > 0) append(" · 失败 ").append(failed)
+                if (uncertain > 0) append(" · 结果未知 ").append(uncertain)
+                append(" · 总用时 ").append(EngagePacing.formatDuration(finishedAt - ctx.startedAt))
+            },
+        )
+        ctx.emit {
+            it.closeOpenSteps(EngageStepState.SKIPPED, finishedAt)
+                .copy(stage = if (ex.guard.isStopped) "已结束（${ex.guard.currentStopReason}）" else "已完成")
+                .finish(finishedAt)
         }
+        Log.i(TAG, "本轮结束 records=${ex.records.size} stop=${ex.guard.currentStopReason}")
     }
-
-    /** 请求耗时：小于 10 秒保留一位小数，够用且不啰嗦。 */
-    private fun costLabel(ms: Long): String {
-        if (ms < 0L) return "0.0 秒"
-        if (ms >= 10_000L) return "${(ms + 500) / 1_000} 秒"
-        val tenth = (ms + 50) / 100
-        return "${tenth / 10}.${tenth % 10} 秒"
-    }
-
     // ========================= 确认后发送 =========================
 
     private fun publishInternal(uid: String, day: String, postId: String): PublishOutcome {
@@ -798,7 +532,7 @@ class EngageService(
         }
 
         val verified = try {
-            WeiboAuthApi.verify(account.cookie, force = true)
+            gateway.verify(account.cookie, force = true)
         } catch (e: Exception) {
             return PublishOutcome(blockedReason = "登录态校验失败：${WeiboHttp.safeBodyExcerpt(e.message ?: "", 60)}")
         }
@@ -817,7 +551,7 @@ class EngageService(
             // 先落 UNCERTAIN 占位，理由同自动发帖：请求途中被杀也要留痕
             runPort.savePost(record.copy(state = ActionState.UNCERTAIN))
 
-            val result = WeiboWriteApi.publishTopicPost(
+            val result = gateway.publishTopicPost(
                 session = session,
                 topicId = config.topicId,
                 content = record.body,
@@ -853,67 +587,6 @@ class EngageService(
 
     // ========================= 内部工具 =========================
 
-    private fun execute(
-        planned: EngagePlanner.PlannedAction,
-        session: WeiboHttp.WeiboSession,
-        config: EngageConfig,
-        target: WeiboFeedApi.FeedPost?,
-        body: String,
-    ): WeiboWriteApi.WriteResult = when (planned.action) {
-        EngageAction.POST -> WeiboWriteApi.publishTopicPost(
-            session = session,
-            topicId = config.topicId,
-            content = body,
-            syncToTimeline = config.syncToTimeline,
-        )
-        EngageAction.COMMENT -> WeiboWriteApi.comment(session, target!!.mid, body)
-        EngageAction.REPOST -> WeiboWriteApi.repost(session, target!!.mid, body)
-        EngageAction.LIKE -> WeiboWriteApi.like(session, target!!.mid)
-    }
-
-    private fun buildPostRecord(
-        config: EngageConfig,
-        account: EngageAccount,
-        topicName: String,
-        day: String,
-        runId: String,
-        seq: Int,
-        at: Long,
-        body: String,
-        text: EngageText?,
-        state: ActionState,
-    ) = EngagePostRecord(
-        // seq 由 planner 按「当日已完成数」接续，所以同一天的第二轮不会覆盖第一轮的记录。
-        id = postIdOf(account.uid, day, seq),
-        runId = runId,
-        seq = seq,
-        at = at,
-        accountUid = account.uid,
-        accountName = account.name,
-        topicId = config.topicId,
-        topicName = topicName,
-        body = body,
-        textId = text?.id.orEmpty(),
-        textDigest = text?.digest.orEmpty(),
-        state = state,
-    )
-
-    private fun renderForAction(
-        raw: String,
-        planned: EngagePlanner.PlannedAction,
-        topicName: String,
-        now: Long,
-    ): String = EngageTextPool.render(
-        raw,
-        EngageTextPool.RenderContext(
-            topicName = topicName,
-            date = EngageSchedule.dateLabel(now),
-            dateCn = EngageSchedule.dateCnLabel(now),
-            seq = planned.seq,
-            time = EngageSchedule.clockLabel(now),
-        ),
-    )
-
     /**
      * 一轮结束后统一写一次使用统计。
      *
@@ -934,50 +607,9 @@ class EngageService(
             }
         }
     }
-
-    private fun failedRecord(
-        planned: EngagePlanner.PlannedAction,
-        kind: EngageErrorKind,
-        message: String,
-        now: Long,
-    ) = EngageActionRecord(
-        action = planned.action,
-        seq = planned.seq,
-        state = ActionState.FAILED,
-        errorKind = kind,
-        message = message,
-        at = now,
-    )
-
-    /** 没执行到的动作：让摘要里的分母保持真实（发帖 0/1 而不是 0/0）。 */
-    private fun skippedRecord(
-        planned: EngagePlanner.PlannedAction,
-        reason: String,
-        now: Long,
-    ) = EngageActionRecord(
-        action = planned.action,
-        seq = planned.seq,
-        state = ActionState.SKIPPED,
-        errorKind = EngageErrorKind.GUARD_TRIPPED,
-        message = reason,
-        at = now,
-    )
-
-    private fun randomIn(range: LongRange): Long {
-        if (range.isEmpty()) return 0L
-        return Random.nextLong(range.first, range.last + 1)
-    }
-
-    private fun throttleKey(action: EngageAction): String = when (action) {
-        EngageAction.POST -> KEY_POST
-        EngageAction.COMMENT -> KEY_COMMENT
-        EngageAction.REPOST -> KEY_REPOST
-        EngageAction.LIKE -> KEY_LIKE
-    }
-
     companion object {
-        /** logcat 过滤：`adb logcat -s WcmEngage`。 */
-        private const val TAG = "WcmEngage"
+        /** logcat 过滤：`adb logcat -s WcmEngage`。EngageRunExecution.kt 里的执行机械也用它。 */
+        internal const val TAG = "WcmEngage"
 
         /** 节流键统一前缀，避免和签到链路的 key 撞车。 */
         const val KEY_POST = "engage-post"

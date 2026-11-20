@@ -7,4 +7,9 @@ plugins {
     id("org.jetbrains.kotlin.android") version "1.9.24" apply false
     id("com.google.dagger.hilt.android") version "2.51.1" apply false
     id("com.google.devtools.ksp") version "1.9.24-1.0.20" apply false
+    // detekt：只盯结构复杂度（超长函数 / 超大类 / 超长参数表），三条规则见
+    // core/config/detekt/detekt.yml。为什么现在才上：LongMethod 的门槛只有在
+    // runInternal 拆分（605 → 46 行）落地之后才有意义，否则存量违规一次性
+    // 全部爆红，门槛本身就成了噪音。
+    id("io.gitlab.arturbosch.detekt") version "1.23.7" apply false
 }

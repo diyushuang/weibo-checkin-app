@@ -1,6 +1,18 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    // 结构复杂度门禁：只跑三条规则，配置共享见 core/config/detekt/detekt.yml
+    id("io.gitlab.arturbosch.detekt")
+}
+
+detekt {
+    // 三条结构规则全仓共享一份配置，口径一致才谈得上门槛
+    config.setFrom(files("$rootDir/core/config/detekt/detekt.yml"))
+    buildUponDefaultConfig = true
+    // 存量违规圈进 baseline（抓取链路的 6 个 9~11 参函数：AlbumCrawler×2 /
+    // CrawlSaver×3 / TimelineCrawler×1，都在 :domain，对应 docs/testing.md §5
+    // 「先补测试再重构」的区域）；新违规照样拦。重构完记得重新生成并收敛 baseline。
+    baseline = file("$rootDir/core/config/detekt/baseline.xml")
 }
 
 android {

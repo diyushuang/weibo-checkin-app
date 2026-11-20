@@ -87,25 +87,35 @@ object ReloginPolicy {
         state.attempts.filter { it > 0L && now - it <= WINDOW_MS }.sorted()
 
     /**
+     * 重登判定的四项事实。收拢成值对象：调用方只需表达「现在知道什么」，
+     * 策略函数不必一次接 8 个零散参数（detekt LongParameterList 门槛的由来）。
+     */
+    data class Facts(
+        /** 自动重登总开关（设置页）。 */
+        val globalEnabled: Boolean,
+        /** 该账号自己的开关（账号编辑页）。 */
+        val accountEnabled: Boolean,
+        /** 是否存有可用的登录凭证（密码或 ALC）。 */
+        val hasCredential: Boolean,
+        /** 当前 cookie 是否仍被判为「可用」（[CookieLife] 的 OK 状态且未失效）。 */
+        val cookieUsable: Boolean,
+    )
+
+    /**
      * 判断这次要不要真的发起登录。
      *
-     * @param cookieUsable 当前 cookie 是否仍被判为「可用」（[CookieLife] 的 OK 状态且未失效）。
-     *   为 true 时自动模式直接跳过 —— 重登只在失效或临期时触发。
-     * @param force 用户显式点「立即重登」：可越过退避与次数上限，但硬停仍拒绝。
+     * [force] 用户显式点「立即重登」：可越过退避与次数上限，但硬停仍拒绝。
      */
     fun shouldAttempt(
-        globalEnabled: Boolean,
-        accountEnabled: Boolean,
-        hasCredential: Boolean,
-        cookieUsable: Boolean,
+        facts: Facts,
         state: State,
         now: Long,
         force: Boolean,
         maxPerDay: Int,
     ): Decision {
-        if (!globalEnabled) return Decision(false, "disabled", "自动重登总开关已关闭")
-        if (!accountEnabled) return Decision(false, "disabled", "该账号未开启自动重登")
-        if (!hasCredential) return Decision(false, "no_credentials", "未保存账号密码，无法自动重登")
+        if (!facts.globalEnabled) return Decision(false, "disabled", "自动重登总开关已关闭")
+        if (!facts.accountEnabled) return Decision(false, "disabled", "该账号未开启自动重登")
+        if (!facts.hasCredential) return Decision(false, "no_credentials", "未保存账号密码，无法自动重登")
 
         if (state.blocked) {
             if (state.lastCode in HARD_STOP_CODES) {
@@ -131,7 +141,7 @@ object ReloginPolicy {
             if (recent.size >= cap) {
                 return Decision(false, "daily_cap", "24 小时内已尝试 ${recent.size} 次，达到上限")
             }
-            if (cookieUsable) return Decision(false, "not_needed", "Cookie 仍可用，无需自动重登")
+            if (facts.cookieUsable) return Decision(false, "not_needed", "Cookie 仍可用，无需自动重登")
         }
         return Decision(true)
     }

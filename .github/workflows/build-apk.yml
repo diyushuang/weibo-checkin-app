@@ -58,6 +58,26 @@ jobs:
             exit 1
           fi
 
+      # detekt 静态检查门禁：只开 LongMethod/LargeClass/LongParameterList 三条规则，
+      # 存量违规圈进 core/config/detekt/baseline.xml；baseline 外出现新违规直接拦。
+      - name: Detekt static check
+        run: |
+          set +e
+          sh gradlew detekt --no-daemon > detekt.log 2>&1
+          code=$?
+          set -e
+          if [ $code -ne 0 ]; then
+            # 违规明细在 txt 报告里，转成注解无需登录即可读到
+            cat core/build/reports/detekt/detekt.txt data/build/reports/detekt/detekt.txt domain/build/reports/detekt/detekt.txt 2>/dev/null \
+              | grep -E "\.kt:[0-9]+:[0-9]+" | head -50 | while IFS= read -r line; do
+                printf '::error::%s\n' "$(echo "$line" | sed 's/"/%22/g' | cut -c1-280)"
+              done
+            tail -30 detekt.log | while IFS= read -r line; do
+              printf '::error::%s\n' "$(echo "$line" | sed 's/"/%22/g')"
+            done
+            exit $code
+          fi
+
       - name: Unit tests & Build debug APK
         env:
           WCM_KEYSTORE_PASSWORD: ${{ secrets.WCM_KEYSTORE_PASSWORD }}

@@ -1,0 +1,79 @@
+# 结构复杂度门禁：只跑 complexity 规则集里的三条。
+#
+# 为什么这么少：本项目的痛点从来不是命名或魔法数字，而是「编排函数越写越长」
+# ——runInternal 曾长到 605 行、30+ 个可变局部状态，连续三个版本在里面修 bug
+# （见 docs/review/code-audit-2026-11-20.md §6）。已在 runInternal 拆分
+# （2026-11-20，拆成 EngageRunExecution.kt）落地后启用，否则存量违规一次性
+# 全部爆红，门槛本身就成了噪音。其余规则集（命名/风格/潜在 bug）留给既有工具
+# 链（lint + code review），不在此重复。
+#
+# 范围：:core / :data / :domain。:app 是 Compose 声明式 UI——长 Composable 是
+# 声明树的展开而非线性逻辑，LongMethod 在那里的收益低、误报高，暂不纳入。
+#
+# 阈值口径（2026-11-20 实测）：
+#   全仓最大函数 publishInternal 73 行 / 最大类 EngageRunExecution 约 590 行
+#   / 最长参数表 RunExecution 构造器 8 个。
+#   都低于门槛，但任意一项翻倍就会立刻爆红——门槛拦的是回归，不是存量。
+
+comments:
+  active: false
+
+complexity:
+  active: true
+  LongMethod:
+    active: true
+    # 100 行 ≈ 拆分后最大真实函数（73 行）的 1.4 倍；原 runInternal 会超 6 倍
+    threshold: 100
+  LargeClass:
+    active: true
+    # 类主体 650 行；EngageService（编排聚合根）约 540 行贴着这条线的存在
+    # 是有意保留的：拆类的收益低于把准备/执行/收尾放在一起的关联成本
+    threshold: 650
+  LongParameterList:
+    active: true
+    # 8 是本项目领域函数的实际上限口径：签到/重登链路的「一次事实」天然要
+    # 带多个时间戳（issuedAt/rotatedAt/seenAt/…）。6 会让存量纯函数全部爆红，
+    # 反而把真正要拦的东西（继续加参数）埋进噪音里。
+    functionThreshold: 8
+    # 带默认值的参数是「可选覆盖口径」，调用点只在覆盖时命名传递，不构成
+    # 认知负担——describe(cookie, …7个默认时间戳…) 这类 API 因此豁免。
+    ignoreDefaultParameters: true
+    # RunExecution 构造器 8 参：进度上下文 + 三份准备产物 + 执行依赖，再涨就该拆
+    # （detekt 的语义是「参数数 >= 阈值触发」，所以 9 = 允许到 8 参）
+    constructorThreshold: 9
+  # 以下都是默认开、但不属于本门禁目标的规则——显式关掉，防止默认值回归
+  CognitiveComplexMethod:
+    active: false
+  CyclomaticComplexMethod:
+    active: false
+  ComplexCondition:
+    active: false
+  MethodOverloading:
+    active: false
+  NestedBlockDepth:
+    active: false
+  StringLiteralDuplication:
+    active: false
+  TooManyFunctions:
+    active: false
+
+coroutines:
+  active: false
+
+empty-blocks:
+  active: false
+
+exceptions:
+  active: false
+
+naming:
+  active: false
+
+performance:
+  active: false
+
+potential-bugs:
+  active: false
+
+style:
+  active: false

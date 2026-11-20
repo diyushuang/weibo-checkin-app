@@ -1,0 +1,12 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>LongParameterList:AlbumCrawler.kt$AlbumCrawler$( ctx: Context, target: CrawlTarget, accounts: List&lt;Account&gt;, state: CrawlContext, log: (String) -&gt; Unit, onEvent: (CrawlEvent) -&gt; Unit, startedAt: Long, isStopped: () -&gt; Boolean, full: Boolean = false, )</ID>
+    <ID>LongParameterList:AlbumCrawler.kt$AlbumCrawler$( ctx: Context, uid: String, mid: String, target: CrawlTarget, state: CrawlContext, log: (String) -&gt; Unit, onEvent: (CrawlEvent) -&gt; Unit, guest: GuestGate, account: () -&gt; String?, )</ID>
+    <ID>LongParameterList:CrawlSaver.kt$CrawlSaver$( ctx: Context, store: SafTreeStore, index: CrawlIndex, postId: String, slot: Int, picId: String, prefix: String, index1: Int, isExtra: Boolean, wrapperUrl: String, log: (String) -&gt; Unit, )</ID>
+    <ID>LongParameterList:CrawlSaver.kt$CrawlSaver$( ctx: Context, store: SafTreeStore, index: CrawlIndex, prefix: String, postId: String, at: Long, assets: PostAssets, onlySlots: Set&lt;Int&gt;?, log: (String) -&gt; Unit, countNotPicked: Boolean = false, )</ID>
+    <ID>LongParameterList:CrawlSaver.kt$CrawlSaver$( store: SafTreeStore, index: CrawlIndex, postId: String, slot: Int, kind: CrawlIndex.Kind, picId: String, name: String, mime: String, log: (String) -&gt; Unit, fetch: suspend () -&gt; ByteArray?, )</ID>
+    <ID>LongParameterList:TimelineCrawler.kt$TimelineCrawler$( ctx: Context, cookie: String, postId: String, uid: String, target: CrawlTarget, state: CrawlContext, log: (String) -&gt; Unit, onlySlots: Set&lt;Int&gt;?, onEvent: (CrawlEvent) -&gt; Unit = {}, )</ID>
+  </CurrentIssues>
+</SmellBaseline>

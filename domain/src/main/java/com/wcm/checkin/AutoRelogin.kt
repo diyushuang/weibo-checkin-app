@@ -65,10 +65,12 @@ class AutoRelogin(
         val baseHours = account.autoReloginBackoffHours(ctx)
 
         val decision = ReloginPolicy.shouldAttempt(
-            globalEnabled = globalEnabled,
-            accountEnabled = fresh.autoReloginEnabled,
-            hasCredential = hasCred,
-            cookieUsable = usable,
+            facts = ReloginPolicy.Facts(
+                globalEnabled = globalEnabled,
+                accountEnabled = fresh.autoReloginEnabled,
+                hasCredential = hasCred,
+                cookieUsable = usable,
+            ),
             state = state,
             now = now,
             force = force,

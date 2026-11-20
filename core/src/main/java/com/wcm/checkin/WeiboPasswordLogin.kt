@@ -117,6 +117,10 @@ object WeiboPasswordLogin {
 
     /**
      * 尝试账密登录。不抛异常：所有失败都归类成 [Outcome.code]，交给策略层决定退避 / 硬停。
+     *
+     * 拆成三段（2026-11-20）：预热 + prelogin + RSA → 提交表单 → 探活组装。
+     * 每段返回 `(产物, 失败终态)`——fail 非空时调用方直接 return，本函数只保留
+     * 「阶段顺序」。此前 122 行直排（detekt LongMethod 门槛），逻辑没有任何变化。
      */
     fun login(username: String, password: String): Outcome {
         val user = username.trim()
@@ -131,7 +135,38 @@ object WeiboPasswordLogin {
             .followSslRedirects(true)
             .build()
 
-        // 预热 weibo.com：拿一份基础 cookie，避免登录表单在空会话下被判异常
+        // ---- 预热 + prelogin + RSA ----
+        val (parts, preFail) = preparePrelogin(client, user, password)
+        preFail?.let { return it }
+        val pre = parts!!
+
+        // ---- 提交登录表单 ----
+        val (payload, submitFail) = submitLogin(client, user, pre)
+        submitFail?.let { return it }
+        val body = payload!!
+
+        // ---- 跟随新浪的跨域回跳（每个域各下一次 cookie）----
+        for (url in callbackUrls(body).take(MAX_CALLBACKS)) {
+            try {
+                client.newCall(desktopRequest(url)).execute().close()
+            } catch (e: Exception) {
+                // 单条回跳失败不阻断整体登录，最终仍以探活结果为准
+            }
+        }
+
+        // ---- 探活 + 组装结果 ----
+        return verifyStage(jar, body)
+    }
+
+    /**
+     * 预热 weibo.com（拿基础 cookie，失败不影响登录）→ prelogin 四件套 →
+     * `showpin` 检查 → RSA 加密密码。
+     */
+    private fun preparePrelogin(
+        client: OkHttpClient,
+        user: String,
+        password: String,
+    ): Pair<PreloginParts?, Outcome?> {
         try {
             client.newCall(desktopRequest("https://weibo.com/")).execute().close()
         } catch (e: Exception) {
@@ -141,29 +176,40 @@ object WeiboPasswordLogin {
         val prelogin = try {
             fetchPrelogin(client, user)
         } catch (e: IOException) {
-            return fail(ReloginPolicy.CODE_NETWORK, "")
+            return Pair(null, fail(ReloginPolicy.CODE_NETWORK, ""))
         } catch (e: Exception) {
-            return fail(ReloginPolicy.CODE_UNKNOWN, "")
+            return Pair(null, fail(ReloginPolicy.CODE_UNKNOWN, ""))
         }
         val servertime = prelogin.optString("servertime", "").trim()
         val nonce = prelogin.optString("nonce", "").trim()
         val pubkey = prelogin.optString("pubkey", "").trim()
         val rsakv = prelogin.optString("rsakv", "").trim()
         if (servertime.isEmpty() || nonce.isEmpty() || pubkey.isEmpty() || rsakv.isEmpty()) {
-            return fail(ReloginPolicy.CODE_UNKNOWN, prelogin.optString("retcode", ""))
+            return Pair(null, fail(ReloginPolicy.CODE_UNKNOWN, prelogin.optString("retcode", "")))
         }
         // `showpin=1` = 服务端这次就要验证码。继续提交密码只会白撞一次风控，
         // 直接判 needs_manual（硬停），把「该去人工验证」这件事提前说清楚。
         if (prelogin.optInt("showpin", 0) == 1) {
-            return fail(ReloginPolicy.CODE_NEEDS_MANUAL, prelogin.optString("retcode", ""))
+            return Pair(null, fail(ReloginPolicy.CODE_NEEDS_MANUAL, prelogin.optString("retcode", "")))
         }
 
         val sp = try {
             rsaEncrypt(pubkey, servertime, nonce, password)
         } catch (e: Exception) {
-            return fail(ReloginPolicy.CODE_UNKNOWN, "")
+            return Pair(null, fail(ReloginPolicy.CODE_UNKNOWN, ""))
         }
+        return Pair(
+            PreloginParts(servertime = servertime, nonce = nonce, pubkey = pubkey, rsakv = rsakv, sp = sp),
+            null,
+        )
+    }
 
+    /** 组表单并 POST；`retcode != 0` 与非 JSON 响应都在这里就地分类成失败终态。 */
+    private fun submitLogin(
+        client: OkHttpClient,
+        user: String,
+        pre: PreloginParts,
+    ): Pair<JSONObject?, Outcome?> {
         val su = user.encodeUtf8().base64()
         val form = FormBody.Builder()
             .add("entry", "weibo")
@@ -175,11 +221,11 @@ object WeiboPasswordLogin {
             .add("vsnf", "1")
             .add("su", su)
             .add("service", "miniblog")
-            .add("servertime", servertime)
-            .add("nonce", nonce)
+            .add("servertime", pre.servertime)
+            .add("nonce", pre.nonce)
             .add("pwencode", "rsa2")
-            .add("rsakv", rsakv)
-            .add("sp", sp)
+            .add("rsakv", pre.rsakv)
+            .add("sp", pre.sp)
             .add("sr", "1920*1080")
             .add("encoding", "UTF-8")
             .add("prelt", "115")
@@ -197,36 +243,31 @@ object WeiboPasswordLogin {
                     } else {
                         ReloginPolicy.CODE_NETWORK
                     }
-                    return fail(code, "", "登录接口 HTTP ${resp.code}")
+                    return Pair(null, fail(code, "", "登录接口 HTTP ${resp.code}"))
                 }
                 val body = resp.body?.string().orEmpty()
                 // 不是 JSON 时不能一律判 unknown：微博要人工验证时会回一整页 HTML
                 // （验证页 / 安全中心），把正文交给文案识别才能落到 needs_manual。
-                parseJsonObject(body) ?: return fail(classifyRetcode("", body.take(4000)), "")
+                parseJsonObject(body) ?: return Pair(null, fail(classifyRetcode("", body.take(4000)), ""))
             }
         } catch (e: IOException) {
-            return fail(ReloginPolicy.CODE_NETWORK, "")
+            return Pair(null, fail(ReloginPolicy.CODE_NETWORK, ""))
         } catch (e: Exception) {
-            return fail(ReloginPolicy.CODE_UNKNOWN, "")
+            return Pair(null, fail(ReloginPolicy.CODE_UNKNOWN, ""))
         }
 
         val retcode = payload.opt("retcode")?.toString()?.trim().orEmpty()
         if (retcode != "0" && retcode.isNotEmpty()) {
             val code = classifyRetcode(retcode, reasonTextOf(payload))
-            return fail(code, retcode)
+            return Pair(null, fail(code, retcode))
         }
+        return Pair(payload, null)
+    }
 
-        // 跟随新浪的跨域回跳（每个域各下一次 cookie），最多 6 次
-        for (url in callbackUrls(payload).take(MAX_CALLBACKS)) {
-            try {
-                client.newCall(desktopRequest(url)).execute().close()
-            } catch (e: Exception) {
-                // 单条回跳失败不阻断整体登录，最终仍以探活结果为准
-            }
-        }
-
+    /** 合并 cookie → 探活 → 按「HTTP 码 > 登录态 > 服务端到期」组装成功 Outcome。 */
+    private fun verifyStage(jar: MemoryJar, payload: JSONObject): Outcome {
         val (merged, expiries) = jar.merged()
-        if (merged.isEmpty()) return fail(ReloginPolicy.CODE_VERIFY_FAILED, retcode)
+        val retcode = payload.opt("retcode")?.toString()?.trim().orEmpty()
 
         val verify = try {
             WeiboAuthApi.verify(merged, force = true)
@@ -261,6 +302,14 @@ object WeiboPasswordLogin {
         )
     }
 
+    /** prelogin 四件套 + RSA 加密后的密码。submit 表单的原料。 */
+    private class PreloginParts(
+        val servertime: String,
+        val nonce: String,
+        val pubkey: String,
+        val rsakv: String,
+        val sp: String,
+    )
     // ---------- 纯解析 / 分类（JVM 单测覆盖） ----------
 
     /**

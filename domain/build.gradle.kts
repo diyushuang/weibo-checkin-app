@@ -1,6 +1,18 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    // 结构复杂度门禁：只跑三条规则，配置共享见 core/config/detekt/detekt.yml
+    id("io.gitlab.arturbosch.detekt")
+}
+
+detekt {
+    // 三条结构规则全仓共享一份配置，口径一致才谈得上门槛
+    config.setFrom(files("$rootDir/core/config/detekt/detekt.yml"))
+    buildUponDefaultConfig = true
+    // 存量违规圈进 baseline（抓取链路的 6 个 9~11 参函数：AlbumCrawler×2 /
+    // CrawlSaver×3 / TimelineCrawler×1，都在 :domain，对应 docs/testing.md §5
+    // 「先补测试再重构」的区域）；新违规照样拦。重构完记得重新生成并收敛 baseline。
+    baseline = file("$rootDir/core/config/detekt/baseline.xml")
 }
 
 android {
@@ -41,6 +53,9 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     implementation("androidx.core:core-ktx:1.15.0")
+    // 版本钉：core-ktx 会传递 lifecycle-runtime 2.6.2 / profileinstaller 1.3.1，
+    // 显式声明把它们抬到与 app 对齐的版本（2.8.7 / 1.4.0）。删掉后仍会以传递依赖
+    // 进 APK，只是版本退回老版 —— 不要因为「搜不到引用」就删。
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.profileinstaller:profileinstaller:1.4.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
