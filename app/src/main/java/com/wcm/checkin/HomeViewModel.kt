@@ -155,16 +155,14 @@ class HomeViewModel @Inject constructor(
 
     private fun toast(text: String) = _events.tryEmit(HomeEvent.Toast(text))
 
-    private fun formatTime(at: Long): String =
-        (timeFmt.get() ?: SimpleDateFormat("HH:mm:ss", Locale.CHINA)).format(Date(at))
+    private fun formatTime(at: Long): String = timeFmt.get().format(Date(at))
 
-    private fun formatStamp(at: Long): String =
-        (stampFmt.get() ?: SimpleDateFormat("M月d日 HH:mm", Locale.CHINA)).format(Date(at))
+    private fun formatStamp(at: Long): String = stampFmt.get().format(Date(at))
 
     private fun topicStateTime(atMs: Long): String = when {
         atMs <= 0L -> ""
         TopicStore.isToday(atMs) -> formatTime(atMs).take(5)
-        else -> SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(atMs))
+        else -> formatStamp(atMs)
     }
 
     // ========================= 生命周期入口 =========================

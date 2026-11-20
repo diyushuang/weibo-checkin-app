@@ -1,6 +1,7 @@
 package com.wcm.checkin
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -35,6 +36,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -480,7 +482,16 @@ private fun SwitchRow(
         modifier = Modifier
             .fillMaxWidth()
             .wcmFocusRing(WcmRowRingShape)
-            .clickable(enabled = enabled) { onToggle(!checked) }
+            // toggleable(role = Switch) 而不是 clickable：整行才是那个"开关"，
+            // 读屏要播报「开关 / 已开启」，clickable 只会说成「按钮」。
+            // 同时整行只有一个焦点目标，Tab 不会在同一个开关上停两次
+            // （之前 clickable + Switch(onCheckedChange=...) 就是停两站）。
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                enabled = enabled,
+                onValueChange = onToggle,
+            )
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -492,10 +503,10 @@ private fun SwitchRow(
         )
         Switch(
             checked = checked,
-            // 行本身 clickable 已负责切换；开关再参与焦点会在同一个开关上停两次
+            // 行上的 toggleable 已负责切换与语义；开关自己不参与交互，
+            // 否则同一个开关既是焦点目标又是点击目标，语义与焦点都会重复
             onCheckedChange = null,
             enabled = enabled,
-            modifier = Modifier.wcmSkipFocus(),
         )
     }
 }

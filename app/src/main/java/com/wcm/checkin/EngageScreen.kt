@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
@@ -44,6 +45,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 
 /**
@@ -82,11 +85,16 @@ fun EngageScreen(
     // 于是运行中每秒整页（十几张卡）重组一次；传 State 之后只有真正读它的
     // 状态卡 / 过程卡重组。顺带用 mutableLongStateOf 免掉每秒一次装箱。
     val nowMs = remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(state.running) {
+    // 只在前台跑：composition 在应用退到后台时仍然存活，
+    // 不套 repeatOnLifecycle 的话，这一秒一跳会一直占用主线程并每秒重绘状态卡。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(state.running, lifecycleOwner) {
         if (!state.running) return@LaunchedEffect
-        while (true) {
-            nowMs.longValue = System.currentTimeMillis()
-            delay(1_000)
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                nowMs.longValue = System.currentTimeMillis()
+                delay(1_000)
+            }
         }
     }
 

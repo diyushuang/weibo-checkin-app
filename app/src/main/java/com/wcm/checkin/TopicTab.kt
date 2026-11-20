@@ -61,25 +61,22 @@ fun TopicTab(viewModel: TopicViewModel, onGoHome: () -> Unit) {
         }
     }
 
-    WcmTheme {
-        TopicScreen(
-            state = state,
-            onRefresh = { viewModel.refresh(manual = true) },
-            onOverflowField = { viewModel.showFieldHelp() },
-            onOverflowRefresh = { viewModel.refresh(manual = true) },
-            onSelectAccount = { viewModel.selectAccount(it) },
-            onFilter = { viewModel.setFilter(it) },
-            onSort = { viewModel.setSort(it) },
-            onRowClick = { viewModel.toggleDetail(it) },
-            onRowCheckin = { viewModel.checkin(it) },
-            onRowCopy = { viewModel.copySignLink(it) },
-            onRowOpen = { viewModel.openInWeibo(it) },
-            onRowJson = { viewModel.showRawJson(it) },
-            onEmptyAction = onGoHome,
-            onRetry = { viewModel.refresh(manual = true) },
-        )
-    }
-
+    TopicScreen(
+        state = state,
+        onRefresh = { viewModel.refresh(manual = true) },
+        onOverflowField = { viewModel.showFieldHelp() },
+        onOverflowRefresh = { viewModel.refresh(manual = true) },
+        onSelectAccount = { viewModel.selectAccount(it) },
+        onFilter = { viewModel.setFilter(it) },
+        onSort = { viewModel.setSort(it) },
+        onRowClick = { viewModel.toggleDetail(it) },
+        onRowCheckin = { viewModel.checkin(it) },
+        onRowCopy = { viewModel.copySignLink(it) },
+        onRowOpen = { viewModel.openInWeibo(it) },
+        onRowJson = { viewModel.showRawJson(it) },
+        onEmptyAction = onGoHome,
+        onRetry = { viewModel.refresh(manual = true) },
+    )
     textDialog?.let { (title, body) ->
         AlertDialog(
             onDismissRequest = { textDialog = null },

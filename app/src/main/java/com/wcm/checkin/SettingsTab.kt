@@ -51,18 +51,15 @@ fun SettingsTab(viewModel: SettingsViewModel) {
         if (viewModel.currentNeedsLanPermission()) requestLanPermissionIfNeeded()
     }
 
-    WcmTheme {
-        SettingsScreen(
-            state = state,
-            onUrlChange = viewModel::updateUrl,
-            onTokenChange = viewModel::updateToken,
-            onSave = viewModel::save,
-            onAutoOnOpenChange = viewModel::setAutoOnOpen,
-            onCrawlGifChange = viewModel::setCrawlGif,
-            onAutoReloginChange = viewModel::setAutoRelogin,
-        )
-    }
-}
+    SettingsScreen(
+        state = state,
+        onUrlChange = viewModel::updateUrl,
+        onTokenChange = viewModel::updateToken,
+        onSave = viewModel::save,
+        onAutoOnOpenChange = viewModel::setAutoOnOpen,
+        onCrawlGifChange = viewModel::setCrawlGif,
+        onAutoReloginChange = viewModel::setAutoRelogin,
+    )}
 
 /** API 37 才存在的权限，不能引用 Build.VERSION_CODES 常量（compileSdk 36）。 */
 private const val PERM_ACCESS_LOCAL_NETWORK = "android.permission.ACCESS_LOCAL_NETWORK"

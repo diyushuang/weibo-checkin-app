@@ -67,43 +67,40 @@ fun GalleryTab(
         }
     }
 
-    WcmTheme {
-        GalleryScreen(
-            state = state,
-            onAddTarget = {
-                addInput = ""
-                addOpen = true
-            },
-            onPickDir = onPickDir,
-            onOpenGallery = {
-                val raw = viewModel.treeUri()
-                if (raw.isEmpty()) {
-                    Toast.makeText(context, R.string.gallery_need_dir, Toast.LENGTH_SHORT).show()
-                } else {
-                    onOpenGallery(raw)
-                }
-            },
-            onModeToggle = viewModel::setMode,
-            onAutoToggle = viewModel::setAuto,
-            onStart = viewModel::startAll,
-            onFull = { fullUids = emptySet() },
-            onStop = viewModel::stop,
-            onRetryFailed = { viewModel.loadRetryItems() },
-            onBrowse = {
-                onBrowse(viewModel.firstTargetUid())
-            },
-            onSinglePost = {
-                singleInput = ""
-                singleOpen = true
-            },
-            onLogToggle = { viewModel.setLogExpanded(!state.log.expanded) },
-            onTargetIncremental = { uid -> viewModel.startCrawl(setOf(uid), full = false) },
-            onTargetFull = { uid -> fullUids = setOf(uid) },
-            onTargetSince = { uid -> sinceUid = uid },
-            onTargetDelete = { uid -> deleteUid = uid },
-        )
-    }
-
+    GalleryScreen(
+        state = state,
+        onAddTarget = {
+            addInput = ""
+            addOpen = true
+        },
+        onPickDir = onPickDir,
+        onOpenGallery = {
+            val raw = viewModel.treeUri()
+            if (raw.isEmpty()) {
+                Toast.makeText(context, R.string.gallery_need_dir, Toast.LENGTH_SHORT).show()
+            } else {
+                onOpenGallery(raw)
+            }
+        },
+        onModeToggle = viewModel::setMode,
+        onAutoToggle = viewModel::setAuto,
+        onStart = viewModel::startAll,
+        onFull = { fullUids = emptySet() },
+        onStop = viewModel::stop,
+        onRetryFailed = { viewModel.loadRetryItems() },
+        onBrowse = {
+            onBrowse(viewModel.firstTargetUid())
+        },
+        onSinglePost = {
+            singleInput = ""
+            singleOpen = true
+        },
+        onLogToggle = { viewModel.setLogExpanded(!state.log.expanded) },
+        onTargetIncremental = { uid -> viewModel.startCrawl(setOf(uid), full = false) },
+        onTargetFull = { uid -> fullUids = setOf(uid) },
+        onTargetSince = { uid -> sinceUid = uid },
+        onTargetDelete = { uid -> deleteUid = uid },
+    )
     if (addOpen) {
         AlertDialog(
             onDismissRequest = { addOpen = false },

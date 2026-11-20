@@ -62,8 +62,12 @@ class TopicViewModel @Inject constructor(
 
     private var rowsByKey: Map<String, TopicRow> = emptyMap()
 
-    private val timeFmt = SimpleDateFormat("HH:mm", Locale.CHINA)
-    private val dateFmt = SimpleDateFormat("M月d日 HH:mm", Locale.CHINA)
+    // SimpleDateFormat 非线程安全。原先这两个字段靠「只在 render() 的主线程用」这条
+    // 隐性约定，noteCheckin() 在 IO 线程就得单独 new（见该方法注释）。
+    // 改成 ThreadLocal 后，任何线程调用都安全，约定不再靠人记。
+    private val timeFmt = ThreadLocal.withInitial { SimpleDateFormat("HH:mm", Locale.CHINA) }
+    private val dateFmt =
+        ThreadLocal.withInitial { SimpleDateFormat("M月d日 HH:mm", Locale.CHINA) }
 
     data class TopicRow(
         val uid: String,
@@ -175,8 +179,8 @@ class TopicViewModel @Inject constructor(
 
     private fun topicStateTime(at: Long): String = when {
         at <= 0L -> ""
-        TopicStore.isToday(at) -> timeFmt.format(Date(at))
-        else -> dateFmt.format(Date(at))
+        TopicStore.isToday(at) -> timeFmt.get().format(Date(at))
+        else -> dateFmt.get().format(Date(at))
     }
 
     // ========================= 渲染 =========================
@@ -308,7 +312,7 @@ class TopicViewModel @Inject constructor(
                             append(
                                 ctx.getString(
                                     R.string.topic_detail_fetched,
-                                    timeFmt.format(Date(detail.fetchedAt)),
+                                    timeFmt.get().format(Date(detail.fetchedAt)),
                                 )
                             )
                         }
@@ -609,9 +613,8 @@ class TopicViewModel @Inject constructor(
     private fun noteCheckin(uid: String) {
         val snap = TopicStore.snapshot(ctx, uid) ?: return
         if (snap.topics.isEmpty()) return
-        // 单独 new 一个格式器：这里的调用点在 IO 线程，与 render() 的主线程共用
-        // ViewModel 级 timeFmt 会有并发风险（SimpleDateFormat 非线程安全）
-        val at = SimpleDateFormat("HH:mm", Locale.CHINA).format(Date())
+        // 调用点在 IO 线程；timeFmt 是 ThreadLocal，各线程各拿一份，这里直接复用
+        val at = timeFmt.get().format(Date())
         AccountStore.setLastResult(
             ctx, uid,
             ctx.getString(R.string.home_status_signed_fmt, snap.done, snap.total, at),

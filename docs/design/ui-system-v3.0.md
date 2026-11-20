@@ -838,6 +838,31 @@ outline）。不用 padding 预留，否则聚焦瞬间布局会跳 2dp。
 requester（会抛 `IllegalStateException`）。而 Tab 顺序本来就与布局顺序一致，
 收益远小于成本与脆弱性 —— 这是有意不做，不是遗漏。
 
+### 11.12 全项目审查（第四轮）
+
+按「已知缺陷模式」扫了一遍全工程（core / data / domain / app），确认无 `runBlocking`、
+无 `GlobalScope`、无未关闭的流（SAF 与 OkHttp 全部 `.use {}`）、`CrawlIndex` 的锁覆盖完整、
+`ThumbLoader` / `RemoteThumb` 有采样与字节上限、`HomeViewModel` 的 `busy` 守卫能在
+Job 死掉后自愈。**修掉 5 处，报告 3 处不改**。
+
+| # | 问题 | 严重度 | 处理 |
+|---|---|---|---|
+| 1 | **图库开关行丢失「开关」语义**：上一轮把它从 `clickable` + `Switch(onCheckedChange=…)` 改成 `clickable` + `Switch(onCheckedChange = null)` 消除了重复焦点，但 `clickable` 的 role 是 Button，整行只剩「按钮」语义，读屏听不到「开关 / 已开启」 | 高（自伤） | 改为 `toggleable(role = Role.Switch)`，与设置页写法统一；一个焦点目标、正确语义 |
+| 2 | **任务页 1 秒计时器在后台照跑**：composition 在应用退到后台时仍存活，`while { delay(1000) }` 会继续每秒写 state → 每秒重组状态卡 | 中 | 套 `lifecycleOwner.repeatOnLifecycle(RESUMED)`，两个页面都改 |
+| 3 | **`TopicViewModel` 的 `SimpleDateFormat` 靠隐性约定保线程安全**：`timeFmt` / `dateFmt` 是 ViewModel 字段，只在 `render()` 的主线程用；`noteCheckin()` 在 IO 线程就得单独 new（注释里自己承认了风险） | 中 | 改 `ThreadLocal`，与 `HomeViewModel` 既有写法统一，约定变机制 |
+| 4 | `HomeViewModel` 死代码：`timeFmt.get() ?: SimpleDateFormat(...)` —— `ThreadLocal.withInitial` 永不返回 null；同段还有第三种写法（每次 new） | 低 | 删掉兜底与就地 new，统一走 `stampFmt` |
+| 5 | 三个 Tab（Gallery / Settings / Topic）各自又包了一层 `WcmTheme`，外层 `MainActivity` 已是 `WcmTheme` —— 同值再 provide 一遍，纯开销，还让人以为「每页自己管主题」 | 低 | 移除包装 |
+
+**报告但不改的 3 处**
+
+- `collectAsState` → `collectAsStateWithLifecycle`：需要新增 `lifecycle-runtime-compose` 依赖；
+  而当前唯一常驻轮询（任务页计时器）已随第 2 条修掉，其余都是用户动作驱动的 `StateFlow`，
+  收益不足以引入新依赖。
+- `EngageScreen` 的日志列表 `items(logs)` 没有 `key`：日志只追加、每行无内部状态，
+  影响可忽略；要加 key 得先给日志条目生成稳定 id。
+- `EngageService` 的 `target!!`：已被 `if (action != POST && target == null) continue` 守住，
+  当前安全；但 `!!` 对后续改动脆弱，属风格问题，不在本次动业务代码。
+
 ### 11.9 已知遗留
 
 - 任务页仍有十余处中文硬编码在 Kotlin 里（`"当前配置还不能执行：…"` 等），
