@@ -70,6 +70,7 @@
     <string name="cookie_unknown_hint_off">本机暂无足够信息估算有效期，请重新登录记录真实登录时间</string>
     <string name="cookie_last_error_fmt">上次失败：%1$s</string>
     <string name="cookie_legacy_anchor_note">旧数据：没有真实登录时间，暂按同步时间估算</string>
+    <string name="home_crypto_plain_warn">本机加密不可用（%1$s），登录凭据已以明文保存在本机。换机或借出设备前请先删除账号。</string>
     <string name="accounts_label">账号</string>
     <string name="log_label">运行日志</string>
     <string name="auto_on_open">打开 App 即自动签到</string>
@@ -489,26 +490,14 @@
     <string name="engage_topic_empty">请先在微博内关注该超话，再刷新列表</string>
     <string name="engage_refresh_topics">刷新超话列表</string>
 
-    <string name="engage_counts_title">执行次数</string>
-    <string name="engage_count_post">发帖</string>
-    <string name="engage_count_repost">转发</string>
-    <string name="engage_count_comment">评论</string>
-    <string name="engage_count_like">点赞</string>
     <string name="engage_count_unit">次/天</string>
 
-    <string name="engage_actions_title">动作与次数</string>
     <string name="engage_action_off_hint">已关闭</string>
     <string name="engage_action_run_only">单独执行</string>
-    <string name="engage_actions_note">「关闭」不做；「仅手动」不参与自动轮次（打开 App 自动执行），点「立即执行一次」或该动作的「单独执行」时仍会执行；「自动」参与每一轮自动执行。</string>
 
     <string name="engage_pace_title">执行节奏</string>
-    <string name="engage_pace_post">发帖间隔</string>
-    <string name="engage_pace_comment">评论间隔</string>
-    <string name="engage_pace_repost">转发间隔</string>
-    <string name="engage_pace_like">点赞间隔</string>
     <string name="engage_pace_between">动作之间</string>
     <string name="engage_pace_budget">单轮时间预算</string>
-    <string name="engage_pace_note">间隔越短越容易被限流：自动执行建议「均衡」或「稳健」，手动补跑可以用「快速」。每次间隔在上限内随机，不会一直取同值。后台执行时预算上限为 9 分钟。</string>
 
     <string name="engage_trace_title">执行过程</string>
     <string name="engage_trace_idle">尚未开始</string>
@@ -533,7 +522,6 @@
 
     <string name="engage_texts_title">文案库</string>
     <string name="engage_texts_count">可用 %1$d 条 / 共 %2$d 条</string>
-    <string name="engage_texts_open">管理文案</string>
     <string name="engage_texts_add">新增文案</string>
     <string name="engage_texts_import">批量导入</string>
     <string name="engage_texts_import_hint">从百度输入法圈子复制文案后粘贴到这里。本应用不会联网获取任何文案。</string>
@@ -606,7 +594,6 @@
     <string name="gallery_group_label">分组</string>
 
     <!-- ===== 0.14.0 三套文案库 / 四个子任务页面 ===== -->
-    <string name="engage_back">返回</string>
     <string name="engage_texts_manage">管理</string>
     <string name="engage_texts_disabled">已关闭（转发不带文案）</string>
     <string name="engage_texts_of_kind">%1$s文案 %2$d 条</string>

@@ -66,8 +66,8 @@ object AccountStore {
 
     fun save(ctx: Context, accounts: List<Account>) {
         synchronized(LOCK) {
-            // cookie 落盘前逐条加密（失败降级明文，见 SecretBox.sealOrPlain）
-            val raw = serializeAccounts(accounts) { SecretBox.sealOrPlain(it) }
+            // cookie 落盘前逐条加密（失败降级明文，并留下「加密不可用」标记，见 SecretHealth）
+            val raw = serializeAccounts(accounts) { SecretBox.sealOrPlain(ctx, it) }
             prefs(ctx).edit { putString(KEY_ACCOUNTS, raw) }
             // 顺手把缓存对齐，省掉紧随其后的那次重新解析
             cacheRaw = raw
@@ -130,6 +130,8 @@ object AccountStore {
             putString(KEY_ACCOUNTS, sealed)
             putBoolean(KEY_SEALED, true)
         }
+        // 明文已全部加密回密文，清掉首页那条「本机加密不可用」的提示
+        SecretHealth.clear(ctx)
         cacheRaw = sealed
         cacheList = deserializeAccounts(sealed) { SecretBox.openOrNull(it) ?: "" }
         true

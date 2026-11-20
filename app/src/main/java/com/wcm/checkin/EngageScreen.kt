@@ -26,7 +26,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -240,7 +239,7 @@ private fun StatusCard(
                             waitLeft > 0 -> append(
                                 stringResource(R.string.engage_wait_fmt, (waitLeft + 999) / 1000),
                             )
-                            else -> progress.etaLabel(now).takeIf { it.isNotEmpty() }?.let {
+                            else -> progress.etaLabel().takeIf { it.isNotEmpty() }?.let {
                                 append(stringResource(R.string.engage_eta_fmt, it))
                             }
                         }

@@ -83,6 +83,8 @@ object LivePhotoConverter {
             try {
                 retriever.release()
             } catch (e: Exception) {
+                // release() 在 finally 里：它自己再抛就会把「转 GIF 失败」这个主因盖掉，
+                // 而失败的那些临时资源由下面的 tmp.delete() 与 GC 兜底。
             }
             tmp.delete()
         }
@@ -93,6 +95,8 @@ object LivePhotoConverter {
         try {
             retriever.getFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST)?.let { return it }
         } catch (e: Exception) {
+            // 精确帧取不到（老视频/编码不支持）时**不失败**：下面退化为最近的关键帧，
+            // 只是画面时间点略有偏差，比整段 Live Photo 转不出 GIF 好。
         }
         return try {
             retriever.getFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)

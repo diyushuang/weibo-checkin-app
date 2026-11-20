@@ -106,12 +106,17 @@ object SecretBox {
      * 加密，失败降级明文（可用性优先）。
      *
      * 降级路径是**有意的**：这条链路上唯一不可接受的结果是"用户登录成功但账号没存下来"。
+     *
+     * 但它不再是**静默**的：传入 [ctx] 时会把降级事实写进 [SecretHealth]，
+     * 首页据此提示「本机加密不可用，凭据以明文保存」。cookie（SUB）是微博的
+     * 全权凭据，能发帖、能删帖、能看私信——这种状态不该只有开发者从 logcat 才知道。
      */
-    fun sealOrPlain(plain: String): String =
+    fun sealOrPlain(ctx: Context?, plain: String): String =
         try {
             seal(plain)
         } catch (e: Exception) {
             Log.w(TAG, "加密失败，降级明文（长度 ${plain.length}）：${e.javaClass.simpleName}")
+            if (ctx != null) SecretHealth.markDegraded(ctx, e.javaClass.simpleName)
             plain
         }
 
@@ -139,6 +144,62 @@ object SecretBox {
 }
 
 /**
+ * 「本机加密不可用」的持久化标记。
+ *
+ * 为什么需要它：`SecretBox.sealOrPlain` 在 Keystore 出问题的 ROM 上会把 cookie
+ * 以**明文**写进 `shared_prefs`，而这件事此前只在 logcat 留一条 warn——用户看不到，
+ * 于是「凭据明文落盘」成了静默状态。这里把事实持久化，首页读它并显式提示。
+ *
+ * 三态语义：
+ * - 标记存在 = 至少有一次降级发生了，磁盘上可能还有明文 cookie；
+ * - 标记被清除 = 后续全量重写（[AccountStore.migrateToSealed]）已成功把明文加密；
+ * - 标记不存在 = 从未降级。
+ *
+ * 用独立 prefs 文件，避免与账号表互相影响（账号表被误清也不会丢这条健康状态）。
+ */
+object SecretHealth {
+
+    private const val TAG = "SecretHealth"
+    private const val PREFS = "wcm_security"
+    private const val KEY_DEGRADED = "sealed_degraded"
+    private const val KEY_AT = "sealed_degraded_at"
+    private const val KEY_REASON = "sealed_degraded_reason"
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** 记录一次降级。**不能抛**：它本身在异常路径上。 */
+    fun markDegraded(ctx: Context, reason: String) {
+        try {
+            prefs(ctx).edit {
+                putBoolean(KEY_DEGRADED, true)
+                putLong(KEY_AT, System.currentTimeMillis())
+                putString(KEY_REASON, reason.take(60))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "写降级标记失败：${e.javaClass.simpleName}")
+        }
+    }
+
+    fun isDegraded(ctx: Context): Boolean =
+        runCatching { SafePrefs.bool(prefs(ctx), KEY_DEGRADED, false) }.getOrDefault(false)
+
+    /** 降级原因（异常类名），仅用于诊断展示。 */
+    fun degradedReason(ctx: Context): String =
+        runCatching { SafePrefs.string(prefs(ctx), KEY_REASON) }.getOrDefault("")
+
+    /** 明文已全部加密回密文后调用。 */
+    fun clear(ctx: Context) {
+        runCatching {
+            prefs(ctx).edit {
+                remove(KEY_DEGRADED)
+                remove(KEY_AT)
+                remove(KEY_REASON)
+            }
+        }
+    }
+}
+
+/**
  * `ALC`（SSO 长效票据）的加密存储。
  *
  * 与账号密码同目录（`wcm_credentials`）、不同前缀，便于"删账号时一起清"和
@@ -155,7 +216,7 @@ object AlcVault {
         SafePrefs.string(prefs(ctx), KEY_PREFIX + uid).isNotEmpty()
 
     fun save(ctx: Context, uid: String, alc: String) {
-        val token = SecretBox.sealOrPlain(alc.trim())
+        val token = SecretBox.sealOrPlain(ctx, alc.trim())
         prefs(ctx).edit { putString(KEY_PREFIX + uid, token) }
     }
 

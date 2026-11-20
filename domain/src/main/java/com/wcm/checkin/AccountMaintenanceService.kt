@@ -15,7 +15,15 @@ class AccountMaintenanceService(
     private val panel: PanelPort,
     /** 凭证库：只用来「把 cookie 里自带的 ALC 收进来」，不读密码。 */
     private val vault: CredentialPort,
-) {
+) : ProbePort {
+
+    /**
+     * [ProbePort] 的实现：签到链路只需要「探活 + 落库」这一步。
+     *
+     * 抽端口不是为了抽象而抽象——`CheckinService` 直接依赖这个 final 具体类时，
+     * JVM 单测既造不出实例也替换不掉，签到编排因此长期零测试（见 `docs/testing.md`）。
+     */
+    override fun probe(ctx: Context, acc: Account): WeiboAuthApi.Verify = probeAndPersist(ctx, acc)
 
     /**
      * 探活成功后的统一收尾：更新内存快照 → 落库。

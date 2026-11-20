@@ -1,6 +1,7 @@
 package com.wcm.checkin
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -19,8 +20,8 @@ import kotlin.random.Random
 class CheckinService(
     /** 账号表：签到小结与失效标记的唯一写入点。 */
     private val account: AccountPort,
-    /** 探活 / 补昵称 / 面板同步。 */
-    private val maintenance: AccountMaintenanceService,
+    /** 探活 / 补昵称 / 面板同步。只依赖窄端口，便于 JVM 单测（见 `docs/testing.md`）。 */
+    private val maintenance: ProbePort,
     /** 超话快照缓存。 */
     private val topicCache: TopicCachePort,
 ) {
@@ -101,7 +102,10 @@ class CheckinService(
             return AccountOutcome(acc.uid, error = cookieDeadText)
         }
         val verify = try {
-            maintenance.probeAndPersist(ctx, acc)
+            maintenance.probe(ctx, acc)
+        } catch (e: CancellationException) {
+            // 取消不是「探活失败」：吞掉会让上层以为本轮跑完、并写一条假小结。
+            throw e
         } catch (e: Exception) {
             // 登录墙（302 到登录页 / 访客页 HTML）是"服务端明确要你重新登录"，
             // 属于允许判死的强判据；其余异常只记原因，绝不判死。
@@ -149,6 +153,10 @@ class CheckinService(
                             fail++
                             log("  ✗ ${topic.name}")
                         }
+                    } catch (e: CancellationException) {
+                        // 关键：循环内的取消若不重抛，pause/sign 之后的每一轮都会立刻
+                        // 抛出又被立刻吞掉，剩余超话会在一瞬间全被记成「✗ 失败」。
+                        throw e
                     } catch (e: Exception) {
                         fail++
                         log("  ✗ ${topic.name}：${e.message}")
@@ -174,6 +182,9 @@ class CheckinService(
                     account.updateCookie(ctx, acc.uid, session.cookie, session.domainHints)
                 }
             }
+        } catch (e: CancellationException) {
+            // 取消继续上抛，由 AppScope / Worker 处理；不写小结（写的是「失败」而非「已停止」）。
+            throw e
         } catch (e: Exception) {
             noteResult(ctx, acc, "超话列表失败：${e.message}")
             log("  ✗ ${e.message}")

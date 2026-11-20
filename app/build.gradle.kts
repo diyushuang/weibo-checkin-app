@@ -5,6 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
+    jacoco
 }
 
 // 稳定签名 keystore（PKCS12，别名 wcmsign）：本地放 app/keystore/（已 gitignore），
@@ -158,6 +159,9 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    // collectAsStateWithLifecycle：页面进入后台（切登录 WebView / 按 Home）后停止收集，
+    // 否则 AppScope 里的签到进度、首页每秒计时器会在后台继续驱动重组。
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
 
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
@@ -171,6 +175,10 @@ dependencies {
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     ksp("androidx.hilt:hilt-compiler:1.2.0")
     testImplementation("junit:junit:4.13.2")
+    // 编排服务测试需要两样单测拿不到的东西：一个 Context 实例（android.jar 里全是
+    // Stub!）、以及把 `WeiboXxx` 这类 object 换成假响应。mockk 两件都做得到
+    // （final class / object 均可 mock），且不需要 Robolectric 那套 Android 运行时。
+    testImplementation("io.mockk:mockk:1.13.13")
     // 本地单测跑在 JVM，android.jar 里的 org.json 是抛 Stub! 的桩，换真实实现
     testImplementation("org.json:json:20240303")
 
@@ -178,4 +186,70 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+}
+
+// ---- 覆盖率（JaCoCo）----
+// Kover 0.8.x 的 JVM agent 在 Windows 中文路径下会把 `-javaagent` 里的 settings 路径
+// 变成 `E://???//...`，导致 `testDebugUnitTest` 起不来；JaCoCo 的 agent 直接给
+// destfile，不受该问题影响。
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.withType<Test>().configureEach {
+    configure<JacocoTaskExtension> {
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
+    }
+}
+
+/**
+ * 单测覆盖率报告（含 :core / :data / :domain）。
+ *
+ * 存在的意义不是追百分比，而是回答一个具体问题：**domain 的编排服务有没有被任何
+ * 测试碰过**。此前这个答案不可测（没有 kover / jacoco），于是「7 个编排服务零测试」
+ * 这件事在连续三个版本里都没人看见。
+ *
+ *   ./gradlew :app:jacocoTestReport      # 报告在 app/build/reports/jacoco/
+ *
+ * 为什么不用 Kover：Kover 0.8.x 的 JVM agent 会把 `-javaagent` 里的 settings 路径
+ * 按平台编码写进参数，本机仓库路径含中文（`E://项目//...`）时变成 `E://???//...`，
+ * `testDebugUnitTest` 直接起不来。JaCoCo 的 agent 只传 destfile，不受影响。
+ */
+val jacocoTestReport by tasks.registering(JacocoReport::class) {
+    group = "verification"
+    description = "JVM 单测覆盖率（聚合 :core/:data/:domain/:app）"
+    dependsOn("testDebugUnitTest")
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco/html"))
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/jacocoTestReport.xml"))
+    }
+
+    val excludes = listOf(
+        // 生成代码：不是被测对象
+        "**/R.class", "**/R$*.class", "**/BuildConfig.*", "**/Manifest*.*",
+        "**/databinding/**", "**/dagger/**",
+        "**/*_HiltComponents*.*", "**/Hilt_*.*", "**/hilt_aggregated_deps/**",
+        "**/*_Factory*.*", "**/*_MembersInjector*.*", "**/*_GeneratedInjector*.*",
+        "**/*_HiltModules*.*",
+    )
+    val classRoots = files(
+        layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+        project(":core").layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+        project(":data").layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+        project(":domain").layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+    )
+    classDirectories.setFrom(classRoots.map { root -> fileTree(root) { exclude(excludes) } })
+    sourceDirectories.setFrom(
+        files(
+            "src/main/java",
+            project(":core").file("src/main/java"),
+            project(":data").file("src/main/java"),
+            project(":domain").file("src/main/java"),
+        ),
+    )
+    executionData.setFrom(layout.buildDirectory.file("jacoco/testDebugUnitTest.exec"))
 }

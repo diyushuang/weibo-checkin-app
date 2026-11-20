@@ -3,7 +3,6 @@ package com.wcm.checkin
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 /**
  * Web 端 `weibo.com/ajax` 的只读接口（游客身份即可）。
@@ -23,10 +22,15 @@ object WebAjax {
     /** 相册墙每页条数由服务端决定，实测 20；这里只做上限保护。 */
     private const val WALL_SAFETY_MAX = 60
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .callTimeout(25, TimeUnit.SECONDS)
-        .build()
+    /**
+     * 复用 [WeiboHttp.client]，不再自建。
+     *
+     * 早先这里新建过一个超时配置完全相同的 OkHttpClient（15s/25s），代价是多一套
+     * Dispatcher + ConnectionPool（各 5 条空闲连接、5 分钟保活）。相册抓取本身就要
+     * 跟业务请求共用同一个域名，共享连接池反而更快。
+     * 需要特殊配置的（如 [GuestSession] 必须 `followRedirects(false)`）才允许自建。
+     */
+    private val client: OkHttpClient get() = WeiboHttp.client
 
     /**
      * 命中就算「身份问题」的拒绝文案（HTTP 200 + ok=0 时检查）。

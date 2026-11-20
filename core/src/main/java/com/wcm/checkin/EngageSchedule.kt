@@ -2,7 +2,6 @@ package com.wcm.checkin
 
 import java.time.Instant
 import java.time.ZoneId
-import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 /**
@@ -11,6 +10,10 @@ import java.time.format.DateTimeFormatter
  * 为什么单独拎出来：项目里此前散落着多处 `SimpleDateFormat`，同一天在不同地方
  * 可能算出不同的键（时区、Locale、是否补零），而「当日计数」「同日不复用文案」
  * 「今天跑没跑过」全都依赖这个键一致。这里统一成 `yyyy-MM-dd`。
+ *
+ * 边界：**业务键**（当日计数、同日去重、免打扰判定）必须走这里；
+ * 纯展示用的 `HH:mm:ss` / `M月d日 HH:mm` 仍可用 `SimpleDateFormat`（它们不参与
+ * 任何键计算，且很多是主线程高频格式化，`DateTimeFormatter` 反而更慢）。
  */
 object EngageSchedule {
 
@@ -57,12 +60,12 @@ object EngageSchedule {
      *
      * `strictTextGapDays <= 0` 时只有今天（同一天不用同一条）；
      * `= N` 时是「今天 + 前 N-1 天」，也就是同一条文案至少隔 N 天才复用。
+     *
+     * 入参是**已经归一好的**日期键（`yyyy-MM-dd`），时区在 [dayKey] 那一步就定下来了，
+     * 所以这里不接收 `zone`——早期版本收了一个从不使用的 `ZoneId`，会让调用方误以为
+     * 传进去能改变「禁用哪些天」的口径。
      */
-    fun forbiddenTextDays(
-        today: String,
-        strictTextGapDays: Int,
-        zone: ZoneId = ZoneId.systemDefault(),
-    ): Set<String> {
+    fun forbiddenTextDays(today: String, strictTextGapDays: Int): Set<String> {
         val base = java.time.LocalDate.parse(today, DAY)
         val span = if (strictTextGapDays <= 1) 1 else strictTextGapDays
         return (0 until span).map { base.minusDays(it.toLong()).format(DAY) }.toSet()

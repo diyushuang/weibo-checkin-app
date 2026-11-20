@@ -95,9 +95,17 @@ class CrawlIndex private constructor(
     private var retryHintCount = -1
     private var retryHintAtMs = 0L
 
-    val posts = HashMap<String, PostRec>()
-    val filesByPic = HashMap<String, FileRec>()
-    val filesByName = HashMap<String, FileRec>()
+    /**
+     * 内部可变集合：**一律 private**。
+     *
+     * 它们绕过了 [LOCK]，对外暴露等于把「迭代中扩容 → ConcurrentModificationException」
+     * 这个只在抓取高峰期偶发的故障留给下一个改动的人。要整体读用
+     * [snapshotPosts] / [picIds]（内部加锁后拷贝），要单条读用 [post] / [picOwner] /
+     * [byName] / [byHash] / [labelOf]。
+     */
+    private val posts = HashMap<String, PostRec>()
+    private val filesByPic = HashMap<String, FileRec>()
+    private val filesByName = HashMap<String, FileRec>()
 
     /**
      * 内容哈希 → 文件记录，L3 去重的索引。
@@ -105,8 +113,8 @@ class CrawlIndex private constructor(
      * 早先 `byHash` 是在 `filesByName.values` 上做线性扫描，**每保存一张图 O(n)**：
      * 10 万文件时等于每张图都要比对十万条记录。这里维持一份哈希索引，查询退化成 O(1)。
      */
-    val filesByHash = HashMap<String, FileRec>()
-    val labels = HashMap<String, String>()
+    private val filesByHash = HashMap<String, FileRec>()
+    private val labels = HashMap<String, String>()
 
     /**
      * 索引最近一次写盘失败的原因（null = 正常）。
@@ -253,6 +261,16 @@ class CrawlIndex private constructor(
     fun postCount(): Int = synchronized(LOCK) { posts.size }
 
     fun labelOf(uid: String): String = synchronized(LOCK) { labels[uid] ?: "" }
+
+    /**
+     * 帖状态快照。整体遍历（如「哪些帖已终结」）只能走这里：加锁拷贝一份，
+     * 调用方拿到的 Map 与索引内部的 HashMap 完全隔离，不会因为并发 append 触发
+     * `ConcurrentModificationException`。**代价是 O(n) 拷贝**，别放进逐图循环里。
+     */
+    fun snapshotPosts(): Map<String, PostRec> = synchronized(LOCK) { HashMap(posts) }
+
+    /** 已落盘的 picId 集合快照（同样加锁拷贝）。 */
+    fun picIds(): Set<String> = synchronized(LOCK) { HashSet(filesByPic.keys) }
 
     // ========================= 写入 =========================
 
@@ -663,6 +681,8 @@ class CrawlIndex private constructor(
         try {
             writer?.close()
         } catch (e: Exception) {
+            // 旧句柄指向的 inode 已被 compact 替换：close() 可能因「文件已不存在」抛，
+            // 但这里的目的是让后续 append 重新 open 到新文件，抛不抛都得往下走。
         }
         writer = null
     }

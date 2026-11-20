@@ -129,7 +129,7 @@ object EngageTextPool {
     /** 渲染占位符。未知占位符原样保留，避免把用户写的 `{abc}` 吃掉。 */
     fun render(body: String, ctx: RenderContext): String =
         PLACEHOLDER.replace(body) { m ->
-            when (val key = m.groupValues[1]) {
+            when (m.groupValues[1]) {
                 "topic" -> ctx.topicName
                 "date" -> ctx.date
                 "date_cn" -> ctx.dateCn

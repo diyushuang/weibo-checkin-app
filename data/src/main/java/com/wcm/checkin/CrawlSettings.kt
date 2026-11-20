@@ -37,6 +37,8 @@ object CrawlSettings {
                 list.add(CrawlTarget(o.optString("uid", ""), o.optString("name", "")))
             }
         } catch (e: Exception) {
+            // 目标列表 JSON 坏了（历史版本写过半截 / 手改 prefs）：返回已解析部分，
+            // 不让整个抓取流程因为一条坏记录起不来。
         }
         return list
     }
@@ -162,6 +164,8 @@ object CrawlSettings {
                 perTree.optJSONObject(uid)?.let { result[uid] = CrawlCursor.fromJson(it).copy(uid = uid) }
             }
         } catch (e: Exception) {
+            // 游标 JSON 损坏 → 当作「没有任何游标」：UI 少显示一段覆盖区间，
+            // 抓取会退化成从头扫描（慢，但不会错），比抛异常让设置页崩掉好。
         }
         return result
     }
@@ -183,6 +187,8 @@ object CrawlSettings {
                 result[uid] = inner
             }
         } catch (e: Exception) {
+            // 旧版进度解析失败 → 迁移时视为「无历史进度」，那批帖子会被重扫一遍。
+            // 重扫只会多花流量，不会丢已抓到的文件（落盘前有三层去重）。
         }
         return result
     }

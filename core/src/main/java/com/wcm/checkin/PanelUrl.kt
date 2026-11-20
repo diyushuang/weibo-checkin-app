@@ -47,11 +47,29 @@ object PanelUrl {
         return Parsed(trimmed, scheme, host, priv)
     }
 
-    /** 私有网段 / 回环 / 局域网后缀。用于判定是否允许明文、以及是否需要本地网络权限。 */
+    /**
+     * 私有网段 / 回环 / 局域网后缀。用于判定是否允许明文、以及是否需要本地网络权限。
+     *
+     * 覆盖范围（0.15.1 补齐，前三类是自建面板的真实部署形态）：
+     * - IPv4：`10/8`、`127/8`、`192.168/16`、`172.16/12`、`169.254/16` 链路本地，
+     *   以及 **`100.64/10`（CGNAT）**——Tailscale / ZeroTier 的默认网段，
+     *   漏掉它会让 `http://100.x.y.z:8080` 的面板被判成公网而强制 https，直接不可用；
+     * - IPv6：`::1`、**ULA `fc00::/7`**、**链路本地 `fe80::/10`**，
+     *   以及 `::ffff:a.b.c.d` 这类 IPv4-mapped 写法（按内嵌的 IPv4 判）；
+     * - 后缀：`.local` / `.lan` / `.home`。
+     *
+     * 已知取舍：`.local` 走 http 时理论上可被局域网 mDNS 投毒解析到外部地址，
+     * 从而绕过「公网必须 https」。风险要求攻击者已在你所在的局域网内，且面板本身
+     * 在明文下同样可被同一攻击者嗅探，故接受该风险（与 `network_security_config`
+     * 里全局放行明文的取舍是同一件事）。
+     */
     fun isPrivateHost(host: String): Boolean {
-        val h = host.lowercase().trimEnd('.')
-        if (h == "localhost" || h == "::1" || h == "[::1]") return true
+        val h = host.lowercase().trimEnd('.').removeSurrounding("[", "]")
+        if (h == "localhost" || h == "::1") return true
         if (h.endsWith(".local") || h.endsWith(".lan") || h.endsWith(".home")) return true
+
+        // 带冒号的一律按 IPv6 处理（含 `[fd00::1]` 已在上行去掉方括号）
+        if (h.contains(':')) return isPrivateIpv6(h)
 
         val parts = h.split('.')
         if (parts.size != 4) return false
@@ -63,6 +81,32 @@ object PanelUrl {
             octets[0] == 192 && octets[1] == 168 -> true  // 192.168.0.0/16
             octets[0] == 172 && octets[1] in 16..31 -> true // 172.16.0.0/12
             octets[0] == 169 && octets[1] == 254 -> true  // 链路本地
+            octets[0] == 100 && octets[1] in 64..127 -> true // 100.64.0.0/10 CGNAT
+            else -> false
+        }
+    }
+
+    /** IPv6 私网判定。只解析首个 hextet + 尾部内嵌 IPv4，够覆盖 ULA / 链路本地 / mapped。 */
+    private fun isPrivateIpv6(raw: String): Boolean {
+        // 去掉 `%wlan0` 这类 scope id
+        val h = raw.substringBefore('%')
+        // 规范化写法之外的全零回环（0:0:0:0:0:0:0:1）
+        if (h == "::1" || h == "0:0:0:0:0:0:0:1") return true
+
+        // `::ffff:192.168.1.10` / `64:ff9b::192.168.1.10`：按内嵌 IPv4 判
+        if (h.contains('.')) {
+            val v4 = h.substringAfterLast(':')
+            if (v4.contains('.') && isPrivateHost(v4)) return true
+        }
+
+        val first = h.substringBefore(':')
+        // `::1` 这类以冒号开头（首段为空）的压缩写法：首段为空时取第一个非空段
+        val head = if (first.isEmpty()) h.trimStart(':').substringBefore(':') else first
+        if (head.isEmpty()) return false
+        val hextet = head.toIntOrNull(16) ?: return false
+        return when {
+            hextet and 0xFE00 == 0xFC00 -> true  // fc00::/7  唯一本地地址 ULA
+            hextet and 0xFFC0 == 0xFE80 -> true  // fe80::/10 链路本地
             else -> false
         }
     }

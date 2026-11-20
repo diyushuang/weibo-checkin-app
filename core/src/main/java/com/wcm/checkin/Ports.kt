@@ -127,6 +127,21 @@ interface TopicCachePort {
     fun save(ctx: Context, uid: String, topics: List<WeiboTopicApi.Topic>, at: Long)
 }
 
+/**
+ * 探活（签到链路只需要这一个能力）。
+ *
+ * 为什么单独抽一个端口，而不是让 [com.wcm.checkin.CheckinService] 直接依赖
+ * `AccountMaintenanceService` 这个具体类：具体类是 final 且带三个构造依赖，
+ * JVM 单测里既造不出来也替换不掉——这正是「签到编排零测试」的直接原因
+ * （见 `docs/testing.md`）。此端口只暴露签到真正调用的那一个方法实现在
+ * `:data`/`:domain`，不镜像整个服务。
+ */
+interface ProbePort {
+
+    /** 探活成功会顺带把 cookie / 昵称 / 到期时刻落库；登录墙等异常由调用方分类处理。 */
+    fun probe(ctx: Context, acc: Account): WeiboAuthApi.Verify
+}
+
 /** 面板地址与令牌。 */
 interface PanelPort {
 

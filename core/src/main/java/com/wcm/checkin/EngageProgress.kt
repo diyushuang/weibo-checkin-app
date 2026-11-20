@@ -231,8 +231,11 @@ data class EngageProgress(
      * 用「已用时间 / 已完成数」推算单条均值，再乘剩余条数——不做复杂预测，
      * 因为这里的耗时主要由间隔构成，均值已经足够准。已完成数为 0 时退回 [etaMs]
      * （服务端按计划估算的值）。
+     *
+     * 不接收「当前时间」参数：已用时间由 [elapsedMs] 提供（调用方每秒 tick 时刷新），
+     * 早期版本这里有个未使用的 `now`，会让调用方误以为传进去能改变估算口径。
      */
-    fun etaLabel(now: Long = System.currentTimeMillis()): String {
+    fun etaLabel(): String {
         if (isFinished) return ""
         val left = total - done
         if (left <= 0) return ""

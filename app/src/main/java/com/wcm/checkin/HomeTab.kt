@@ -12,10 +12,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
  * 首页 Tab：只渲染 [HomeViewModel] 的状态；登录/设置/超话跳转由壳注入。
@@ -57,18 +56,21 @@ fun HomeTab(
     onSetBadge: (Int?) -> Unit,
 ) {
     val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
-    val hero by viewModel.hero.collectAsState()
-    val accounts by viewModel.accounts.collectAsState()
-    val cookie by viewModel.cookie.collectAsState()
-    val log by viewModel.log.collectAsState()
-    val header by viewModel.header.collectAsState()
-    val run by viewModel.run.collectAsState()
-    val topicsDialog by viewModel.topicsDialog.collectAsState()
-    val reloginDialog by viewModel.reloginDialog.collectAsState()
-    val badge by viewModel.badge.collectAsState()
+    val hero by viewModel.hero.collectAsStateWithLifecycle()
+    val accounts by viewModel.accounts.collectAsStateWithLifecycle()
+    val cookie by viewModel.cookie.collectAsStateWithLifecycle()
+    val log by viewModel.log.collectAsStateWithLifecycle()
+    val header by viewModel.header.collectAsStateWithLifecycle()
+    val run by viewModel.run.collectAsStateWithLifecycle()
+    val topicsDialog by viewModel.topicsDialog.collectAsStateWithLifecycle()
+    val reloginDialog by viewModel.reloginDialog.collectAsStateWithLifecycle()
+    val badge by viewModel.badge.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     var messageDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // 账号表 / cookie 任一变化都可能改变加密健康状态（保存时才会降级），
+    // 所以用它们做 remember 的 key，避免每秒计时器重组时反复读 prefs。
+    val cryptoDegraded = remember(accounts, cookie) { SecretHealth.isDegraded(context) }
 
     OnResume { viewModel.onShown() }
 
@@ -148,6 +150,22 @@ fun HomeTab(
             item(key = "cookie") {
                 Box(Modifier.padding(top = WcmSpace.section)) {
                     CookieCard(state = cookie, onConfig = { viewModel.openSettings() })
+                }
+            }
+            // 凭据明文落盘提示：只在真的降级过时出现（见 SecretHealth）。
+            // 不能静默——cookie 是微博的全权凭据，明文躺着而用户不知情是安全隐患。
+            if (cryptoDegraded) {
+                item(key = "crypto_warn") {
+                    Box(Modifier.padding(top = WcmSpace.cardGap)) {
+                        Text(
+                            text = stringResource(
+                                R.string.home_crypto_plain_warn,
+                                SecretHealth.degradedReason(context).ifEmpty { "Keystore" },
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colorResource(R.color.warn_text),
+                        )
+                    }
                 }
             }
             // 同组：账号明细

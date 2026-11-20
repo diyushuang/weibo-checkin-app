@@ -69,5 +69,49 @@ class PanelUrlTest {
         assertTrue(PanelUrl.isPrivateHost("127.0.0.1"))
         assertTrue(PanelUrl.isPrivateHost("169.254.1.1"))
         assertTrue(PanelUrl.isPrivateHost("::1"))
+        assertTrue(PanelUrl.isPrivateHost("[::1]"))
+    }
+
+    /** Tailscale / ZeroTier 默认落在 100.64/10，漏判会让内网面板被强制 https 而不可用。 */
+    @Test
+    fun cgnatRange_isPrivate() {
+        assertTrue(PanelUrl.isPrivateHost("100.64.0.1"))
+        assertTrue(PanelUrl.isPrivateHost("100.101.102.103"))
+        assertTrue(PanelUrl.isPrivateHost("100.127.255.254"))
+        assertEquals("http", PanelUrl.parse("http://100.64.0.1:8080").scheme)
+        // 边界外仍是公网
+        assertFalse(PanelUrl.isPrivateHost("100.63.255.255"))
+        assertFalse(PanelUrl.isPrivateHost("100.128.0.0"))
+    }
+
+    /** 纯 IPv6 内网部署：ULA fc00::/7 与链路本地 fe80::/10。 */
+    @Test
+    fun ipv6PrivateRanges() {
+        assertTrue(PanelUrl.isPrivateHost("fc00::1"))
+        assertTrue(PanelUrl.isPrivateHost("fd12:3456:789a::1"))
+        assertTrue(PanelUrl.isPrivateHost("fe80::1"))
+        assertTrue(PanelUrl.isPrivateHost("febf::1"))
+        assertTrue(PanelUrl.isPrivateHost("[fd00::1234]"))
+        assertTrue(PanelUrl.isPrivateHost("fe80::1%wlan0"))
+        // IPv4-mapped 按内嵌地址判
+        assertTrue(PanelUrl.isPrivateHost("::ffff:192.168.1.10"))
+
+        // 公网 IPv6 不能放行
+        assertFalse(PanelUrl.isPrivateHost("2001:4860:4860::8888"))
+        assertFalse(PanelUrl.isPrivateHost("2606:4700::1111"))
+    }
+
+    @Test
+    fun ipv6PrivateHost_allowsHttp() {
+        val p = PanelUrl.parse("http://[fd00::1234]:8080")
+        assertTrue(p.isPrivateHost)
+        assertEquals("http", p.scheme)
+    }
+
+    @Test
+    fun publicHttps_ipv6StillAllowed() {
+        val p = PanelUrl.parse("https://[2606:4700::1111]")
+        assertFalse(p.isPrivateHost)
+        assertEquals("https", p.scheme)
     }
 }
