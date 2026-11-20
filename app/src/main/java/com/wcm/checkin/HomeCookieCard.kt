@@ -1,30 +1,19 @@
 package com.wcm.checkin
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -33,6 +22,10 @@ import androidx.compose.ui.unit.dp
  *
  * 寿命只从真实登录时刻或微博真正换发关键凭据起算，同步与探活只更新「登录于 / 同步于」，
  * 不再按同步时间续命 —— 早先按同步时间估算，导致长期不登录的账号一直显示「还剩 7 天」。
+ *
+ * v3.0：卡片材质走 [WcmCard]、状态胶囊走 [WcmStatusPill]。
+ * `PillTone` 仍是全站唯一的四态语义（OK / WARN / DANGER / NEUTRAL），
+ * 账号行、图库、超话页共用它，不再各造一套颜色映射。
  */
 enum class PillTone { OK, WARN, DANGER, NEUTRAL }
 
@@ -56,53 +49,44 @@ data class CookieCardUi(
 /** 首页 Cookie 有效期卡：卡头 pill + 说明 + 逐账号行 + 配置入口。 */
 @Composable
 fun CookieCard(state: CookieCardUi, onConfig: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = colorResource(R.color.surface)),
-        border = BorderStroke(1.dp, colorResource(R.color.line)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.sync_card_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colorResource(R.color.ink),
-                    modifier = Modifier.weight(1f),
-                )
-                Pill(state.pillText, state.pillTone)
-            }
+    WcmCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = state.hint,
+                text = stringResource(R.string.sync_card_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = colorResource(R.color.ink),
+                modifier = Modifier.weight(1f),
+            )
+            WcmStatusPill(text = state.pillText, tone = state.pillTone)
+        }
+        Text(
+            text = state.hint,
+            style = MaterialTheme.typography.bodySmall,
+            color = colorResource(R.color.ink_3),
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        if (state.rows.isEmpty()) {
+            Text(
+                text = state.emptyText,
                 style = MaterialTheme.typography.bodySmall,
                 color = colorResource(R.color.ink_3),
-                modifier = Modifier.padding(top = 4.dp),
+                modifier = Modifier.padding(top = 10.dp),
             )
-            if (state.rows.isEmpty()) {
-                Text(
-                    text = state.emptyText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colorResource(R.color.ink_3),
-                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-                )
-            } else {
-                state.rows.forEachIndexed { index, row ->
-                    CookieRow(row)
-                    if (index < state.rows.lastIndex) RowDivider()
-                }
+        } else {
+            state.rows.forEachIndexed { index, row ->
+                CookieRow(row)
+                if (index < state.rows.lastIndex) WcmDivider()
             }
-            if (state.showConfig) {
-                Text(
-                    text = stringResource(R.string.sync_card_config),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = colorResource(R.color.brand_strong),
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .clickable { onConfig() },
-                )
-            }
+        }
+        if (state.showConfig) {
+            Text(
+                text = stringResource(R.string.sync_card_config),
+                style = MaterialTheme.typography.labelLarge,
+                color = colorResource(R.color.brand_strong),
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .clickable { onConfig() },
+            )
         }
     }
 }
@@ -116,7 +100,7 @@ private fun CookieRow(row: CookieRowUi) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -137,34 +121,6 @@ private fun CookieRow(row: CookieRowUi) {
             )
         }
         Spacer(Modifier.width(8.dp))
-        Pill(row.pillText, row.pillTone)
+        WcmStatusPill(text = row.pillText, tone = row.pillTone)
     }
-}
-
-@Composable
-private fun Pill(text: String, tone: PillTone) {
-    val (bg, fg) = when (tone) {
-        PillTone.OK -> colorResource(R.color.ok_soft) to colorResource(R.color.ok_text)
-        PillTone.WARN -> colorResource(R.color.warn_soft) to colorResource(R.color.warn_text)
-        PillTone.DANGER -> colorResource(R.color.danger_soft) to colorResource(R.color.danger_text)
-        PillTone.NEUTRAL -> colorResource(R.color.surface_2) to colorResource(R.color.ink_2)
-    }
-    Surface(shape = RoundedCornerShape(999.dp), color = bg) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = fg,
-        )
-    }
-}
-
-@Composable
-private fun RowDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(colorResource(R.color.line)),
-    )
 }

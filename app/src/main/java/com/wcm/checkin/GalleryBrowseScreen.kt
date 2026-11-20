@@ -69,8 +69,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -109,7 +107,7 @@ fun GalleryBrowseScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colorResource(R.color.bg))
-            .statusBarsPadding()
+            // 顶部安全区由 MainActivity 统一让过，这里只补底部
             .navigationBarsPadding(),
     ) {
         TopBar(state, onBack, onRefresh, onToggleSearch, onSelectModeToggle)
@@ -119,7 +117,12 @@ fun GalleryBrowseScreen(
         FilterRow(state, onKindFilter, onAuthorFilter, onSort, onGroup)
         Box(modifier = Modifier.weight(1f)) {
             if (state.emptyVisible) {
-                EmptyState(state.emptyText, onEmptyAction)
+                WcmEmptyState(
+                    icon = R.drawable.ic_image,
+                    title = state.emptyText,
+                    actionText = stringResource(R.string.gallery_empty_action),
+                    onAction = onEmptyAction,
+                )
             } else {
                 Grid(state, onCellClick, onCellLongClick, onVisibleIndex)
             }
@@ -140,41 +143,22 @@ private fun TopBar(
 ) {
     var menu by remember { mutableStateOf(false) }
     val refreshDesc = stringResource(R.string.gallery_refresh)
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.semantics { contentDescription = "返回" },
-        ) {
-            Text("‹", style = MaterialTheme.typography.headlineMedium, color = colorResource(R.color.ink))
-        }
-        Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
-            Text(
-                text = state.title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = colorResource(R.color.ink),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+    WcmTopBar(
+        title = state.title,
+        subtitle = state.subtitle,
+        onBack = onBack,
+        actions = {
+            WcmTopBarAction(
+                icon = R.drawable.ic_refresh,
+                description = refreshDesc,
+                onClick = onRefresh,
             )
-            Text(
-                text = state.subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = colorResource(R.color.ink_3),
+            Box {
+            WcmTopBarAction(
+                icon = R.drawable.ic_more_vert,
+                description = stringResource(R.string.cd_more),
+                onClick = { menu = true },
             )
-        }
-        IconButton(
-            onClick = onRefresh,
-            modifier = Modifier.semantics { contentDescription = refreshDesc },
-        ) {
-            Text("⟳", style = MaterialTheme.typography.titleLarge, color = colorResource(R.color.ink_2))
-        }
-        Box {
-            IconButton(onClick = { menu = true }) {
-                Text("⋮", style = MaterialTheme.typography.titleLarge, color = colorResource(R.color.ink_2))
-            }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(
                     text = { Text(if (state.searchOpen) "关闭搜索" else "搜索") },
@@ -191,8 +175,9 @@ private fun TopBar(
                     },
                 )
             }
+            }
         }
-    }
+    )
 }
 
 @Composable
@@ -215,7 +200,7 @@ private fun SearchRow(
             cursorBrush = SolidColor(colorResource(R.color.brand)),
             modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(WcmShape.inner)
                 .background(colorResource(R.color.surface_2))
                 .padding(horizontal = 12.dp, vertical = 10.dp)
                 .focusRequester(focus),
@@ -238,7 +223,12 @@ private fun SearchRow(
                 contentDescription = "关闭搜索"
             },
         ) {
-            Text("✕", style = MaterialTheme.typography.titleMedium, color = colorResource(R.color.ink_3))
+            Icon(
+                painter = painterResource(R.drawable.ic_close),
+                contentDescription = null,
+                tint = colorResource(R.color.ink_3),
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }
@@ -320,10 +310,10 @@ private fun groupLabel(mode: GalleryGroupMode): Int = when (mode) {
 @Composable
 private fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = WcmShape.pill,
         color = if (selected) colorResource(R.color.brand_soft) else Color.Transparent,
         border = if (selected) null else BorderStroke(1.dp, colorResource(R.color.line_2)),
-        modifier = Modifier.clip(RoundedCornerShape(999.dp)).clickable(onClick = onClick),
+        modifier = Modifier.clip(WcmShape.pill).clickable(onClick = onClick),
     ) {
         Text(
             text = text,
@@ -405,7 +395,7 @@ private fun Cell(
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(WcmShape.chip)
             .background(colorResource(R.color.surface_2))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .semantics { contentDescription = name },
@@ -440,7 +430,14 @@ private fun Cell(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                if (selected) Text("✓", fontSize = 12.sp, color = Color.White)
+                if (selected) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_check),
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(13.dp),
+                    )
+                }
             }
         }
     }
@@ -462,34 +459,6 @@ private fun Thumbnail(uri: String) {
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
-    }
-}
-
-@Composable
-private fun EmptyState(text: String, onAction: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Surface(shape = CircleShape, color = colorResource(R.color.brand_soft)) {
-            Icon(
-                painter = painterResource(R.drawable.ic_image),
-                contentDescription = null,
-                tint = colorResource(R.color.brand_strong),
-                modifier = Modifier.padding(20.dp).size(28.dp),
-            )
-        }
-        Spacer(Modifier.height(14.dp))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = colorResource(R.color.ink_2),
-        )
-        Spacer(Modifier.height(14.dp))
-        Button(onClick = onAction) {
-            Text(stringResource(R.string.gallery_empty_action))
-        }
     }
 }
 

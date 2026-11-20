@@ -9,14 +9,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,9 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,7 +58,13 @@ data class AccountRowUi(
     val chips: AccountChipsUi?,
 )
 
-/** 首页账号列表：行点击进超话清单，⋮ / 长按打开账号菜单。 */
+/**
+ * 首页账号列表：行点击进超话清单，⋮ / 长按打开账号菜单。
+ *
+ * 空态走 [WcmEmptyState]（结论 + 说明 + 动作）。v3.0 之前这里只有一行灰字，
+ * 用户在「为什么没有账号」和「怎么加」之间没有任何引导 —— 而添加账号恰好是
+ * 首页唯一必须完成的动作。
+ */
 @Composable
 fun AccountList(
     rows: List<AccountRowUi>,
@@ -68,13 +72,15 @@ fun AccountList(
     onViewTopics: (String) -> Unit,
     onRelogin: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onAdd: () -> Unit,
 ) {
     if (rows.isEmpty()) {
-        Text(
-            text = stringResource(R.string.home_account_empty),
-            style = MaterialTheme.typography.bodyMedium,
-            color = colorResource(R.color.ink_3),
-            modifier = Modifier.padding(vertical = 16.dp),
+        WcmEmptyState(
+            icon = R.drawable.ic_add,
+            title = stringResource(R.string.home_account_empty_title),
+            message = stringResource(R.string.home_account_empty),
+            actionText = stringResource(R.string.home_account_empty_action),
+            onAction = onAdd,
         )
         return
     }
@@ -83,7 +89,7 @@ fun AccountList(
             key(row.uid) {
                 AccountRow(row, onRowClick, onViewTopics, onRelogin, onDelete)
             }
-            if (index < rows.lastIndex) RowDivider()
+            if (index < rows.lastIndex) WcmDivider()
         }
     }
 }
@@ -106,7 +112,7 @@ private fun AccountRow(
                 onClick = { onRowClick(row.uid) },
                 onLongClick = { menuOpen = true },
             )
-            .padding(vertical = 12.dp),
+            .padding(vertical = WcmSpace.rowV),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Avatar(row.avatarInitial, row.avatarTone)
@@ -144,11 +150,12 @@ private fun AccountRow(
         Box {
             val moreDesc = stringResource(R.string.account_more)
             IconButton(onClick = { menuOpen = true }) {
-                Text(
-                    text = "⋮",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = colorResource(R.color.ink_3),
-                    modifier = Modifier.semantics { contentDescription = moreDesc },
+                // v3.0：文字「⋮」换成矢量图 —— 字符字形由系统字体决定，大字号下会错位
+                Icon(
+                    painter = painterResource(R.drawable.ic_more_vert),
+                    contentDescription = moreDesc,
+                    tint = colorResource(R.color.ink_3),
+                    modifier = Modifier.size(18.dp),
                 )
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -210,14 +217,15 @@ private fun Avatar(initial: String, tone: AvatarTone) {
     Box(
         modifier = Modifier
             .size(38.dp)
-            .clip(RoundedCornerShape(12.dp))
+            // 圆角归到 WcmShape.inner（10dp），与卡内其他嵌块同族
+            .clip(WcmShape.inner)
             .background(bg),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = initial,
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Medium,
             color = fg,
         )
     }
@@ -240,7 +248,7 @@ private fun AccountChips(chips: AccountChipsUi) {
 
 @Composable
 private fun SmallPill(text: String, bg: Color, fg: Color) {
-    Surface(shape = RoundedCornerShape(999.dp), color = bg) {
+    Surface(shape = WcmShape.pill, color = bg) {
         Text(
             text = text,
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
@@ -248,14 +256,4 @@ private fun SmallPill(text: String, bg: Color, fg: Color) {
             color = fg,
         )
     }
-}
-
-@Composable
-private fun RowDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(colorResource(R.color.line)),
-    )
 }

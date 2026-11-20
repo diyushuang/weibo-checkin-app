@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,30 +69,28 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
     val limit = viewModel.maxLenOf(kind)
     val list = state.textsOf(kind)
 
+    val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
+    WcmPage(
+        title = stringResource(R.string.engage_texts_of_kind_title, kind.label),
+        subtitle = stringResource(R.string.engage_texts_count, state.availableTexts(kind), list.size),
+        onBack = onBack,
+    ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(colorResource(R.color.bg))
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(
+                start = pagePad,
+                end = pagePad,
+                top = WcmSpace.pageTop,
+                bottom = WcmSpace.pageBottom,
+            ),
+        verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text(stringResource(R.string.engage_back)) }
-            Text(
-                stringResource(R.string.engage_texts_of_kind_title, kind.label),
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                stringResource(R.string.engage_texts_count, state.availableTexts(kind), list.size),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
 
         // ---- 取用方式 ----
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
+        WcmCard {
+            Column {
                 Text(stringResource(R.string.engage_texts_pick_title), style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextPickMode.entries.forEach { m ->
@@ -116,8 +115,8 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
         }
 
         // ---- 手动新增 ----
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
+        WcmCard {
+            Column {
                 Text(stringResource(R.string.engage_texts_add), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -142,8 +141,8 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
         }
 
         // ---- 批量导入 ----
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
+        WcmCard {
+            Column {
                 Text(stringResource(R.string.engage_texts_import), style = MaterialTheme.typography.titleMedium)
                 Text(
                     stringResource(R.string.engage_texts_import_hint),
@@ -206,8 +205,8 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
 
         // ---- 从发帖库补齐（评论 / 转发专用）----
         if (kind != TextKind.POST) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+            WcmCard {
+                Column {
                     Text(
                         stringResource(R.string.engage_texts_fill_from_post),
                         style = MaterialTheme.typography.titleMedium,
@@ -228,15 +227,14 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
 
         // ---- 列表 ----
         if (list.isEmpty()) {
-            Text(
-                stringResource(R.string.engage_texts_empty),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            WcmEmptyState(
+                icon = R.drawable.ic_nav_tasks,
+                title = stringResource(R.string.engage_texts_empty),
             )
         }
         list.forEach { text ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
+            WcmCard {
+                Column {
                     Text(
                         text = text.body,
                         style = MaterialTheme.typography.bodyMedium,
@@ -267,5 +265,6 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
                 }
             }
         }
+    }
     }
 }

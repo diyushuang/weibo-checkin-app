@@ -2,6 +2,7 @@ package com.wcm.checkin
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -57,38 +59,49 @@ fun EngagePostLogScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
         }
     }
 
+    val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
+    WcmPage(
+        title = stringResource(R.string.engage_posts_title),
+        onBack = onBack,
+    ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(colorResource(R.color.bg))
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(
+                start = pagePad,
+                end = pagePad,
+                top = WcmSpace.pageTop,
+                bottom = WcmSpace.pageBottom,
+            ),
+        verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("返回") }
-            Text(stringResource(R.string.engage_posts_title), style = MaterialTheme.typography.titleLarge)
-        }
-
         if (state.posts.isEmpty()) {
-            Text(
-                stringResource(R.string.engage_posts_empty),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            WcmEmptyState(
+                icon = R.drawable.ic_image,
+                title = stringResource(R.string.engage_posts_empty),
             )
         }
 
         state.posts.forEach { post ->
             val uncertain = post.state == ActionState.UNCERTAIN
+            // 不确定态整卡用 danger_soft 底（原来取 M3 默认 errorContainer，
+            // 与首页 pill 的品牌红不是一个红）
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = if (uncertain) {
-                    CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                } else {
-                    CardDefaults.cardColors()
-                },
+                shape = WcmShape.card,
+                colors = CardDefaults.cardColors(
+                    containerColor = if (uncertain) colorResource(R.color.danger_soft)
+                    else colorResource(R.color.surface),
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    if (uncertain) colorResource(R.color.danger_text).copy(alpha = 0.2f)
+                    else colorResource(R.color.line),
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
-                Column(Modifier.padding(12.dp)) {
+                Column(Modifier.padding(WcmSpace.cardPad)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             EngageSchedule.dateLabel(post.at) + " " + EngageSchedule.clockLabel(post.at),
@@ -99,7 +112,7 @@ fun EngagePostLogScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
                             postStateLabel(post.state),
                             style = MaterialTheme.typography.bodySmall,
                             color = if (uncertain) {
-                                MaterialTheme.colorScheme.error
+                                colorResource(R.color.danger_text)
                             } else {
                                 MaterialTheme.colorScheme.primary
                             },
@@ -119,7 +132,7 @@ fun EngagePostLogScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
                         Text(
                             post.message,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
+                            color = colorResource(R.color.danger_text),
                         )
                     }
 
@@ -180,5 +193,6 @@ fun EngagePostLogScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
                 }
             }
         }
+    }
     }
 }

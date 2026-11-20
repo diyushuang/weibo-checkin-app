@@ -1,30 +1,18 @@
 package com.wcm.checkin
 
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,19 +22,33 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 
-/** 首页 Tab：只渲染 [HomeViewModel] 的状态；登录/设置/超话跳转由壳注入。 */
+/**
+ * 首页 Tab：只渲染 [HomeViewModel] 的状态；登录/设置/超话跳转由壳注入。
+ *
+ * ## 间距节奏（v3.0）
+ *
+ * 这一页刻意不用 `verticalArrangement = spacedBy(…)`，而让每个 item 自己带
+ * `padding(top = …)`：
+ *
+ * ```
+ * 顶栏
+ *   20  Hero（结论）
+ *   12  主行动（与 Hero 同组：看完结论就能点）
+ *   20  登录状态
+ *   12  账号
+ *   20  运行日志
+ * ```
+ *
+ * 两级间距是这一页「有主次」的主要来源 —— 间距一律 10dp 时，标题、Hero、
+ * 卡片、日志读起来是一串等价的块。用 `spacedBy` 的话，组内 12 与组间 20
+ * 会叠加成 32，反而不准，所以必须逐个 item 给。
+ */
 @Composable
 fun HomeTab(
     viewModel: HomeViewModel,
@@ -84,64 +86,90 @@ fun HomeTab(
     }
     LaunchedEffect(badge) { onSetBadge(badge) }
 
-    WcmTheme {
+    val refreshDesc = stringResource(R.string.btn_refresh_topics)
+    val addDesc = stringResource(R.string.cd_add_account)
+
+    WcmPage(
+        title = header.greeting,
+        subtitle = header.today,
+        actions = {
+            WcmTopBarAction(
+                icon = R.drawable.ic_refresh,
+                description = refreshDesc,
+                onClick = { viewModel.refreshTopics(manual = true) },
+            )
+            WcmTopBarAccentAction(
+                icon = R.drawable.ic_add,
+                description = addDesc,
+                onClick = { viewModel.openLogin() },
+            )
+        },
+    ) {
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colorResource(R.color.bg)),
-            contentPadding = PaddingValues(horizontal = pagePad, vertical = pagePad),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = pagePad,
+                end = pagePad,
+                top = WcmSpace.pageTop,
+                bottom = WcmSpace.pageBottom,
+            ),
         ) {
-            item(key = "header") {
-                Header(
-                    greeting = header.greeting,
-                    today = header.today,
-                    onRefresh = { viewModel.refreshTopics(manual = true) },
-                    onAdd = { viewModel.openLogin() },
-                )
-            }
+            // 结论 + 行动：同一组（组内 12dp）
             item(key = "hero") {
-                HomeHeroCard(state = hero, onClick = { viewModel.onHeroClick() })
-            }
-            item(key = "actions") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { viewModel.runAll(auto = false) },
-                        modifier = Modifier.weight(1f),
+                Column(Modifier.padding(top = WcmSpace.section)) {
+                    HomeHeroCard(state = hero, onClick = { viewModel.onHeroClick() })
+                    Row(
+                        modifier = Modifier.padding(top = WcmSpace.cardGap),
+                        horizontalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
                     ) {
-                        Text(
-                            stringResource(
-                                if (run.busy && !run.syncing) R.string.btn_checkin_running
-                                else R.string.btn_checkin,
-                            ),
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { viewModel.syncOnly() },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(
-                            stringResource(
-                                if (run.syncing) R.string.btn_sync_running else R.string.btn_sync,
-                            ),
-                        )
+                        Button(
+                            onClick = { viewModel.runAll(auto = false) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (run.busy && !run.syncing) R.string.btn_checkin_running
+                                    else R.string.btn_checkin,
+                                ),
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { viewModel.syncOnly() },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (run.syncing) R.string.btn_sync_running else R.string.btn_sync,
+                                ),
+                            )
+                        }
                     }
                 }
             }
+            // 换组：登录状态
             item(key = "cookie") {
-                CookieCard(state = cookie, onConfig = { viewModel.openSettings() })
+                Box(Modifier.padding(top = WcmSpace.section)) {
+                    CookieCard(state = cookie, onConfig = { viewModel.openSettings() })
+                }
             }
+            // 同组：账号明细
             item(key = "accounts") {
-                AccountsCard(
-                    title = header.accountsTitle,
-                    rows = accounts,
-                    onRowClick = viewModel::showTopics,
-                    onRelogin = viewModel::showRelogin,
-                    onDelete = viewModel::deleteAccount,
-                )
+                Box(Modifier.padding(top = WcmSpace.cardGap)) {
+                    AccountsCard(
+                        title = header.accountsTitle,
+                        rows = accounts,
+                        onRowClick = viewModel::showTopics,
+                        onRelogin = viewModel::showRelogin,
+                        onDelete = viewModel::deleteAccount,
+                        onAdd = { viewModel.openLogin() },
+                    )
+                }
             }
+            // 换组：追溯
             item(key = "log") {
-                LogCard(state = log, onToggle = { viewModel.setLogExpanded(!log.expanded) })
+                Box(Modifier.padding(top = WcmSpace.section)) {
+                    LogCard(state = log, onToggle = { viewModel.setLogExpanded(!log.expanded) })
+                }
             }
         }
     }
@@ -184,53 +212,7 @@ fun HomeTab(
     }
 }
 
-@Composable
-private fun Header(
-    greeting: String,
-    today: String,
-    onRefresh: () -> Unit,
-    onAdd: () -> Unit,
-) {
-    val refreshDesc = stringResource(R.string.btn_refresh_topics)
-    val addDesc = stringResource(R.string.cd_add_account)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = greeting,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = colorResource(R.color.ink),
-            )
-            Text(
-                text = today,
-                style = MaterialTheme.typography.bodyMedium,
-                color = colorResource(R.color.ink_3),
-            )
-        }
-        IconButton(
-            onClick = onRefresh,
-            modifier = Modifier.semantics {
-                contentDescription = refreshDesc
-            },
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_refresh),
-                contentDescription = null,
-                tint = colorResource(R.color.ink_2),
-            )
-        }
-        Surface(shape = RoundedCornerShape(12.dp), color = colorResource(R.color.brand)) {
-            IconButton(onClick = onAdd) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_add),
-                    contentDescription = addDesc,
-                    tint = colorResource(R.color.brand_on),
-                )
-            }
-        }
-    }
-}
-
+/** 账号列表卡：卡头 + 行列表，材质与内边距走 [WcmCard]。 */
 @Composable
 private fun AccountsCard(
     title: String,
@@ -238,36 +220,29 @@ private fun AccountsCard(
     onRowClick: (String) -> Unit,
     onRelogin: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onAdd: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = colorResource(R.color.surface)),
-        border = BorderStroke(1.dp, colorResource(R.color.line)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colorResource(R.color.ink),
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = stringResource(R.string.home_row_hint_short),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colorResource(R.color.ink_3),
-                )
-            }
-            AccountList(
-                rows = rows,
-                onRowClick = onRowClick,
-                onViewTopics = onRowClick,
-                onRelogin = onRelogin,
-                onDelete = onDelete,
+    WcmCard {
+        Row {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = colorResource(R.color.ink),
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = stringResource(R.string.home_row_hint_short),
+                style = MaterialTheme.typography.bodySmall,
+                color = colorResource(R.color.ink_3),
             )
         }
+        AccountList(
+            rows = rows,
+            onRowClick = onRowClick,
+            onViewTopics = onRowClick,
+            onRelogin = onRelogin,
+            onDelete = onDelete,
+            onAdd = onAdd,
+        )
     }
 }

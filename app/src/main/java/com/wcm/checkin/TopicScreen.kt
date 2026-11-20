@@ -1,7 +1,6 @@
 package com.wcm.checkin
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -17,14 +16,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -41,10 +39,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +52,14 @@ import androidx.compose.ui.unit.dp
  * 超话页渲染：账号切换、三列概览、等级徽章、筛选与排序、逐条展开详情、行菜单、字段说明。
  *
  * 详情是懒加载的（点开才拉），行菜单可单独签到 / 复制签到链接 / 查看原始 JSON。
+ *
+ * ## 列表页的签名（v3.0）
+ *
+ * 这一页与首页刻意不同：
+ *
+ * - 顶部概览条**没有卡片标题**（[WcmMetricStrip]），三列数字 + 1dp 竖线，一眼给结论；
+ * - 行卡之间 **8dp**（首页卡间 12dp），同高度能多读一行；
+ * - 行卡内边距 14dp，密度高于首页的 16dp。
  */
 @Composable
 fun TopicScreen(
@@ -72,116 +79,140 @@ fun TopicScreen(
     onRetry: () -> Unit,
 ) {
     val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colorResource(R.color.bg)),
-        contentPadding = PaddingValues(horizontal = pagePad, vertical = pagePad),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+
+    WcmPage(
+        title = stringResource(R.string.topic_title),
+        subtitle = state.subtitle,
+        actions = {
+            WcmTopBarAction(
+                icon = R.drawable.ic_refresh,
+                description = stringResource(R.string.btn_refresh_topics),
+                onClick = onRefresh,
+            )
+            OverflowMenu(onField = onOverflowField, onRefreshAll = onOverflowRefresh)
+        },
     ) {
-        item(key = "header") { Header(state, onRefresh, onOverflowField, onOverflowRefresh) }
-        item(key = "metrics") { MetricsCard(state) }
-        if (state.pills.isNotEmpty()) {
-            item(key = "pills") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    state.pills.forEach { pill ->
-                        Chip(pill.label, pill.selected) { onSelectAccount(pill.uid) }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = pagePad,
+                end = pagePad,
+                top = WcmSpace.pageTop,
+                bottom = WcmSpace.pageBottom,
+            ),
+        ) {
+            item(key = "metrics") {
+                Box(Modifier.padding(top = WcmSpace.section)) { MetricsStrip(state) }
+            }
+            if (state.pills.isNotEmpty()) {
+                item(key = "pills") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = WcmSpace.cardGap)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        state.pills.forEach { pill ->
+                            Chip(pill.label, pill.selected) { onSelectAccount(pill.uid) }
+                        }
                     }
                 }
             }
-        }
-        item(key = "filters") { FilterRow(state, onFilter, onSort) }
-        if (state.showError) {
-            item(key = "error") {
-                MessageCard(state.errorText, action = stringResource(R.string.topic_retry), onAction = onRetry)
-            }
-        }
-        if (state.showEmpty) {
-            item(key = "empty") {
-                MessageCard(
-                    state.emptyText,
-                    action = if (state.emptyActionVisible) stringResource(R.string.topic_go_home) else null,
-                    onAction = onEmptyAction,
+            item(key = "filters") {
+                FilterRow(
+                    state = state,
+                    onFilter = onFilter,
+                    onSort = onSort,
+                    modifier = Modifier.padding(top = WcmSpace.cardGap),
                 )
             }
-        }
-        items(state.rows, key = { it.uid + "\u0000" + it.key }) { row ->
-            TopicRowCard(row, onRowClick, onRowCheckin, onRowCopy, onRowOpen, onRowJson)
+            if (state.showError) {
+                item(key = "error") {
+                    Box(Modifier.padding(top = WcmSpace.section)) {
+                        MessageCard(
+                            text = state.errorText,
+                            action = stringResource(R.string.topic_retry),
+                            onAction = onRetry,
+                        )
+                    }
+                }
+            }
+            if (state.showEmpty) {
+                item(key = "empty") {
+                    Box(Modifier.padding(top = WcmSpace.section)) {
+                        WcmEmptyState(
+                            icon = R.drawable.ic_nav_topics,
+                            title = state.emptyText,
+                            actionText = if (state.emptyActionVisible) {
+                                stringResource(R.string.topic_go_home)
+                            } else {
+                                null
+                            },
+                            onAction = onEmptyAction,
+                        )
+                    }
+                }
+            }
+            items(state.rows, key = { it.uid + "\u0000" + it.key }) { row ->
+                // 列表页行距 8dp：比首页的卡片间距更紧，一屏能多读一行
+                Box(Modifier.padding(top = 8.dp)) {
+                    TopicRowCard(row, onRowClick, onRowCheckin, onRowCopy, onRowOpen, onRowJson)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun Header(
-    state: TopicUiState,
-    onRefresh: () -> Unit,
-    onField: () -> Unit,
-    onRefreshAll: () -> Unit,
-) {
+private fun OverflowMenu(onField: () -> Unit, onRefreshAll: () -> Unit) {
     var overflow by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.topic_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = colorResource(R.color.ink),
+    Box {
+        WcmTopBarAction(
+            icon = R.drawable.ic_more_vert,
+            description = stringResource(R.string.cd_more),
+            onClick = { overflow = true },
+        )
+        DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.topic_field_entry)) },
+                onClick = {
+                    overflow = false
+                    onField()
+                },
             )
-            Text(
-                text = state.subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = colorResource(R.color.ink_3),
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.btn_refresh_topics)) },
+                onClick = {
+                    overflow = false
+                    onRefreshAll()
+                },
             )
-        }
-        val refreshDesc = stringResource(R.string.btn_refresh_topics)
-        IconButton(
-            onClick = onRefresh,
-            modifier = Modifier.semantics { contentDescription = refreshDesc },
-        ) {
-            Text("⟳", style = MaterialTheme.typography.headlineSmall, color = colorResource(R.color.ink_2))
-        }
-        Box {
-            IconButton(onClick = { overflow = true }) {
-                Text("⋮", style = MaterialTheme.typography.headlineSmall, color = colorResource(R.color.ink_2))
-            }
-            DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.topic_field_entry)) },
-                    onClick = {
-                        overflow = false
-                        onField()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.btn_refresh_topics)) },
-                    onClick = {
-                        overflow = false
-                        onRefreshAll()
-                    },
-                )
-            }
         }
     }
 }
 
 @Composable
-private fun MetricsCard(state: TopicUiState) {
-    WcmTopicCard {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Metric(stringResource(R.string.topic_metric_total), state.metricTotal, Modifier.weight(1f))
-            Metric(stringResource(R.string.topic_metric_done), state.metricDone, Modifier.weight(1f))
-            Metric(stringResource(R.string.topic_metric_pending), state.metricPending, Modifier.weight(1f))
-        }
+private fun MetricsStrip(state: TopicUiState) {
+    Column {
+        WcmMetricStrip(
+            metrics = listOf(
+                WcmMetric(stringResource(R.string.topic_metric_total), state.metricTotal),
+                WcmMetric(stringResource(R.string.topic_metric_done), state.metricDone),
+                WcmMetric(
+                    label = stringResource(R.string.topic_metric_pending),
+                    value = state.metricPending,
+                    highlight = true,
+                ),
+            ),
+        )
         if (state.loading) {
-            Spacer(Modifier.height(10.dp))
             LinearProgressIndicator(
                 progress = { state.progress },
-                modifier = Modifier.fillMaxWidth().height(4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .height(3.dp),
                 color = colorResource(R.color.brand),
                 trackColor = colorResource(R.color.surface_3),
             )
@@ -191,26 +222,9 @@ private fun MetricsCard(state: TopicUiState) {
                 text = state.status,
                 style = MaterialTheme.typography.bodySmall,
                 color = colorResource(R.color.ink_3),
-                modifier = Modifier.padding(top = 8.dp),
+                modifier = Modifier.padding(top = 6.dp, start = 4.dp),
             )
         }
-    }
-}
-
-@Composable
-private fun Metric(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.padding(vertical = 2.dp)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = colorResource(R.color.ink_3),
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = colorResource(R.color.ink),
-        )
     }
 }
 
@@ -219,14 +233,15 @@ private fun FilterRow(
     state: TopicUiState,
     onFilter: (TopicFilter) -> Unit,
     onSort: (TopicSort) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var sortOpen by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Row(
             modifier = Modifier
                 .weight(1f)
                 .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             state.filters.forEach { chip ->
                 Chip(chip.label, chip.selected) { onFilter(chip.filter) }
@@ -237,7 +252,7 @@ private fun FilterRow(
                 Text(stringResource(R.string.topic_sort_label), color = colorResource(R.color.ink_2))
             }
             DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
-                TopicSort.values().forEach { value ->
+                TopicSort.entries.forEach { value ->
                     DropdownMenuItem(
                         text = { Text(stringResource(sortLabel(value))) },
                         onClick = {
@@ -260,14 +275,14 @@ private fun sortLabel(sort: TopicSort): Int = when (sort) {
 @Composable
 private fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = WcmShape.button,
         color = if (selected) colorResource(R.color.brand_soft) else Color.Transparent,
         border = if (selected) null else BorderStroke(1.dp, colorResource(R.color.line_2)),
         modifier = Modifier.clickable { onClick() },
     ) {
         Text(
             text = text,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
             style = MaterialTheme.typography.labelMedium,
             color = if (selected) colorResource(R.color.brand_strong)
             else colorResource(R.color.ink_2),
@@ -290,8 +305,9 @@ private fun TopicRowCard(
     val expandState = stringResource(
         if (row.expanded) R.string.cd_topic_expanded else R.string.cd_topic_collapsed,
     )
-    WcmTopicCard(
+    WcmCard(
         onClick = { onClick(row) },
+        padding = 14.dp,
         modifier = Modifier.semantics { stateDescription = expandState },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -312,12 +328,12 @@ private fun TopicRowCard(
             StatePill(row.done)
             Box {
                 val moreDesc = stringResource(R.string.cd_topic_more)
-                IconButton(onClick = { menu = true }) {
-                    Text(
-                        text = "⋮",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = colorResource(R.color.ink_3),
-                        modifier = Modifier.semantics { contentDescription = moreDesc },
+                IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_more_vert),
+                        contentDescription = moreDesc,
+                        tint = colorResource(R.color.ink_3),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -406,13 +422,13 @@ private fun LevelBadge(label: String, tier: Int) {
     }
     val desc = stringResource(R.string.cd_level_badge, label)
     Surface(
-        shape = RoundedCornerShape(6.dp),
+        shape = WcmShape.chip,
         color = bg,
         modifier = Modifier.semantics { contentDescription = desc },
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Medium,
             color = fg,
@@ -422,64 +438,24 @@ private fun LevelBadge(label: String, tier: Int) {
 
 @Composable
 private fun StatePill(done: Boolean) {
-    val bg = if (done) colorResource(R.color.ok_soft) else colorResource(R.color.warn_soft)
-    val fg = if (done) colorResource(R.color.ok_text) else colorResource(R.color.warn_text)
-    Surface(shape = RoundedCornerShape(999.dp), color = bg) {
-        Text(
-            text = stringResource(if (done) R.string.topic_state_done else R.string.topic_state_pending),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = fg,
-        )
-    }
+    WcmStatusPill(
+        text = stringResource(if (done) R.string.topic_state_done else R.string.topic_state_pending),
+        tone = if (done) PillTone.OK else PillTone.WARN,
+    )
 }
 
 @Composable
 private fun MessageCard(text: String, action: String?, onAction: () -> Unit) {
-    WcmTopicCard {
+    WcmCard {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
-            color = colorResource(R.color.ink_3),
+            color = colorResource(R.color.danger_text),
         )
         if (action != null) {
-            Button(onClick = onAction, modifier = Modifier.padding(top = 8.dp)) {
+            Button(onClick = onAction, modifier = Modifier.padding(top = 10.dp)) {
                 Text(action)
             }
-        }
-    }
-}
-
-@Composable
-private fun WcmTopicCard(
-    modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
-) {
-    val baseModifier = modifier.fillMaxWidth()
-    val colors = CardDefaults.cardColors(containerColor = colorResource(R.color.surface))
-    val border = BorderStroke(1.dp, colorResource(R.color.line))
-    val shape = RoundedCornerShape(14.dp)
-    if (onClick != null) {
-        Card(
-            onClick = onClick,
-            modifier = baseModifier,
-            shape = shape,
-            colors = colors,
-            border = border,
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        ) {
-            Column(Modifier.padding(14.dp), content = content)
-        }
-    } else {
-        Card(
-            modifier = baseModifier,
-            shape = shape,
-            colors = colors,
-            border = border,
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        ) {
-            Column(Modifier.padding(14.dp), content = content)
         }
     }
 }

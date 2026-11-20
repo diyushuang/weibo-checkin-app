@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI 系统 v3.0 · 改版预览</title>
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#F7F8FA; --surface-3:#EFF1F4;
+    --ink:#14161A; --ink-2:#5B616B; --ink-3:#6E7681;
+    --line:#EAECF0; --line-2:#DFE3E8; --line-soft:#F2F4F7;
+    --brand:#E0245E; --brand-strong:#B41246; --brand-soft:#FDECF1; --brand-soft-2:#F9D7E1;
+    --ok:#087F5B; --ok-soft:#E7F7F1; --warn:#C2410C; --warn-soft:#FDF1E3;
+    --danger:#B42318; --danger-soft:#FDECEA;
+    --console:#0E1116; --console-ink:#C8D0DB;
+    --lv-neutral-bg:#EEF0F3; --lv-neutral-fg:#4B5563;
+    --lv-blue-bg:#E8F0FE; --lv-blue-fg:#1D4ED8;
+    --lv-purple-bg:#F1EAFE; --lv-purple-fg:#6D28D9;
+    --lv-gold-bg:#FBF0D6; --lv-gold-fg:#8A5A00;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:#E6E9ED;
+    font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    padding:40px 32px 72px;
+  }
+  .wrap{max-width:1480px;margin:0 auto;}
+
+  /* ---------- 页头 ---------- */
+  .head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:28px;}
+  .head h1{font-size:26px;font-weight:500;letter-spacing:-.4px;margin:0 0 6px;}
+  .head p{margin:0;font-size:13px;line-height:1.7;color:var(--ink-2);max-width:760px;}
+  .tagrow{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+  .tag{font-size:11px;line-height:1;padding:7px 11px;border-radius:999px;background:#fff;border:1px solid var(--line-2);color:var(--ink-2);}
+  .tag.hot{background:var(--brand-soft);border-color:transparent;color:var(--brand-strong);font-weight:500;}
+
+  /* ---------- 面板 ---------- */
+  .panel{background:#fff;border:1px solid var(--line-2);border-radius:18px;padding:26px 28px;margin-bottom:28px;}
+  .panel > h2{font-size:15px;font-weight:500;margin:0 0 4px;letter-spacing:-.1px;}
+  .panel > .sub{font-size:12px;color:var(--ink-3);margin:0 0 22px;line-height:1.7;}
+
+  /* ---------- 令牌：字阶 ---------- */
+  .scale{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  .scale div{background:#fff;padding:14px 16px;}
+  .scale b{display:block;font-weight:500;color:var(--ink);margin-bottom:4px;}
+  .scale span{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;}
+  .s22{font-size:22px;line-height:28px;letter-spacing:-.4px;}
+  .s20{font-size:20px;line-height:26px;letter-spacing:-.2px;}
+  .s15{font-size:15px;line-height:22px;font-weight:500;}
+  .s14{font-size:14px;line-height:21px;font-weight:400;}
+  .s12{font-size:12px;line-height:18px;font-weight:400;}
+  .s11{font-size:11px;line-height:16px;font-weight:400;}
+
+  /* ---------- 令牌：节奏 ---------- */
+  .rhythm{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  .rhythm .box{border:1px solid var(--line);border-radius:12px;padding:18px;}
+  .rhythm h3{margin:0 0 2px;font-size:12px;font-weight:500;letter-spacing:.3px;color:var(--ink-3);text-transform:uppercase;}
+  .rhythm .note{font-size:11px;color:var(--ink-3);margin:0 0 16px;}
+  .bar{display:flex;flex-direction:column;gap:0;}
+  .row{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--ink-2);}
+  .row i{display:block;height:26px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line);flex:1;}
+  .row em{font-style:normal;font-variant-numeric:tabular-nums;color:var(--ink-3);min-width:38px;text-align:right;}
+  .after .row i{border-color:var(--line-2);}
+  .after .row.gap20{margin-top:20px;}
+  .after .row.gap12{margin-top:12px;}
+  .after .row.gap20 i,.after .row.gap12 i{}
+
+  /* ---------- 屏 ---------- */
+  .screens{display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start;}
+  .phone{width:344px;flex:0 0 auto;}
+  .phone .cap{margin-top:16px;}
+  .phone .cap h3{margin:0 0 4px;font-size:13px;font-weight:500;letter-spacing:-.1px;display:flex;align-items:center;gap:8px;}
+  .phone .cap h3 s{text-decoration:none;font-size:10px;font-weight:500;color:var(--brand-strong);background:var(--brand-soft);padding:3px 7px;border-radius:6px;letter-spacing:.2px;}
+  .phone .cap p{margin:0;font-size:11.5px;line-height:1.65;color:var(--ink-3);}
+
+  .dev{
+    background:var(--bg);
+    border:1px solid #D3D8DF;
+    border-radius:26px;
+    box-shadow:0 18px 40px -18px rgba(20,22,26,.22),0 2px 6px rgba(20,22,26,.05);
+    overflow:hidden;
+    width:344px;
+  }
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:11px 20px 4px;font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums;}
+  .statusbar .dots{letter-spacing:2px;font-size:9px;color:var(--ink-3);}
+
+  .scr{padding:0 16px 14px;}
+  /* 顶栏 */
+  .topbar{display:flex;align-items:center;gap:6px;padding:10px 0;min-height:48px;}
+  .topbar .tt{flex:1;min-width:0;}
+  .topbar .tt b{display:block;font-size:22px;line-height:28px;font-weight:500;letter-spacing:-.4px;color:var(--ink);}
+  .topbar .tt s{display:block;text-decoration:none;font-size:12px;line-height:18px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ibtn{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto;color:var(--ink-2);}
+  .ibtn.soft{background:var(--brand-soft);color:var(--brand-strong);}
+
+  /* 卡片 */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;}
+  .card.hero{padding:20px;border-radius:16px;}
+  .mt12{margin-top:12px;} .mt20{margin-top:20px;} .mt8{margin-top:8px;} .mt16{margin-top:16px;}
+
+  /* Hero */
+  .heroTop{display:flex;align-items:center;gap:16px;}
+  .ring{width:88px;height:88px;flex:0 0 auto;border-radius:50%;position:relative;display:grid;place-items:center;
+    background:conic-gradient(var(--brand) 0 66.6%, var(--surface-3) 66.6% 100%);}
+  .ring::after{content:"";position:absolute;inset:8px;border-radius:50%;background:var(--surface);}
+  .ring .mid{position:relative;z-index:1;text-align:center;}
+  .ring .mid b{display:block;font-size:24px;line-height:30px;font-weight:500;letter-spacing:-.4px;font-variant-numeric:tabular-nums;}
+  .ring .mid span{display:block;font-size:11px;line-height:16px;color:var(--ink-2);}
+  .hcol{flex:1;min-width:0;}
+  .hcol .lab{font-size:11px;line-height:16px;color:var(--ink-2);}
+  .hcol .big{font-size:20px;line-height:26px;font-weight:500;font-variant-numeric:tabular-nums;margin-top:1px;}
+  .hcol .big em{font-style:normal;font-size:12px;font-weight:400;color:var(--ink-3);margin-left:4px;}
+  .pills{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap;}
+  .pill{font-size:11px;line-height:1;padding:5px 9px;border-radius:999px;background:var(--surface-3);color:var(--ink-2);}
+  .pill.line{background:transparent;border:1px solid var(--line-2);}
+  .pill.ok{background:var(--ok-soft);color:var(--ok);}
+  .pill.warn{background:var(--warn-soft);color:var(--warn);}
+  .pill.bad{background:var(--danger-soft);color:var(--danger);}
+  .summary{font-size:12px;line-height:18px;color:var(--ink-3);margin-top:14px;}
+
+  /* 按钮 */
+  .btns{display:flex;gap:12px;margin-top:12px;}
+  .btn{flex:1;height:44px;border-radius:12px;display:grid;place-items:center;font-size:14px;font-weight:500;}
+  .btn.fill{background:var(--brand);color:#fff;box-shadow:0 6px 14px -8px rgba(224,36,94,.6);}
+  .btn.out{background:var(--surface);border:1px solid var(--line-2);color:var(--ink);}
+
+  /* 卡头 */
+  .chead{display:flex;align-items:center;gap:8px;}
+  .chead b{font-size:15px;line-height:22px;font-weight:500;flex:1;letter-spacing:-.1px;}
+  .chead .hint{font-size:12px;color:var(--ink-3);}
+
+  /* 列表行 */
+  .lrow{display:flex;align-items:center;gap:12px;padding:11px 0;}
+  .lrow + .lrow{border-top:1px solid var(--line-soft);}
+  .av{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:15px;font-weight:500;flex:0 0 auto;}
+  .av.ok{background:var(--ok-soft);color:var(--ok);}
+  .av.warn{background:var(--warn-soft);color:var(--warn);}
+  .av.brand{background:var(--brand-soft);color:var(--brand-strong);}
+  .ltext{flex:1;min-width:0;}
+  .ltext .n{font-size:15px;line-height:22px;font-weight:500;display:flex;align-items:center;gap:6px;}
+  .ltext .n i{font-style:normal;font-size:11px;font-weight:400;color:var(--ink-3);}
+  .ltext .m{font-size:11px;line-height:16px;color:var(--ink-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  .dots3{color:var(--ink-3);display:grid;place-items:center;width:28px;height:28px;flex:0 0 auto;}
+
+  /* 终端 */
+  .console{background:var(--console);border-radius:10px;padding:10px 12px;margin-top:10px;}
+  .console div{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:18px;color:var(--console-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .console .dim{color:#6B7684;}
+
+  /* 指标条 */
+  .metrics{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 0;}
+  .metrics .m{flex:1;text-align:center;position:relative;}
+  .metrics .m + .m::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:1px;background:var(--line);}
+  .metrics .m span{display:block;font-size:11px;line-height:16px;color:var(--ink-3);}
+  .metrics .m b{display:block;font-size:20px;line-height:26px;font-weight:500;font-variant-numeric:tabular-nums;margin-top:2px;}
+
+  /* chip */
+  .chips{display:flex;gap:6px;flex-wrap:wrap;}
+  .chip{font-size:12px;line-height:1;padding:7px 11px;border-radius:11px;border:1px solid var(--line-2);color:var(--ink-2);background:transparent;}
+  .chip.on{background:var(--brand-soft);border-color:transparent;color:var(--brand-strong);font-weight:500;}
+
+  /* 等级徽章 */
+  .lv{font-size:11px;line-height:1;padding:4px 6px;border-radius:6px;font-weight:500;font-variant-numeric:tabular-nums;}
+
+  /* 行卡（列表页更紧） */
+  .rowcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:11px 14px;}
+  .rowcard + .rowcard{margin-top:8px;}
+  .rowcard .h{display:flex;align-items:center;gap:8px;}
+  .rowcard .h b{font-size:15px;line-height:22px;font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.1px;}
+  .rowcard .meta{font-size:12px;line-height:18px;color:var(--ink-3);margin-top:2px;}
+
+  /* 分组标签（卡外） */
+  .seclabel{font-size:13px;line-height:19px;font-weight:500;letter-spacing:.4px;color:var(--ink-2);margin:20px 0 8px;padding-left:4px;}
+  .seclabel.first{margin-top:20px;}
+
+  /* 键值行（详情页） */
+  .kv{display:flex;align-items:center;gap:12px;padding:11px 0;min-height:44px;}
+  .kv + .kv{border-top:1px solid var(--line-soft);}
+  .kv span{font-size:14px;line-height:21px;color:var(--ink-2);flex:1;}
+  .kv b{font-size:14px;line-height:21px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums;text-align:right;}
+  .kv b.ok{color:var(--ok);}
+  .kv b.br{color:var(--brand-strong);}
+
+  /* 表单 */
+  .field{border:1px solid var(--line-2);border-radius:10px;padding:12px 13px;background:var(--surface-2);}
+  .field s{display:block;text-decoration:none;font-size:11px;line-height:16px;color:var(--ink-3);margin-bottom:2px;}
+  .field em{display:block;font-style:normal;font-size:14px;line-height:21px;color:var(--ink);}
+  .field.ph em{color:var(--ink-3);}
+  .field + .field{margin-top:12px;}
+  .switchrow{display:flex;align-items:center;gap:12px;padding:12px 0;}
+  .switchrow + .switchrow{border-top:1px solid var(--line-soft);}
+  .switchrow .t{flex:1;min-width:0;}
+  .switchrow .t b{display:block;font-size:15px;line-height:22px;font-weight:500;}
+  .switchrow .t s{display:block;text-decoration:none;font-size:12px;line-height:18px;color:var(--ink-3);margin-top:1px;}
+  .sw{width:40px;height:24px;border-radius:999px;background:var(--brand);position:relative;flex:0 0 auto;}
+  .sw::after{content:"";position:absolute;right:2px;top:2px;width:20px;height:20px;border-radius:50%;background:#fff;}
+  .sw.off{background:var(--surface-3);}
+  .sw.off::after{right:auto;left:2px;background:#fff;box-shadow:0 1px 3px rgba(20,22,26,.25);}
+  .save{height:44px;border-radius:12px;background:var(--brand);color:#fff;display:grid;place-items:center;font-size:14px;font-weight:500;margin-top:12px;}
+  .note{font-size:12px;line-height:18px;color:var(--ink-3);margin-top:10px;}
+
+  /* 底栏 */
+  .nav{border-top:1px solid var(--line);background:var(--surface);display:flex;padding:8px 4px 10px;}
+  .nav .it{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink-3);}
+  .nav .it span{font-size:11px;line-height:14px;}
+  .nav .it.on{color:var(--brand);}
+  .nav .it .pillbg{width:52px;height:28px;border-radius:999px;display:grid;place-items:center;}
+  .nav .it.on .pillbg{background:var(--brand-soft);}
+  .navhome{position:relative;padding-bottom:14px;}
+  .navhome::after{content:"";position:absolute;left:50%;transform:translateX(-50%);bottom:5px;width:104px;height:4px;border-radius:999px;background:#14161A;opacity:.85;}
+
+  /* 分隔 */
+  .hr{height:1px;background:var(--line-2);margin:28px 0;}
+  .legend{display:flex;gap:20px;flex-wrap:wrap;font-size:11.5px;color:var(--ink-3);margin-top:20px;padding-top:18px;border-top:1px solid var(--line);}
+  .legend b{color:var(--ink-2);font-weight:500;}
+
+  @media (max-width:1100px){ .rhythm{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <div>
+      <h1>UI 系统 v3.0 · 改版预览</h1>
+      <p>把「一堆等价的卡片」改成一页有主次的界面：字号从 28sp 收到 22sp，圆角从 9 档收到 3 档，间距从单级 10dp 改成「20 / 12 / 8」三级节奏。四类页面各有一个签名特征，区分靠结构，不靠加颜色。</p>
+    </div>
+    <div class="tagrow">
+      <div class="tag">浅色 · 360dp</div>
+      <div class="tag hot">v0.14.0 → v3.0</div>
+    </div>
+  </div>
+
+  <!-- ============ 令牌 ============ -->
+  <div class="panel">
+    <h2>① 字阶：11 档 → 8 档</h2>
+    <p class="sub">只覆盖 M3 角色的字号，不改任何调用点。中文保持 400 / 500 两档字重，数字开 tabular-nums。</p>
+    <div class="scale">
+      <div><b class="s22">早上好</b><span>22 / 28 · 500 · page title</span></div>
+      <div><b class="s20">待签超话</b><span>20 / 26 · 500 · metric</span></div>
+      <div><b class="s15">微博昵称行标题</b><span>15 / 22 · 500 · row title</span></div>
+      <div><b class="s14">正文说明文字示例</b><span>14 / 21 · 400 · body</span></div>
+      <div><b class="s12">辅助说明 · 11月19日</b><span>12 / 18 · 400 · caption</span></div>
+      <div><b class="s11">今日已签 · pill</b><span>11 / 16 · 400 · label</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>② 间距：单级 10dp → 三级节奏</h2>
+    <p class="sub">区块之间 20dp、同组卡片 12dp、列表行 8dp。留白开始「说话」，用户能看出哪几块是一伙的。</p>
+    <div class="rhythm">
+      <div class="box">
+        <h3>改前</h3>
+        <p class="note">全站 spacedBy(10dp)，标题到日志一个节奏</p>
+        <div class="bar">
+          <div class="row"><em>10</em><i></i></div>
+          <div class="row"><em>10</em><i></i></div>
+          <div class="row"><em>10</em><i></i></div>
+          <div class="row"><em>10</em><i></i></div>
+          <div class="row"><em>10</em><i></i></div>
+        </div>
+      </div>
+      <div class="box after">
+        <h3>改后</h3>
+        <p class="note">结论 → 行动（12）｜ 换组（20）｜ 列表行（8）</p>
+        <div class="bar">
+          <div class="row"><em>20</em><i></i></div>
+          <div class="row gap12"><em>12</em><i></i></div>
+          <div class="row gap20"><em>20</em><i></i></div>
+          <div class="row gap12"><em>12</em><i></i></div>
+          <div class="row gap20"><em>20</em><i></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 屏幕 ============ -->
+  <div class="screens">
+
+    <!-- ---------- 1 首页 ---------- -->
+    <div class="phone">
+      <div class="dev">
+        <div class="statusbar"><span>6:01</span><span class="dots">▮▮▮ ⌁ ▮</span></div>
+        <div class="scr">
+          <div class="topbar">
+            <div class="tt">
+              <b>早上好</b>
+              <s>11月19日 · 周四 · 3 个账号</s>
+            </div>
+            <div class="ibtn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-.7 4.5"/><path d="M20 5v6h-6"/></svg>
+            </div>
+            <div class="ibtn soft">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+          </div>
+
+          <!-- Hero -->
+          <div class="card hero mt20">
+            <div class="heroTop">
+              <div class="ring"><div class="mid"><b>2/3</b><span>今日已签</span></div></div>
+              <div class="hcol">
+                <div class="lab">待签超话</div>
+                <div class="big">5<em>个</em></div>
+                <div class="pills">
+                  <span class="pill">3 个账号</span>
+                  <span class="pill line">面板已同步</span>
+                </div>
+              </div>
+            </div>
+            <div class="summary">还有 1 个账号没签完，5 个超话待签 —— 建议现在补一轮。</div>
+          </div>
+
+          <!-- 主行动（与 Hero 同组，12dp） -->
+          <div class="btns">
+            <div class="btn fill">立即签到</div>
+            <div class="btn out">Cookie 同步</div>
+          </div>
+
+          <!-- 登录状态（换组 20dp） -->
+          <div class="card mt20">
+            <div class="chead">
+              <b>登录状态</b>
+              <span class="pill ok">正常</span>
+            </div>
+            <div class="note">3 个账号的登录态都还有效，最早 6 天后到期。</div>
+            <div class="lrow">
+              <div class="ltext">
+                <div class="n">小号A</div>
+                <div class="m">登录于 11-12 · 还剩 6 天</div>
+              </div>
+              <span class="pill ok">6 天</span>
+            </div>
+            <div class="lrow">
+              <div class="ltext">
+                <div class="n">备用号</div>
+                <div class="m">登录于 11-14 · 还剩 2 天</div>
+              </div>
+              <span class="pill warn">2 天</span>
+            </div>
+          </div>
+
+          <!-- 账号（同组 12dp） -->
+          <div class="card mt12">
+            <div class="chead">
+              <b>账号</b>
+              <span class="hint">点行查看超话</span>
+            </div>
+            <div class="lrow">
+              <div class="av ok">A</div>
+              <div class="ltext">
+                <div class="n">小号A<i>Lv.9</i></div>
+                <div class="m">UID 6231 4418 · 26 个超话 · 已签 21</div>
+              </div>
+              <div class="dots3">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+              </div>
+            </div>
+            <div class="lrow">
+              <div class="av warn">备</div>
+              <div class="ltext">
+                <div class="n">备用号<i>Lv.4</i></div>
+                <div class="m">UID 4417 9920 · 12 个超话 · 待签 5</div>
+              </div>
+              <div class="dots3">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- 日志（换组 20dp） -->
+          <div class="card mt20" style="padding-bottom:14px;">
+            <div class="chead">
+              <b>运行日志</b>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6E7681" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="console">
+              <div class="dim">12:03 开始签到 · 3 个账号</div>
+              <div>12:03 小号A 已签 21/26</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav navhome">
+          <div class="it on"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.2 3.4 10.4v10.4h6V14h5.2v6.8h6V10.4z"/></svg>
+          </div><span>首页</span></div>
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 4 7 20M17 4l-2 16M4 9h16M3.4 15h16"/></svg>
+          </div><span>超话</span></div>
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3.6 5.4h16.8v13.2H3.6z" opacity=".18"/><path d="M3.6 5.4h16.8v13.2H3.6z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10.2" r="1.6"/><path d="M5.6 16.6 10 12.4l2.6 2.4 2.6-2.2 3.2 2.9" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+          </div><span>图片</span></div>
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h10M20 7h-2M4 12h3M20 12H9M4 17h9M20 17h-3"/><circle cx="16.4" cy="7" r="1.9"/><circle cx="9.4" cy="12" r="1.9"/><circle cx="15" cy="17" r="1.9"/></svg>
+          </div><span>设置</span></div>
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5 4h14v16H5z"/><path d="M8.6 9h6.8M8.6 13h6.8M8.6 17h3.6"/></svg>
+          </div><span>任务</span></div>
+        </div>
+      </div>
+      <div class="cap">
+        <h3>首页 · 仪表盘<s>签名：Hero 块</s></h3>
+        <p>结论（环 + 待签）→ 行动（两枚 44dp）→ 状态 → 明细 → 追溯。Hero 内两数字分档 24 / 20，不再同级打架；顶栏「＋」退成软底，一屏只剩主按钮一块实底。</p>
+      </div>
+    </div>
+
+    <!-- ---------- 2 超话列表 ---------- -->
+    <div class="phone">
+      <div class="dev">
+        <div class="statusbar"><span>6:01</span><span class="dots">▮▮▮ ⌁ ▮</span></div>
+        <div class="scr">
+          <div class="topbar">
+            <div class="tt">
+              <b>超话</b>
+              <s>关注超话的等级、签到状态与详情</s>
+            </div>
+            <div class="ibtn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-.7 4.5"/><path d="M20 5v6h-6"/></svg>
+            </div>
+            <div class="ibtn">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </div>
+          </div>
+
+          <!-- 概览条：无卡片标题，三列 + 竖线 -->
+          <div class="metrics mt20">
+            <div class="m"><span>关注超话</span><b>26</b></div>
+            <div class="m"><span>今日已签</span><b>21</b></div>
+            <div class="m"><span>待签</span><b style="color:var(--warn)">5</b></div>
+          </div>
+
+          <!-- 账号 pill -->
+          <div class="chips mt12">
+            <span class="chip on">小号A · 26</span>
+            <span class="chip">备用号 · 12</span>
+          </div>
+
+          <!-- 筛选 -->
+          <div class="chips mt12" style="align-items:center;">
+            <span class="chip on">全部</span>
+            <span class="chip">待签 5</span>
+            <span class="chip">已签 21</span>
+            <span class="chip">Lv7+</span>
+            <span style="flex:1"></span>
+            <span style="font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:3px;">排序
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B616B" stroke-width="2" stroke-linecap="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>
+            </span>
+          </div>
+
+          <!-- 行卡：列表页更紧（8dp） -->
+          <div class="mt12">
+            <div class="rowcard">
+              <div class="h">
+                <span class="lv" style="background:var(--lv-gold-bg);color:var(--lv-gold-fg)">Lv.12</span>
+                <b>肖战</b>
+                <span class="pill warn">待签</span>
+                <span class="dots3">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+                </span>
+              </div>
+              <div class="meta">昨日 00:12 已完成 · 连续 42 天</div>
+            </div>
+            <div class="rowcard">
+              <div class="h">
+                <span class="lv" style="background:var(--lv-purple-bg);color:var(--lv-purple-fg)">Lv.9</span>
+                <b>王一博</b>
+                <span class="pill ok">已签</span>
+                <span class="dots3">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+                </span>
+              </div>
+              <div class="meta">今日 00:08 签到 · 连续 17 天</div>
+            </div>
+            <div class="rowcard">
+              <div class="h">
+                <span class="lv" style="background:var(--lv-blue-bg);color:var(--lv-blue-fg)">Lv.5</span>
+                <b>易烊千玺</b>
+                <span class="pill warn">待签</span>
+                <span class="dots3">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+                </span>
+              </div>
+              <div class="meta">昨日未签 · 断签 1 天</div>
+            </div>
+            <div class="rowcard">
+              <div class="h">
+                <span class="lv" style="background:var(--lv-neutral-bg);color:var(--lv-neutral-fg)">Lv.2</span>
+                <b>时代少年团</b>
+                <span class="pill warn">待签</span>
+                <span class="dots3">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+                </span>
+              </div>
+              <div class="meta">今日 00:02 签到 · 连续 3 天</div>
+            </div>
+            <div class="rowcard">
+              <div class="h">
+                <span class="lv" style="background:var(--lv-gold-bg);color:var(--lv-gold-fg)">Lv.10</span>
+                <b>王一博公益</b>
+                <span class="pill ok">已签</span>
+                <span class="dots3">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+                </span>
+              </div>
+              <div class="meta">今日 00:31 签到 · 连续 88 天</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav navhome">
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 10.6 12 4l8 6.6v9.4h-5.4v-6H9.4v6H4z"/></svg>
+          </div><span>首页</span></div>
+          <div class="it on"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 4 7 20M17 4l-2 16M4 9h16M3.4 15h16"/></svg>
+          </div><span>超话</span></div>
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.6" y="5.4" width="16.8" height="13.2" rx="1"/><circle cx="9" cy="10.2" r="1.6" fill="currentColor" stroke="none"/><path d="M5.6 16.6 10 12.4l2.6 2.4 2.6-2.2 3.2 2.9"/></svg>
+          </div><span>图片</span></div>
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h10M20 7h-2M4 12h3M20 12H9M4 17h9M20 17h-3"/><circle cx="16.4" cy="7" r="1.9"/><circle cx="9.4" cy="12" r="1.9"/><circle cx="15" cy="17" r="1.9"/></svg>
+          </div><span>设置</span></div>
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5 4h14v16H5z"/><path d="M8.6 9h6.8M8.6 13h6.8M8.6 17h3.6"/></svg>
+          </div><span>任务</span></div>
+        </div>
+      </div>
+      <div class="cap">
+        <h3>列表页 · 超话<s>签名：概览条 + 紧行</s></h3>
+        <p>概览条去掉卡片标题、改 20sp 数字 + 竖线，一屏先给结论；行卡间距 8dp（首页是 12dp），同高度能多读一行。账号切换与筛选是两条独立的 chip 行，不再混排。</p>
+      </div>
+    </div>
+
+    <!-- ---------- 3 详情页 ---------- -->
+    <div class="phone">
+      <div class="dev">
+        <div class="statusbar"><span>6:01</span><span class="dots">▮▮▮ ⌁ ▮</span></div>
+        <div class="scr">
+          <div class="topbar">
+            <div class="ibtn" style="margin-left:-6px;">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14.5 5 7.5 12l7 7"/></svg>
+            </div>
+            <div class="tt">
+              <b>发帖任务</b>
+              <s>今日 3/4 · 自动执行中</s>
+            </div>
+            <div class="ibtn">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </div>
+          </div>
+
+          <div class="seclabel first">执行概览</div>
+          <div class="card" style="padding-top:4px;padding-bottom:4px;">
+            <div class="kv"><span>今日已用</span><b>3 / 4 次</b></div>
+            <div class="kv"><span>下次执行</span><b class="br">12:40</b></div>
+            <div class="kv"><span>当前间隔</span><b>8–14 分钟</b></div>
+            <div class="kv"><span>状态</span><b class="ok">运行中</b></div>
+          </div>
+
+          <div class="seclabel">内容</div>
+          <div class="card" style="padding-top:4px;padding-bottom:4px;">
+            <div class="kv"><span>发帖文案库</span><b>128 条</b></div>
+            <div class="kv"><span>评论文案库</span><b>96 条</b></div>
+            <div class="kv"><span>转发文案库</span><b>61 条</b></div>
+          </div>
+
+          <div class="seclabel">执行记录</div>
+          <div class="card">
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <div style="display:flex;gap:9px;">
+                <div style="width:3px;border-radius:2px;background:var(--ok);flex:0 0 auto;"></div>
+                <div style="flex:1;">
+                  <div style="font-size:13px;line-height:19px;font-weight:500;">12:03 发帖成功</div>
+                  <div style="font-size:12px;line-height:18px;color:var(--ink-3);margin-top:2px;">肖战超话 · 第 3/4 次</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:9px;">
+                <div style="width:3px;border-radius:2px;background:var(--warn);flex:0 0 auto;"></div>
+                <div style="flex:1;">
+                  <div style="font-size:13px;line-height:19px;font-weight:500;">11:47 等待间隔</div>
+                  <div style="font-size:12px;line-height:18px;color:var(--ink-3);margin-top:2px;">随机 11 分 20 秒后继续</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:9px;">
+                <div style="width:3px;border-radius:2px;background:var(--line-2);flex:0 0 auto;"></div>
+                <div style="flex:1;">
+                  <div style="font-size:13px;line-height:19px;font-weight:500;">11:36 发帖成功</div>
+                  <div style="font-size:12px;line-height:18px;color:var(--ink-3);margin-top:2px;">王一博超话 · 第 2/4 次</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap">
+        <h3>详情页 · 任务<s>签名：键值右对齐</s></h3>
+        <p>只用来「读」，所以数值全部右对齐成列、分组标题放到卡片外（13sp + 0.4 字距）。与表单页「标题在卡内」形成对照——一眼能分辨正在看什么、正在填什么。</p>
+      </div>
+    </div>
+
+    <!-- ---------- 4 表单页 ---------- -->
+    <div class="phone">
+      <div class="dev">
+        <div class="statusbar"><span>6:01</span><span class="dots">▮▮▮ ⌁ ▮</span></div>
+        <div class="scr">
+          <div class="topbar">
+            <div class="tt">
+              <b>设置</b>
+              <s>面板同步、行为开关与版本信息</s>
+            </div>
+          </div>
+
+          <div class="seclabel first">面板同步</div>
+          <div class="card">
+            <div class="field">
+              <s>面板地址</s>
+              <em>https://panel.example.com</em>
+            </div>
+            <div class="field ph">
+              <s>访问令牌</s>
+              <em>未填写</em>
+            </div>
+            <div class="save">保存</div>
+            <div class="note">保存后，Cookie 有效期会同步到面板，可在首页卡片里看到。</div>
+          </div>
+
+          <div class="seclabel">行为</div>
+          <div class="card" style="padding-top:2px;padding-bottom:2px;">
+            <div class="switchrow">
+              <div class="t">
+                <b>打开即签到</b>
+                <s>进入首页时自动跑一轮</s>
+              </div>
+              <div class="sw"></div>
+            </div>
+            <div class="switchrow">
+              <div class="t">
+                <b>抓取时转换 GIF</b>
+                <s>把动图转成 Live Photo 所需的视频</s>
+              </div>
+              <div class="sw off"></div>
+            </div>
+            <div class="switchrow">
+              <div class="t">
+                <b>自动重新登录</b>
+                <s>登录态失效时用已存凭据重登</s>
+              </div>
+              <div class="sw off"></div>
+            </div>
+          </div>
+
+          <div class="seclabel">关于</div>
+          <div class="card" style="padding-top:2px;padding-bottom:2px;">
+            <div class="kv"><span>版本</span><b>0.14.0 (45)</b></div>
+            <div class="kv"><span>界面</span><b>UI 系统 v3.0</b></div>
+          </div>
+        </div>
+
+        <div class="nav navhome">
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 10.6 12 4l8 6.6v9.4h-5.4v-6H9.4v6H4z"/></svg>
+          </div><span>首页</span></div>
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 4 7 20M17 4l-2 16M4 9h16M3.4 15h16"/></svg>
+          </div><span>超话</span></div>
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.6" y="5.4" width="16.8" height="13.2" rx="1"/><circle cx="9" cy="10.2" r="1.6" fill="currentColor" stroke="none"/><path d="M5.6 16.6 10 12.4l2.6 2.4 2.6-2.2 3.2 2.9"/></svg>
+          </div><span>图片</span></div>
+          <div class="it on"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h10M20 7h-2M4 12h3M20 12H9M4 17h9M20 17h-3"/><circle cx="16.4" cy="7" r="1.9"/><circle cx="9.4" cy="12" r="1.9"/><circle cx="15" cy="17" r="1.9"/></svg>
+          </div><span>设置</span></div>
+          <div class="it"><div class="pillbg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5 4h14v16H5z"/><path d="M8.6 9h6.8M8.6 13h6.8M8.6 17h3.6"/></svg>
+          </div><span>任务</span></div>
+        </div>
+      </div>
+      <div class="cap">
+        <h3>表单页 · 设置<s>签名：卡外分组</s></h3>
+        <p>分组标题搬到卡外，卡片本身变成纯粹的「一块可填区域」；输入框 48dp、字段间 12dp、保存独占一行紧跟字段，不贴底不浮动。开关行的三档状态（开／关／待确认）靠位置而非颜色区分。</p>
+      </div>
+    </div>
+
+  </div><!-- /screens -->
+
+  <div class="panel" style="margin-top:36px;">
+    <h2>③ 圆角：9 档 → 3 档 + pill</h2>
+    <p class="sub">同一屏里出现 18 / 16 / 14 / 12 四种卡片圆角时，用户说不出哪里不对，但会觉得「不是一个东西做的」。</p>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;">
+      <div style="text-align:center;">
+        <div style="width:150px;height:88px;background:#fff;border:1px solid var(--line);border-radius:16px;"></div>
+        <div style="font-size:11.5px;color:var(--ink-2);margin-top:8px;">card · 16dp</div>
+        <div style="font-size:11px;color:var(--ink-3);">所有卡片（含 Hero）</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="width:150px;height:88px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;display:grid;place-items:center;font-size:11px;color:var(--ink-3);">输入框 / 图标托 / 终端</div>
+        <div style="font-size:11.5px;color:var(--ink-2);margin-top:8px;">inner · 10dp</div>
+        <div style="font-size:11px;color:var(--ink-3);">卡内嵌块</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="width:150px;height:88px;background:#fff;border:1px solid var(--line);border-radius:16px;display:grid;place-items:center;">
+          <span class="lv" style="background:var(--lv-gold-bg);color:var(--lv-gold-fg);padding:6px 9px;">Lv.12</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-2);margin-top:8px;">chip · 8dp</div>
+        <div style="font-size:11px;color:var(--ink-3);">等级徽章</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="width:150px;height:88px;background:#fff;border:1px solid var(--line);border-radius:16px;display:grid;place-items:center;">
+          <span class="pill ok">已签</span> <span class="pill warn" style="margin-left:6px;">待签</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-2);margin-top:8px;">pill · 999dp</div>
+        <div style="font-size:11px;color:var(--ink-3);">状态胶囊</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="width:150px;height:88px;background:#fff;border:1px solid var(--line);border-radius:16px;display:grid;place-items:center;">
+          <div style="width:120px;height:34px;border-radius:12px;background:var(--brand);"></div>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-2);margin-top:8px;">button · 12dp</div>
+        <div style="font-size:11px;color:var(--ink-3);">按钮（高 44）</div>
+      </div>
+    </div>
+
+    <div class="hr"></div>
+
+    <h2>④ 颜色：色值不动，只收缩用量</h2>
+    <p class="sub">一屏只允许一块品牌实底；状态色不出 pill 尺寸；错误文案统一用 danger_text，不用 M3 默认红（现状 19 处 colorScheme.error 会渲染成另一个红）。</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:12px;overflow:hidden;">
+        <div style="height:52px;background:var(--brand);"></div>
+        <div style="padding:9px 11px;font-size:11px;color:var(--ink-2);">brand<br><span style="color:var(--ink-3);font-variant-numeric:tabular-nums;">#E0245E · 仅主按钮</span></div>
+      </div>
+      <div style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:12px;overflow:hidden;">
+        <div style="height:52px;background:var(--brand-soft);"></div>
+        <div style="padding:9px 11px;font-size:11px;color:var(--ink-2);">brand_soft<br><span style="color:var(--ink-3);">#FDECF1 · 选中/图标托</span></div>
+      </div>
+      <div style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:12px;overflow:hidden;">
+        <div style="height:52px;background:var(--ok-soft);"></div>
+        <div style="padding:9px 11px;font-size:11px;color:var(--ink-2);">ok_soft<br><span style="color:var(--ink-3);">#E7F7F1 · 已签 pill</span></div>
+      </div>
+      <div style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:12px;overflow:hidden;">
+        <div style="height:52px;background:var(--warn-soft);"></div>
+        <div style="padding:9px 11px;font-size:11px;color:var(--ink-2);">warn_soft<br><span style="color:var(--ink-3);">#FDF1E3 · 待签 pill</span></div>
+      </div>
+      <div style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:12px;overflow:hidden;">
+        <div style="height:52px;background:var(--line-soft);"></div>
+        <div style="padding:9px 11px;font-size:11px;color:var(--ink-2);">line_soft <span style="color:var(--brand-strong);">新</span><br><span style="color:var(--ink-3);">#F2F4F7 · 卡内分隔</span></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><b>预览说明</b> 344px 屏宽 ≈ 360dp；字号按 1:1 sp 呈现。</span>
+      <span><b>仅呈现层</b> 业务逻辑、数据、路由一行未动。</span>
+      <span><b>完整清单</b> 见 docs/design/ui-system-v3.0.md §7</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -23,6 +23,9 @@
     <string name="home_panel_ok">已配置</string>
     <string name="home_panel_off">未配置</string>
     <string name="home_account_empty">点右上「＋ 添加账号」开始</string>
+    <!-- v3.0：空态统一成「结论 + 说明 + 动作」三段，所以标题与按钮文案单独给 -->
+    <string name="home_account_empty_title">还没有账号</string>
+    <string name="home_account_empty_action">添加账号</string>
     <string name="home_no_account">没有账号，请先「＋ 添加账号」</string>
     <string name="home_cookie_dead">Cookie 已失效，请删除后重新添加账号</string>
     <string name="home_delete_title">删除账号 %1$s?</string>
@@ -406,6 +409,12 @@
     <string name="topic_field_body">一、关注超话列表（containerid=100803_-_followsuper）\n· title_sub 超话名称\n· desc1 等级（Lv.N）\n· desc2 次要描述\n· scheme 内含超话 ID（100808 后的 hash）\n· buttons[0].name 签到状态\n· buttons[0].scheme 签到链接\n· cardlistInfo.since_id 翻页游标\n\n二、超话主页（containerid=100808&lt;hash&gt;，点开时才拉）\n· pageInfo.title_top 超话标题\n· pageInfo.desc 简介\n· pageInfo.desc_more 关注数 / 帖子数 / 阅读数\n· pageInfo.portrait_sub_text 头部副文案\n· pageInfo.oid 原始 ID\n\n三、签到响应\n· data.alert_title 签到第 N 名\n· data.alert_subtitle 经验 +X\n· msg 失败原因</string>
 
     <string name="cd_topic_more">更多操作</string>
+
+    <!-- ===== v3.0 通用无障碍文案 =====
+         图标从「文字字符」换成矢量图之后，读屏不再能念出字符本身，
+         所以每一处可点图标都要显式挂一条 contentDescription。 -->
+    <string name="cd_back">返回</string>
+    <string name="cd_more">更多操作</string>
 
     <!-- ===== v0.9.0 图库增强 ===== -->
     <string name="gallery_search_hint">搜索文件名 / 博主</string>

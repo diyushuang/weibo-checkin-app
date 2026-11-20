@@ -1,6 +1,5 @@
 package com.wcm.checkin
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,14 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -43,7 +38,6 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -52,6 +46,9 @@ import androidx.compose.ui.unit.dp
  *
  * 本页只渲染 `GalleryUiState` 并把用户意图转成事件；真正跑抓取的是 `CrawlService`
  * （单闸门），页面不持有任务。
+ *
+ * v3.0：顶栏与卡片材质统一走 [WcmPage] / [WcmCard]；图标托圆角归到 `WcmShape.inner`，
+ * 一屏只剩「开始抓取」一块品牌实底（顶栏「＋」已降为软底）。
  */
 @Composable
 fun GalleryScreen(
@@ -74,57 +71,72 @@ fun GalleryScreen(
     onTargetDelete: (String) -> Unit,
 ) {
     val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colorResource(R.color.bg)),
-        contentPadding = PaddingValues(horizontal = pagePad, vertical = pagePad),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+    WcmPage(
+        title = stringResource(R.string.page_gallery_title),
+        subtitle = stringResource(R.string.crawl_intro),
+        actions = {
+            WcmTopBarAccentAction(
+                icon = R.drawable.ic_add,
+                description = stringResource(R.string.cd_add_target),
+                onClick = onAddTarget,
+            )
+        },
     ) {
-        item(key = "header") { Header(onAddTarget) }
-        item(key = "gallery") { GalleryEntry(state.galleryCount, onOpenGallery) }
-        item(key = "dir") { DirCard(state, onPickDir) }
-        item(key = "targets") {
-            TargetsCard(state, onTargetIncremental, onTargetFull, onTargetSince, onTargetDelete)
-        }
-        item(key = "run") {
-            RunCard(state, onModeToggle, onAutoToggle, onStart, onFull, onStop, onRetryFailed, onBrowse, onSinglePost)
-        }
-        item(key = "log") {
-            LogCard(
-                state = state.log,
-                onToggle = onLogToggle,
-                labelRes = R.string.crawl_log_title,
-                cdExpandedRes = R.string.cd_crawl_log_expanded,
-                cdCollapsedRes = R.string.cd_crawl_log_collapsed,
-            )
-        }
-    }
-}
-
-@Composable
-private fun Header(onAddTarget: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.page_gallery_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = colorResource(R.color.ink),
-            )
-            Text(
-                text = stringResource(R.string.crawl_intro),
-                style = MaterialTheme.typography.bodyMedium,
-                color = colorResource(R.color.ink_3),
-            )
-        }
-        Surface(shape = RoundedCornerShape(12.dp), color = colorResource(R.color.brand)) {
-            IconButton(onClick = onAddTarget) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_add),
-                    contentDescription = stringResource(R.string.cd_add_target),
-                    tint = colorResource(R.color.brand_on),
-                )
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = pagePad,
+                end = pagePad,
+                top = WcmSpace.pageTop,
+                bottom = WcmSpace.pageBottom,
+            ),
+        ) {
+            item(key = "gallery") {
+                Box(Modifier.padding(top = WcmSpace.section)) {
+                    GalleryEntry(state.galleryCount, onOpenGallery)
+                }
+            }
+            item(key = "dir") {
+                Box(Modifier.padding(top = WcmSpace.cardGap)) {
+                    DirCard(state, onPickDir)
+                }
+            }
+            item(key = "targets") {
+                Box(Modifier.padding(top = WcmSpace.section)) {
+                    TargetsCard(
+                        state = state,
+                        onIncremental = onTargetIncremental,
+                        onFull = onTargetFull,
+                        onSince = onTargetSince,
+                        onDelete = onTargetDelete,
+                    )
+                }
+            }
+            item(key = "run") {
+                Box(Modifier.padding(top = WcmSpace.section)) {
+                    RunCard(
+                        state = state,
+                        onModeToggle = onModeToggle,
+                        onAutoToggle = onAutoToggle,
+                        onStart = onStart,
+                        onFull = onFull,
+                        onStop = onStop,
+                        onRetryFailed = onRetryFailed,
+                        onBrowse = onBrowse,
+                        onSinglePost = onSinglePost,
+                    )
+                }
+            }
+            item(key = "log") {
+                Box(Modifier.padding(top = WcmSpace.section)) {
+                    LogCard(
+                        state = state.log,
+                        onToggle = onLogToggle,
+                        labelRes = R.string.crawl_log_title,
+                        cdExpandedRes = R.string.cd_crawl_log_expanded,
+                        cdCollapsedRes = R.string.cd_crawl_log_collapsed,
+                    )
+                }
             }
         }
     }
@@ -134,21 +146,17 @@ private fun Header(onAddTarget: () -> Unit) {
 private fun GalleryEntry(count: String, onOpen: () -> Unit) {
     WcmCard(onClick = onOpen) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(10.dp), color = colorResource(R.color.brand_soft)) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_image),
-                    contentDescription = stringResource(R.string.gallery_open),
-                    tint = colorResource(R.color.brand_strong),
-                    modifier = Modifier.padding(10.dp).size(22.dp),
-                )
-            }
+            IconTile(
+                icon = R.drawable.ic_image,
+                brand = true,
+                description = stringResource(R.string.gallery_open),
+            )
             Column(
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             ) {
                 Text(
                     text = stringResource(R.string.gallery_card_title),
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
                     color = colorResource(R.color.ink),
                 )
                 Text(
@@ -171,21 +179,13 @@ private fun GalleryEntry(count: String, onOpen: () -> Unit) {
 private fun DirCard(state: GalleryUiState, onPickDir: () -> Unit) {
     WcmCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(10.dp), color = colorResource(R.color.surface_2)) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_folder),
-                    contentDescription = null,
-                    tint = colorResource(R.color.ink_2),
-                    modifier = Modifier.padding(10.dp).size(22.dp),
-                )
-            }
+            IconTile(icon = R.drawable.ic_folder, brand = false)
             Column(
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             ) {
                 Text(
                     text = stringResource(R.string.crawl_dir_title),
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
                     color = colorResource(R.color.ink),
                 )
                 Text(
@@ -197,15 +197,15 @@ private fun DirCard(state: GalleryUiState, onPickDir: () -> Unit) {
                 )
                 if (state.dirStatus.isNotEmpty()) {
                     Surface(
-                        shape = RoundedCornerShape(999.dp),
+                        shape = WcmShape.pill,
                         color = colorResource(R.color.warn_soft),
                         modifier = Modifier
-                            .padding(top = 4.dp)
+                            .padding(top = 5.dp)
                             .clickable { onPickDir() },
                     ) {
                         Text(
                             text = state.dirStatus,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = colorResource(R.color.warn_text),
                         )
@@ -216,6 +216,22 @@ private fun DirCard(state: GalleryUiState, onPickDir: () -> Unit) {
                 Text(stringResource(R.string.crawl_pick_dir))
             }
         }
+    }
+}
+
+/** 卡内图标托：34dp / 圆角 10dp（`WcmShape.inner`），品牌软底或中性底两种。 */
+@Composable
+private fun IconTile(icon: Int, brand: Boolean, description: String? = null) {
+    Surface(
+        shape = WcmShape.inner,
+        color = if (brand) colorResource(R.color.brand_soft) else colorResource(R.color.surface_2),
+    ) {
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = description,
+            tint = if (brand) colorResource(R.color.brand_strong) else colorResource(R.color.ink_2),
+            modifier = Modifier.padding(9.dp).size(18.dp),
+        )
     }
 }
 
@@ -232,7 +248,6 @@ private fun TargetsCard(
             Text(
                 text = state.targetsTitle,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
                 color = colorResource(R.color.ink),
                 modifier = Modifier.weight(1f),
             )
@@ -242,17 +257,17 @@ private fun TargetsCard(
                 color = colorResource(R.color.ink_3),
             )
         }
-        Spacer(Modifier.height(8.dp))
         if (state.targets.isEmpty()) {
             Text(
                 text = state.targetsEmptyHint,
                 style = MaterialTheme.typography.bodySmall,
                 color = colorResource(R.color.ink_3),
-                modifier = Modifier.padding(vertical = 6.dp),
+                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
             )
         } else {
+            Spacer(Modifier.height(4.dp))
             state.targets.forEachIndexed { index, target ->
-                if (index > 0) HorizontalDivider(color = colorResource(R.color.line))
+                if (index > 0) WcmDivider()
                 TargetRow(target, onIncremental, onFull, onSince, onDelete)
             }
         }
@@ -272,14 +287,13 @@ private fun TargetRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { menu = true }
-            .padding(vertical = 10.dp),
+            .padding(vertical = WcmSpace.rowV),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = target.name,
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
                 color = colorResource(R.color.ink),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -296,11 +310,12 @@ private fun TargetRow(
             )
         }
         Box {
-            IconButton(onClick = { menu = true }) {
-                Text(
-                    text = "⋮",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = colorResource(R.color.ink_3),
+            IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_more_vert),
+                    contentDescription = stringResource(R.string.cd_more),
+                    tint = colorResource(R.color.ink_3),
+                    modifier = Modifier.size(18.dp),
                 )
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -353,7 +368,6 @@ private fun RunCard(
         Text(
             text = stringResource(R.string.crawl_run_title),
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
             color = colorResource(R.color.ink),
         )
         Spacer(Modifier.height(6.dp))
@@ -363,7 +377,7 @@ private fun RunCard(
             enabled = true,
             onToggle = onModeToggle,
         )
-        HorizontalDivider(color = colorResource(R.color.line_2))
+        WcmDivider()
         SwitchRow(
             label = stringResource(R.string.crawl_auto_after_checkin),
             checked = state.autoAfterCheckin,
@@ -375,7 +389,7 @@ private fun RunCard(
             Spacer(Modifier.height(10.dp))
             LinearProgressIndicator(
                 progress = { progress.ratio },
-                modifier = Modifier.fillMaxWidth().height(4.dp),
+                modifier = Modifier.fillMaxWidth().height(3.dp),
                 color = colorResource(R.color.brand),
                 trackColor = colorResource(R.color.surface_3),
             )
@@ -408,7 +422,7 @@ private fun RunCard(
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         if (state.running) {
             Button(
                 onClick = onStop,
@@ -462,12 +476,12 @@ private fun SwitchRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled) { onToggle(!checked) }
-            .padding(vertical = 6.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = colorResource(R.color.ink),
             modifier = Modifier.weight(1f),
         )
@@ -476,38 +490,5 @@ private fun SwitchRow(
             onCheckedChange = onToggle,
             enabled = enabled,
         )
-    }
-}
-
-@Composable
-private fun WcmCard(
-    onClick: (() -> Unit)? = null,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
-) {
-    val colors = CardDefaults.cardColors(containerColor = colorResource(R.color.surface))
-    val border = BorderStroke(1.dp, colorResource(R.color.line))
-    val shape = RoundedCornerShape(14.dp)
-    val elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    if (onClick != null) {
-        Card(
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth(),
-            shape = shape,
-            colors = colors,
-            border = border,
-            elevation = elevation,
-        ) {
-            Column(Modifier.padding(14.dp), content = content)
-        }
-    } else {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = shape,
-            colors = colors,
-            border = border,
-            elevation = elevation,
-        ) {
-            Column(Modifier.padding(14.dp), content = content)
-        }
     }
 }

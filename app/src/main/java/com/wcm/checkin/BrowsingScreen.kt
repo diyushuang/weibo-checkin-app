@@ -102,35 +102,14 @@ fun BrowsingScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colorResource(R.color.bg))
-            .statusBarsPadding()
+            // 顶部安全区由 MainActivity 统一让过（safeDrawing 已消费），这里只补底部
             .navigationBarsPadding(),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.semantics { contentDescription = "关闭" },
-            ) {
-                Text("✕", style = MaterialTheme.typography.titleLarge, color = colorResource(R.color.ink_2))
-            }
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                Text(
-                    text = state.title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colorResource(R.color.ink),
-                )
-                if (state.subtitle.isNotEmpty()) {
-                    Text(
-                        text = state.subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colorResource(R.color.ink_3),
-                    )
-                }
-            }
-        }
+        WcmTopBar(
+            title = state.title,
+            subtitle = state.subtitle.ifEmpty { null },
+            onBack = onBack,
+        )
         InputRow(state.input, onInputChange, onLoad)
         if (state.targets.isNotEmpty()) {
             Row(
@@ -142,7 +121,7 @@ fun BrowsingScreen(
             ) {
                 state.targets.forEach { target ->
                     Surface(
-                        shape = RoundedCornerShape(999.dp),
+                        shape = WcmShape.pill,
                         border = BorderStroke(1.dp, colorResource(R.color.line_2)),
                         color = Color.Transparent,
                         modifier = Modifier.clickable { onTargetClick(target.uid) },
@@ -214,7 +193,7 @@ private fun InputRow(input: String, onInputChange: (String) -> Unit, onLoad: () 
             keyboardActions = KeyboardActions(onGo = { onLoad() }),
             modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(WcmShape.inner)
                 .background(colorResource(R.color.surface_2))
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             decorationBox = { inner ->
@@ -240,7 +219,7 @@ private fun InputRow(input: String, onInputChange: (String) -> Unit, onLoad: () 
 @Composable
 private fun FilterChip(text: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = WcmShape.pill,
         color = if (selected) colorResource(R.color.brand_soft) else Color.Transparent,
         border = if (selected) null else BorderStroke(1.dp, colorResource(R.color.line_2)),
         modifier = Modifier.clickable { onClick() },
@@ -278,8 +257,14 @@ private fun PostList(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = pagePad, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(
+            start = pagePad,
+            end = pagePad,
+            top = WcmSpace.pageTop,
+            bottom = WcmSpace.pageBottom,
+        ),
+        // 列表页签名：行距比首页卡片更紧
+        verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
     ) {
         items(state.posts.size, key = { state.posts[it].bid }) { index ->
             val post = state.posts[index]
@@ -302,14 +287,14 @@ private fun PostCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(onClick = { onClick(post.bid) }, onLongClick = { onLongClick(post.bid) }),
-            shape = RoundedCornerShape(14.dp),
+            shape = WcmShape.card,
             colors = androidx.compose.material3.CardDefaults.cardColors(
                 containerColor = colorResource(R.color.surface),
             ),
             border = BorderStroke(1.dp, colorResource(R.color.line)),
             elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
-            Column(Modifier.padding(14.dp)) {
+            Column(Modifier.padding(WcmSpace.cardPad)) {
                 Text(
                     text = post.meta,
                     style = MaterialTheme.typography.bodySmall,
@@ -343,7 +328,7 @@ private fun PostCard(
                             Box(
                                 modifier = Modifier
                                     .size(56.dp)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(WcmShape.chip)
                                     .background(colorResource(R.color.surface_2))
                                     .clickable { onMorePics(post.bid) },
                                 contentAlignment = Alignment.Center,
@@ -363,7 +348,7 @@ private fun PostCard(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(WcmShape.card)
                     .background(Color(0x22000000)),
             )
         }
@@ -377,7 +362,12 @@ private fun PostCard(
                     .background(colorResource(R.color.brand)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("✓", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                Icon(
+                    painter = painterResource(R.drawable.ic_check),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp),
+                )
             }
         }
     }
@@ -394,7 +384,7 @@ private fun ThumbTile(thumb: BrowseThumbUi, index: Int, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(56.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(WcmShape.chip)
             .background(colorResource(R.color.surface_2))
             .clickable(onClick = onClick)
             .semantics { contentDescription = desc },
@@ -410,7 +400,12 @@ private fun ThumbTile(thumb: BrowseThumbUi, index: Int, onClick: () -> Unit) {
                     .background(colorResource(R.color.brand)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("✓", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                Icon(
+                    painter = painterResource(R.drawable.ic_check),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(11.dp),
+                )
             }
         }
     }

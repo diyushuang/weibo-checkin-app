@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -43,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -76,34 +78,22 @@ fun PostPickScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colorResource(R.color.bg))
-            .statusBarsPadding()
+            // 顶部安全区由 MainActivity 统一让过，这里只补底部
             .navigationBarsPadding(),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.semantics { contentDescription = "关闭" },
-            ) {
-                Text("✕", style = MaterialTheme.typography.titleLarge, color = colorResource(R.color.ink_2))
-            }
-            Text(
-                text = stringResource(R.string.pick_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = colorResource(R.color.ink),
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onToggleAll, enabled = state.items.isNotEmpty()) {
-                Text(
-                    stringResource(
-                        if (state.allSelected) R.string.pick_deselect_all else R.string.pick_all,
-                    ),
-                )
-            }
-        }
+        WcmTopBar(
+            title = stringResource(R.string.pick_title),
+            onBack = onBack,
+            actions = {
+                TextButton(onClick = onToggleAll, enabled = state.items.isNotEmpty()) {
+                    Text(
+                        stringResource(
+                            if (state.allSelected) R.string.pick_deselect_all else R.string.pick_all,
+                        ),
+                    )
+                }
+            },
+        )
         Text(
             text = stringResource(R.string.pick_hint),
             style = MaterialTheme.typography.bodySmall,
@@ -181,7 +171,7 @@ private fun PickCell(item: PickItemUi, index: Int, onClick: () -> Unit, onLongCl
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(WcmShape.chip)
             .background(colorResource(R.color.surface_2))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .semantics { contentDescription = desc },
@@ -213,7 +203,12 @@ private fun PickCell(item: PickItemUi, index: Int, onClick: () -> Unit, onLongCl
                     .background(colorResource(R.color.brand)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("✓", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                Icon(
+                    painter = painterResource(R.drawable.ic_check),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(11.dp),
+                )
             }
         }
         if (item.selected) {
@@ -227,7 +222,12 @@ private fun PickCell(item: PickItemUi, index: Int, onClick: () -> Unit, onLongCl
                     .background(colorResource(R.color.brand)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("✓", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                Icon(
+                    painter = painterResource(R.drawable.ic_check),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(13.dp),
+                )
             }
         }
     }

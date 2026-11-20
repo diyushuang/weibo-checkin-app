@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -68,25 +69,26 @@ fun EngageTaskDetailScreen(
 
     val summary = state.summaryOf(action)
 
+    val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
+    // v3.0：二级页改用统一顶栏（返回箭头 + 22sp 标题 + 12sp 副标题），
+    // 原来这里是「文字按钮『返回』+ titleLarge」，和首页顶栏不是一套。
+    WcmPage(
+        title = action.label,
+        subtitle = summary.mode.label,
+        onBack = onBack,
+    ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(colorResource(R.color.bg))
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(
+                start = pagePad,
+                end = pagePad,
+                top = WcmSpace.pageTop,
+                bottom = WcmSpace.pageBottom,
+            ),
+        verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
     ) {
-        // ---- 标题 ----
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text(stringResource(R.string.engage_back)) }
-            Text(action.label, style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.weight(1f))
-            Text(
-                summary.mode.label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
 
         ActionConfigCard(
             state = state,
@@ -114,6 +116,7 @@ fun EngageTaskDetailScreen(
         )
 
         ActionLogCard(state, action)
+    }
     }
 }
 
@@ -359,7 +362,7 @@ private fun RunStatusCard(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = if (summary.pendingPost) {
-                    MaterialTheme.colorScheme.error
+                    colorResource(R.color.danger_text)
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
@@ -466,15 +469,17 @@ private fun ActionPaceCard(
             Text(
                 stringResource(R.string.engage_task_gap_over_budget),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                color = colorResource(R.color.danger_text),
             )
         }
         EngagePacing.riskHint(config)?.let { hint ->
             Spacer(Modifier.height(6.dp))
+            // tertiary 在 WcmTheme 里没有映射，原来拿到的是 M3 默认粉紫；
+            // 这段文案讲的是「间隔超出预算」，按 warn 语义着色才和正文说得一致。
             Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                ),
+                colors = CardDefaults.cardColors(containerColor = colorResource(R.color.warn_soft)),
+                shape = WcmShape.inner,
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(

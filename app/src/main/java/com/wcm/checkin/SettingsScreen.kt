@@ -1,11 +1,7 @@
 package com.wcm.checkin
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,11 +10,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -27,10 +20,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /**
@@ -39,6 +32,12 @@ import androidx.compose.ui.unit.dp
  * 纯渲染：状态来自 `SettingsViewModel`，每个控件把改动直接发回 ViewModel 落盘
  * （开关是即时生效的，没有「保存」这一步）；只有面板地址与令牌需要显式保存，
  * 保存失败的文案由 ViewModel 回写到 `SettingsUiState` 里，本页只负责显示。
+ *
+ * ## 表单页的签名（v3.0）
+ *
+ * 分组标题 **放在卡片外面**（[WcmSectionLabel]）。原来标题写在卡内，
+ * 与卡内的字段平级，用户扫视时找不到「从哪开始填」；搬到卡外之后，
+ * 卡片本身变成纯粹的「一块可填区域」——这也是用户分辨「这是表单页」的主要线索。
  *
  * 主题不在这里 —— `WcmTheme` 已抽到同包的 `Theme.kt`。
  */
@@ -53,71 +52,80 @@ fun SettingsScreen(
     onAutoReloginChange: (Boolean) -> Unit,
 ) {
     val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = pagePad, vertical = pagePad),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    WcmPage(
+        title = stringResource(R.string.page_settings_title),
+        subtitle = stringResource(R.string.page_settings_subtitle),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = stringResource(R.string.page_settings_title),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = stringResource(R.string.page_settings_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    start = pagePad,
+                    end = pagePad,
+                    top = WcmSpace.pageTop,
+                    bottom = WcmSpace.pageBottom,
+                ),
+        ) {
+            Spacer(Modifier.height(WcmSpace.section))
+            // 分组标题在卡外；「可选」这类补充说明跟在标题行右侧，不占卡片首行
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                WcmSectionLabel(
+                    text = stringResource(R.string.settings_panel_title),
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = stringResource(R.string.settings_panel_tag),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colorResource(R.color.ink_3),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+            PanelCard(state, onUrlChange, onTokenChange, onSave)
 
-        PanelCard(state, onUrlChange, onTokenChange, onSave)
+            Spacer(Modifier.height(WcmSpace.section))
+            WcmSectionLabel(stringResource(R.string.settings_behavior_title))
+            WcmCard {
+                SwitchRow(
+                    title = stringResource(R.string.auto_on_open),
+                    desc = stringResource(R.string.settings_auto_on_open_desc),
+                    checked = state.autoOnOpen,
+                    onCheckedChange = onAutoOnOpenChange,
+                )
+                WcmDivider()
+                SwitchRow(
+                    title = stringResource(R.string.settings_live_gif),
+                    desc = stringResource(R.string.settings_live_gif_desc),
+                    checked = state.crawlGif,
+                    onCheckedChange = onCrawlGifChange,
+                )
+                WcmDivider()
+                SwitchRow(
+                    title = stringResource(R.string.settings_auto_relogin),
+                    desc = stringResource(R.string.settings_auto_relogin_desc),
+                    note = stringResource(R.string.settings_auto_relogin_note),
+                    checked = state.autoRelogin,
+                    onCheckedChange = onAutoReloginChange,
+                )
+            }
 
-        WcmCard {
-            SectionHead(R.string.settings_behavior_title)
-            SwitchRow(
-                title = stringResource(R.string.auto_on_open),
-                desc = stringResource(R.string.settings_auto_on_open_desc),
-                checked = state.autoOnOpen,
-                onCheckedChange = onAutoOnOpenChange,
-            )
-            RowDivider()
-            SwitchRow(
-                title = stringResource(R.string.settings_live_gif),
-                desc = stringResource(R.string.settings_live_gif_desc),
-                checked = state.crawlGif,
-                onCheckedChange = onCrawlGifChange,
-            )
-            RowDivider()
-            SwitchRow(
-                title = stringResource(R.string.settings_auto_relogin),
-                desc = stringResource(R.string.settings_auto_relogin_desc),
-                note = stringResource(R.string.settings_auto_relogin_note),
-                checked = state.autoRelogin,
-                onCheckedChange = onAutoReloginChange,
-            )
+            Spacer(Modifier.height(WcmSpace.section))
+            WcmSectionLabel(stringResource(R.string.settings_about_title))
+            WcmCard {
+                Text(
+                    text = state.about,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colorResource(R.color.ink_2),
+                )
+                Text(
+                    text = stringResource(R.string.settings_appearance_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colorResource(R.color.ink_3),
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            Spacer(Modifier.height(WcmSpace.cardGap))
         }
-
-        WcmCard {
-            SectionHead(R.string.settings_about_title)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = state.about,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = stringResource(R.string.settings_appearance_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-        }
-        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -129,8 +137,6 @@ private fun PanelCard(
     onSave: () -> Unit,
 ) {
     WcmCard {
-        SectionHead(R.string.settings_panel_title, R.string.settings_panel_tag)
-        Spacer(Modifier.height(12.dp))
         val error = state.urlError
         OutlinedTextField(
             value = state.panelUrl,
@@ -145,7 +151,7 @@ private fun PanelCard(
             },
             modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(WcmSpace.cardGap))
         OutlinedTextField(
             value = state.panelToken,
             onValueChange = onTokenChange,
@@ -153,53 +159,17 @@ private fun PanelCard(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(WcmSpace.cardGap))
+        // 保存：独占一行、紧跟字段，不贴底也不浮动
         Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.settings_save))
         }
         Text(
             text = stringResource(R.string.settings_panel_note),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = colorResource(R.color.ink_3),
             modifier = Modifier.padding(top = 8.dp),
         )
-    }
-}
-
-@Composable
-private fun WcmCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(modifier = Modifier.padding(16.dp), content = content)
-    }
-}
-
-@Composable
-private fun SectionHead(titleRes: Int, tagRes: Int? = null) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = stringResource(titleRes),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f),
-        )
-        if (tagRes != null) {
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-            ) {
-                Text(
-                    text = stringResource(tagRes),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                )
-            }
-        }
     }
 }
 
@@ -215,36 +185,30 @@ private fun SwitchRow(
         modifier = Modifier
             .fillMaxWidth()
             .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
-            .padding(vertical = 10.dp),
+            .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = colorResource(R.color.ink),
+            )
             Text(
                 text = desc,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = colorResource(R.color.ink_3),
                 modifier = Modifier.padding(top = 1.dp),
             )
             if (note != null) {
                 Text(
                     text = note,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colorResource(R.color.ink_3),
                     modifier = Modifier.padding(top = 6.dp),
                 )
             }
         }
         Switch(checked = checked, onCheckedChange = null)
     }
-}
-
-@Composable
-private fun RowDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant),
-    )
 }

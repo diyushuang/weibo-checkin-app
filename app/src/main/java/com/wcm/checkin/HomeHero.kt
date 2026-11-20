@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,7 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /** 首页 Hero 卡的渲染状态，由 `HomeViewModel` 每次状态变化时整体重建。 */
@@ -44,13 +42,14 @@ fun HomeHeroCard(state: HomeHeroUiState, onClick: () -> Unit) {
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        // v3.0：Hero 与普通卡同一圆角（18 与 16 肉眼不可辨，却要多维护一套变体）
+        shape = WcmShape.card,
         colors = CardDefaults.cardColors(containerColor = colorResource(R.color.surface)),
         border = BorderStroke(1.dp, colorResource(R.color.line)),
         // 点击卡片默认带 elevation，会把白底叠成品牌色调；与 XML 白卡一致用 0
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
+        Column(modifier = Modifier.padding(WcmSpace.heroPad)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier.size(88.dp),
@@ -66,8 +65,9 @@ fun HomeHeroCard(state: HomeHeroUiState, onClick: () -> Unit) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = state.ringValue,
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.SemiBold,
+                            // 环形中心是「进度」，用 24sp 等宽数字；
+                            // 待签数是「待办」，用 20sp —— 两者不再同级。
+                            style = WcmType.metricLarge,
                             color = colorResource(R.color.ink),
                         )
                         Text(
@@ -86,8 +86,7 @@ fun HomeHeroCard(state: HomeHeroUiState, onClick: () -> Unit) {
                     )
                     Text(
                         text = state.pendingValue,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        style = WcmType.metric,
                         color = colorResource(R.color.ink),
                     )
                     Spacer(Modifier.height(12.dp))
@@ -97,7 +96,7 @@ fun HomeHeroCard(state: HomeHeroUiState, onClick: () -> Unit) {
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
             Text(
                 text = state.summary,
                 style = MaterialTheme.typography.bodySmall,
@@ -110,7 +109,7 @@ fun HomeHeroCard(state: HomeHeroUiState, onClick: () -> Unit) {
 @Composable
 private fun HeroPill(text: String, neutral: Boolean) {
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = WcmShape.pill,
         color = if (neutral) colorResource(R.color.surface_3) else Color.Transparent,
         border = if (neutral) null else BorderStroke(1.dp, colorResource(R.color.line_2)),
     ) {

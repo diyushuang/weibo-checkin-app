@@ -23,6 +23,8 @@
     <!-- 分隔线 -->
     <color name="line">#262B34</color>
     <color name="line_2">#333944</color>
+    <!-- v3.0：卡内分隔线，比 line 更暗，避免卡片里出现两级同样重的线 -->
+    <color name="line_soft">#1F242C</color>
 
     <!-- 品牌 -->
     <color name="brand">#FF5C7A</color>

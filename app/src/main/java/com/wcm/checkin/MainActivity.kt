@@ -30,6 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -658,6 +659,15 @@ private fun RowScope.NavItem(
     NavigationBarItem(
         selected = selected,
         onClick = onClick,
+        // 显式指定选中态：不依赖 M3 默认（默认 indicator 取 secondaryContainer，
+        // 主题把 secondaryContainer 映射成了 surface_2，深色下几乎看不出选中）
+        colors = NavigationBarItemDefaults.colors(
+            selectedIconColor = colorResource(R.color.brand),
+            selectedTextColor = colorResource(R.color.brand),
+            indicatorColor = colorResource(R.color.brand_soft),
+            unselectedIconColor = colorResource(R.color.ink_3),
+            unselectedTextColor = colorResource(R.color.ink_3),
+        ),
         icon = {
             if (badge != null) {
                 BadgedBox(

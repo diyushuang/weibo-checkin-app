@@ -33,6 +33,9 @@
     <!-- ===== 3. 分隔线 ===== -->
     <color name="line">#EAECF0</color>
     <color name="line_2">#DFE3E8</color>
+    <!-- v3.0：卡内分隔线。比 line 更轻，避免「一条卡里出现两级同样重的线」——
+         卡片外框用 line，卡片内部的 row 之间用 line_soft。 -->
+    <color name="line_soft">#F2F4F7</color>
 
     <!-- ===== 4. 品牌（微博玫红） ===== -->
     <color name="brand">#E0245E</color>

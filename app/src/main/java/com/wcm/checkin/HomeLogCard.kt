@@ -9,12 +9,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,15 +22,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /**
  * 首页运行日志卡：收起时是一行摘要，展开是深色等宽终端，自动贴底跟随。
@@ -44,7 +40,12 @@ data class LogCardUi(
     val summary: String = "",
 )
 
-/** 首页运行日志卡：收起时一行摘要，展开是固定高度终端窗口。 */
+/**
+ * 首页运行日志卡：收起时一行摘要，展开是固定高度终端窗口。
+ *
+ * v3.0：折叠箭头从文字字符「⌃ / ⌄」换成矢量图 —— 字符的基线不居中，
+ * 收起态和展开态会看到箭头上下跳 1–2dp。
+ */
 @Composable
 fun LogCard(
     state: LogCardUi,
@@ -53,47 +54,41 @@ fun LogCard(
     cdExpandedRes: Int = R.string.cd_log_expanded,
     cdCollapsedRes: Int = R.string.cd_log_collapsed,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = colorResource(R.color.surface)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, colorResource(R.color.line)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            val cd = stringResource(if (state.expanded) cdExpandedRes else cdCollapsedRes)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onToggle() }
-                    .semantics { contentDescription = cd },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(labelRes),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colorResource(R.color.ink),
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = if (state.expanded) "⌃" else "⌄",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = colorResource(R.color.ink_3),
-                )
-            }
-            if (!state.expanded) {
-                Text(
-                    text = state.summary.ifEmpty { stringResource(R.string.log_empty) },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colorResource(R.color.ink_3),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            } else {
-                Console(state.lines)
-            }
+    WcmCard {
+        val cd = stringResource(if (state.expanded) cdExpandedRes else cdCollapsedRes)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggle() }
+                .semantics { contentDescription = cd },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(labelRes),
+                style = MaterialTheme.typography.titleMedium,
+                color = colorResource(R.color.ink),
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                painter = painterResource(
+                    if (state.expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+                ),
+                contentDescription = null,
+                tint = colorResource(R.color.ink_3),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        if (!state.expanded) {
+            Text(
+                text = state.summary.ifEmpty { stringResource(R.string.log_empty) },
+                style = MaterialTheme.typography.bodySmall,
+                color = colorResource(R.color.ink_3),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        } else {
+            Console(state.lines)
         }
     }
 }
@@ -110,18 +105,13 @@ private fun Console(lines: List<String>) {
             listState.scrollToItem(lines.lastIndex)
         }
     }
-    val mono = TextStyle(
-        fontFamily = FontFamily.Monospace,
-        fontSize = 11.sp,
-        lineHeight = 18.7.sp,
-        color = colorResource(R.color.console_ink),
-    )
+    val mono = WcmType.mono.copy(color = colorResource(R.color.console_ink))
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp)
+            .padding(top = 10.dp)
             .height(200.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(WcmShape.inner)
             .background(colorResource(R.color.console_bg)),
     ) {
         if (lines.isEmpty()) {

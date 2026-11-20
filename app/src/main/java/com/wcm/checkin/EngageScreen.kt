@@ -36,6 +36,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -86,12 +88,24 @@ fun EngageScreen(
 
     var openRunId by remember { mutableStateOf("") }
 
+    val pagePad = dimensionResource(R.dimen.page_padding_horizontal)
+    // v3.0：这一页原来没有页面标题，直接进卡片；现在标题与副标题上提到顶栏，
+    // 卡片之间用统一的卡片间距，换组处补 8dp（12 + 8 = 20，等于 WcmSpace.section）。
+    WcmPage(
+        title = stringResource(R.string.engage_title),
+        subtitle = stringResource(R.string.engage_subtitle),
+    ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(
+                start = pagePad,
+                end = pagePad,
+                top = WcmSpace.pageTop,
+                bottom = WcmSpace.pageBottom,
+            ),
+        verticalArrangement = Arrangement.spacedBy(WcmSpace.cardGap),
     ) {
         // 1. 状态
         StatusCard(state, nowMs, onToggleEnable, onRunNow)
@@ -105,6 +119,7 @@ fun EngageScreen(
         // 4. 预览
         PreviewCard(state, onNextPreview, onOpenTexts)
 
+        Spacer(Modifier.height(WcmSpace.section - WcmSpace.cardGap))
         // 5. 任务配置
         TargetCard(state, onSelectAccount, onSelectTopic, onRefreshTopics)
         PostSettingsCard(state, onUpdate)
@@ -113,9 +128,11 @@ fun EngageScreen(
         // 6. 间隔设置（预设 + 动作之间 + 预算；逐项间隔在各自子页面里）
         PaceCard(state, onApplyPace, onAdjustGap, onUpdate)
 
+        Spacer(Modifier.height(WcmSpace.section - WcmSpace.cardGap))
         // 7. 子任务入口
         ActionEntryCard(state, onOpenTask, onRunOnly)
 
+        Spacer(Modifier.height(WcmSpace.section - WcmSpace.cardGap))
         // 8. 日志与记录
         TraceCard(state, nowMs)
         RunsCard(state, openRunId) { id -> openRunId = if (openRunId == id) "" else id }
@@ -128,16 +145,23 @@ fun EngageScreen(
             onClearAll = onClearAll,
         )
     }
+    }
 }
 
+/**
+ * 带标题的卡片。标题 15sp（`titleMedium`），与正文 14sp 只差一档 ——
+ * 卡片标题不需要更大：它靠位置（卡内第一行）与字重已经足够区分。
+ */
 @Composable
 internal fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            content()
-        }
+    WcmCard {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = colorResource(R.color.ink),
+        )
+        Spacer(Modifier.height(8.dp))
+        content()
     }
 }
 
@@ -145,28 +169,22 @@ internal fun SectionCard(title: String, content: @Composable ColumnScope.() -> U
 
 @Composable
 private fun StatusCard(state: EngageUiState, nowMs: Long, onToggle: () -> Unit, onRunNow: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.engage_title), style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        stringResource(R.string.engage_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Switch(checked = state.enabled, onCheckedChange = { onToggle() })
-            }
-            Spacer(Modifier.height(8.dp))
+    WcmCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 标题已上提到顶栏，这里换成「此刻在做什么」——比重复一遍标题有用
             Text(
                 text = when {
                     state.running -> stringResource(R.string.engage_status_running)
                     state.enabled -> stringResource(R.string.engage_status_on)
                     else -> stringResource(R.string.engage_status_off)
                 },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (state.running || state.enabled) colorResource(R.color.brand_strong)
+                else colorResource(R.color.ink_3),
+                modifier = Modifier.weight(1f),
             )
+            Switch(checked = state.enabled, onCheckedChange = { onToggle() })
+        }
 
             val progress = state.progress
             if (state.running && progress != null) {
@@ -218,7 +236,7 @@ private fun StatusCard(state: EngageUiState, nowMs: Long, onToggle: () -> Unit, 
                 Text(
                     text = "当前配置还不能执行：$invalid",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = colorResource(R.color.danger_text),
                 )
             }
             Text(
@@ -231,7 +249,6 @@ private fun StatusCard(state: EngageUiState, nowMs: Long, onToggle: () -> Unit, 
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
     }
 }
 
@@ -240,27 +257,33 @@ private fun StatusCard(state: EngageUiState, nowMs: Long, onToggle: () -> Unit, 
 @Composable
 private fun AlertCard(state: EngageUiState, onOpenPosts: () -> Unit) {
     if (!state.hasUncertain && !state.hasAwaiting) return
+    // 不确定态用 danger_soft + danger_text；待发态用 warn_soft。
+    // 原来取 errorContainer / secondaryContainer，那是 M3 默认色（不是品牌语义色），
+    // 与首页 pill 的红不是同一个红。
+    val bg = if (state.hasUncertain) colorResource(R.color.danger_soft)
+    else colorResource(R.color.warn_soft)
+    val fg = if (state.hasUncertain) colorResource(R.color.danger_text)
+    else colorResource(R.color.warn_text)
     Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (state.hasUncertain) {
-                MaterialTheme.colorScheme.errorContainer
-            } else {
-                MaterialTheme.colorScheme.secondaryContainer
-            },
-        ),
+        colors = CardDefaults.cardColors(containerColor = bg),
+        border = androidx.compose.foundation.BorderStroke(1.dp, fg.copy(alpha = 0.18f)),
+        shape = WcmShape.card,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(WcmSpace.cardPad)) {
             if (state.hasUncertain) {
                 Text(
                     text = stringResource(R.string.engage_uncertain_warn),
                     style = MaterialTheme.typography.bodyMedium,
+                    color = fg,
                 )
             }
             if (state.hasAwaiting) {
                 Text(
                     text = stringResource(R.string.engage_awaiting_warn, state.awaitingPosts.size),
                     style = MaterialTheme.typography.bodyMedium,
+                    color = fg,
                 )
             }
             TextButton(onClick = onOpenPosts) { Text(stringResource(R.string.engage_posts_open)) }
@@ -346,7 +369,7 @@ private fun PreviewCard(state: EngageUiState, onNext: () -> Unit, onOpenTexts: (
                     color = if (state.previewError.isEmpty()) {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     } else {
-                        MaterialTheme.colorScheme.error
+                        colorResource(R.color.danger_text)
                     },
                 )
                 Spacer(Modifier.weight(1f))
@@ -356,7 +379,7 @@ private fun PreviewCard(state: EngageUiState, onNext: () -> Unit, onOpenTexts: (
                 Text(
                     state.previewError,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = colorResource(R.color.danger_text),
                 )
             }
         }
@@ -382,7 +405,7 @@ private fun TargetCard(
             Text(
                 text = "还没有已登录的账号",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
+                color = colorResource(R.color.danger_text),
             )
         } else {
             state.accounts.forEach { acc ->
@@ -576,15 +599,18 @@ private fun PaceCard(
         EngagePacing.riskHint(config)?.let { hint ->
             Spacer(Modifier.height(6.dp))
             // amber 而不是红色：默认档（快速）本来就在这条线以下，红色会让人以为配置坏了
+            // linear 配色直接用 warn_soft：原来取 tertiaryContainer，而 tertiary 在
+            // WcmTheme 里没有映射，拿到的是 M3 默认的粉色，跟注释写的「amber」不符。
             Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                ),
+                colors = CardDefaults.cardColors(containerColor = colorResource(R.color.warn_soft)),
+                shape = WcmShape.inner,
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     hint,
                     style = MaterialTheme.typography.bodySmall,
+                    color = colorResource(R.color.warn_text),
                     modifier = Modifier.padding(10.dp),
                 )
             }
@@ -597,7 +623,7 @@ private fun PaceCard(
                     " 的间隔已超过单轮时间预算（${EngagePacing.formatDuration(config.maxRunDurationMs)}），" +
                     "这一轮很可能等不到它。把预算调大，或把间隔调短。",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                color = colorResource(R.color.danger_text),
             )
         }
 
@@ -769,8 +795,8 @@ private fun StepRow(step: EngageStep, nowMs: Long) {
     val color = when (step.state) {
         EngageStepState.OK -> MaterialTheme.colorScheme.primary
         EngageStepState.RUNNING -> MaterialTheme.colorScheme.primary
-        EngageStepState.WARN -> MaterialTheme.colorScheme.error
-        EngageStepState.FAILED -> MaterialTheme.colorScheme.error
+        EngageStepState.WARN -> colorResource(R.color.warn_text)
+        EngageStepState.FAILED -> colorResource(R.color.danger_text)
         EngageStepState.SKIPPED, EngageStepState.PENDING -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val symbol = stepSymbol(step)
@@ -861,8 +887,8 @@ private fun LogStream(logs: List<EngageLogEntry>) {
 @Composable
 internal fun EngageLogRow(entry: EngageLogEntry, showAction: Boolean = true) {
     val color = when (entry.level) {
-        EngageLogLevel.ERROR -> MaterialTheme.colorScheme.error
-        EngageLogLevel.WARN -> MaterialTheme.colorScheme.error
+        EngageLogLevel.ERROR -> colorResource(R.color.danger_text)
+        EngageLogLevel.WARN -> colorResource(R.color.danger_text)
         EngageLogLevel.OK -> MaterialTheme.colorScheme.primary
         EngageLogLevel.WAIT -> MaterialTheme.colorScheme.primary
         EngageLogLevel.STEP -> MaterialTheme.colorScheme.onSurface
@@ -941,7 +967,7 @@ private fun RunsCard(state: EngageUiState, openRunId: String, onToggle: (String)
                         Text(
                             run.stopReason,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
+                            color = colorResource(R.color.danger_text),
                         )
                     }
                     // 展开：先给步骤清单，再给最近若干条流水。
@@ -957,7 +983,7 @@ private fun RunsCard(state: EngageUiState, openRunId: String, onToggle: (String)
                                     color = if (step.state == EngageStepState.FAILED ||
                                         step.state == EngageStepState.WARN
                                     ) {
-                                        MaterialTheme.colorScheme.error
+                                        colorResource(R.color.danger_text)
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
                                     },
@@ -977,7 +1003,7 @@ private fun RunsCard(state: EngageUiState, openRunId: String, onToggle: (String)
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = FontFamily.Monospace,
                                     color = if (entry.level == EngageLogLevel.ERROR) {
-                                        MaterialTheme.colorScheme.error
+                                        colorResource(R.color.danger_text)
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
                                     },
@@ -1021,7 +1047,7 @@ private fun PostsCard(state: EngageUiState, onOpenPosts: () -> Unit) {
                         text = EngageSchedule.clockLabel(post.at) + "  " + postStateLabel(post.state),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (post.state == ActionState.UNCERTAIN) {
-                            MaterialTheme.colorScheme.error
+                            colorResource(R.color.danger_text)
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
@@ -1055,16 +1081,18 @@ private fun DangerCard(enabled: Boolean, onDisable: () -> Unit, onClearAll: () -
     // 清除是不可恢复的（配置 + 三套文案库 + 运行记录 + 台账全删），必须二次确认
     var confirming by remember { mutableStateOf(false) }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(stringResource(R.string.engage_danger_title), style = MaterialTheme.typography.titleMedium)
+    WcmCard {
+        Text(
+            text = stringResource(R.string.engage_danger_title),
+            style = MaterialTheme.typography.titleMedium,
+            color = colorResource(R.color.danger_text),
+        )
+        Spacer(Modifier.height(8.dp))
+        if (enabled) {
+            OutlinedButton(onClick = onDisable) { Text(stringResource(R.string.engage_disable)) }
             Spacer(Modifier.height(8.dp))
-            if (enabled) {
-                OutlinedButton(onClick = onDisable) { Text(stringResource(R.string.engage_disable)) }
-                Spacer(Modifier.height(8.dp))
-            }
-            OutlinedButton(onClick = { confirming = true }) { Text(stringResource(R.string.engage_clear_data)) }
         }
+        OutlinedButton(onClick = { confirming = true }) { Text(stringResource(R.string.engage_clear_data)) }
     }
 
     if (confirming) {

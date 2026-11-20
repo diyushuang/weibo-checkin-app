@@ -47,7 +47,7 @@ fun RemotePreviewScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 20.dp)
-                    .background(colorResource(R.color.preview_bar_scrim), RoundedCornerShape(999.dp))
+                    .background(colorResource(R.color.preview_bar_scrim), WcmShape.pill)
                     .padding(horizontal = 12.dp, vertical = 4.dp),
             )
         }

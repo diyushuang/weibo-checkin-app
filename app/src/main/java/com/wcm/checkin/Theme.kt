@@ -93,5 +93,13 @@ fun WcmTheme(
             outlineVariant = colorResource(R.color.line),
         )
     }
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(
+        colorScheme = scheme,
+        // v3.0：字号与圆角在这里一次接上（令牌定义在 WcmTokens.kt）。
+        // 之前只传了 colorScheme，全站跑的是 M3 默认刻度（标题 28sp），
+        // 每个 Text 都在用「默认值」而不是「产品刻度」。
+        typography = WcmTypography,
+        shapes = WcmShapes,
+        content = content,
+    )
 }
