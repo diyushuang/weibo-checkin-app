@@ -60,7 +60,12 @@ jobs:
 
       # detekt 静态检查门禁：只开 LongMethod/LargeClass/LongParameterList 三条规则，
       # 存量违规圈进 core/config/detekt/baseline.xml；baseline 外出现新违规直接拦。
+      # 注意：任何 gradle 任务的配置阶段都会评估 app 的签名口令校验（keystore 已由
+      # 上面的 Decode 步骤解出），所以这里必须传 WCM_KEYSTORE_PASSWORD，否则
+      # 「keystore 存在但无口令」的防静默错签检查会在配置阶段直接炸。
       - name: Detekt static check
+        env:
+          WCM_KEYSTORE_PASSWORD: ${{ secrets.WCM_KEYSTORE_PASSWORD }}
         run: |
           set +e
           sh gradlew detekt --no-daemon > detekt.log 2>&1
