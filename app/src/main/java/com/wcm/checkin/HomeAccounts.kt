@@ -111,6 +111,8 @@ private fun AccountRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // 环必须在 combinedClickable 之前：onFocusChanged 只能观察它之后的焦点目标
+            .wcmFocusRing(WcmRowRingShape)
             .combinedClickable(
                 onClick = { onRowClick(row.uid) },
                 onLongClick = { menuOpen = true },
@@ -152,7 +154,7 @@ private fun AccountRow(
         }
         Box {
             val moreDesc = stringResource(R.string.account_more)
-            IconButton(onClick = { menuOpen = true }) {
+            IconButton(onClick = { menuOpen = true }, modifier = Modifier.wcmFocusRing(WcmShape.button)) {
                 // v3.0：文字「⋮」换成矢量图 —— 字符字形由系统字体决定，大字号下会错位
                 Icon(
                     painter = painterResource(R.drawable.ic_more_vert),
@@ -192,7 +194,7 @@ private fun AccountRow(
             title = { Text(stringResource(R.string.home_delete_title, row.name)) },
             text = { Text(stringResource(R.string.home_delete_msg)) },
             confirmButton = {
-                TextButton(
+                WcmTextButton(
                     onClick = {
                         confirmDelete = false
                         onDelete(row.uid)
@@ -202,7 +204,7 @@ private fun AccountRow(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) {
+                WcmTextButton(onClick = { confirmDelete = false }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },

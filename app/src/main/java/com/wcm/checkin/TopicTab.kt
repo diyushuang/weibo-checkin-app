@@ -98,7 +98,7 @@ fun TopicTab(viewModel: TopicViewModel, onGoHome: () -> Unit) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { textDialog = null }) {
+                WcmTextButton(onClick = { textDialog = null }) {
                     Text(stringResource(android.R.string.ok))
                 }
             },

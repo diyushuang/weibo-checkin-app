@@ -268,7 +268,7 @@ private fun FilterRow(
             }
         }
         Box {
-            TextButton(onClick = { sortOpen = true }) {
+            WcmTextButton(onClick = { sortOpen = true }) {
                 Text(stringResource(R.string.gallery_sort_label), color = colorResource(R.color.ink_2))
             }
             DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
@@ -284,7 +284,7 @@ private fun FilterRow(
             }
         }
         Box {
-            TextButton(onClick = { groupOpen = true }) {
+            WcmTextButton(onClick = { groupOpen = true }) {
                 Text(stringResource(R.string.gallery_group_label), color = colorResource(R.color.ink_2))
             }
             DropdownMenu(expanded = groupOpen, onDismissRequest = { groupOpen = false }) {
@@ -322,7 +322,10 @@ private fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
         shape = WcmShape.pill,
         color = if (selected) colorResource(R.color.brand_soft) else Color.Transparent,
         border = if (selected) null else BorderStroke(1.dp, colorResource(R.color.line_2)),
-        modifier = Modifier.clip(WcmShape.pill).clickable(onClick = onClick),
+        modifier = Modifier
+            .wcmFocusRing(WcmShape.pill)
+            .clip(WcmShape.pill)
+            .clickable(onClick = onClick),
     ) {
         Text(
             text = text,
@@ -404,6 +407,8 @@ private fun Cell(
     Box(
         modifier = Modifier
             .aspectRatio(1f)
+            // 环在 clip 之前：clip 会建图层，环外扩 2dp 的部分否则会被整圈裁掉
+            .wcmFocusRing(WcmRowRingShape)
             .clip(WcmShape.chip)
             .background(colorResource(R.color.surface_2))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -500,7 +505,7 @@ private fun SelectBar(
             WcmButton(onClick = onDelete, enabled = state.selectedCount > 0) {
                 Text(stringResource(R.string.gallery_batch_delete))
             }
-            TextButton(onClick = onExit) {
+            WcmTextButton(onClick = onExit) {
                 Text(stringResource(R.string.gallery_select_cancel))
             }
         }

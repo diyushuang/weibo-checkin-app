@@ -109,7 +109,7 @@ fun ReloginDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = colorResource(R.color.ink_3),
                 )
-                TextButton(
+                WcmTextButton(
                     onClick = {
                         onDelete()
                         onDismiss()
@@ -122,14 +122,14 @@ fun ReloginDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            WcmTextButton(onClick = {
                 if (onSave(user.trim(), password, alc)) onDismiss()
             }) {
                 Text(stringResource(R.string.relogin_action_save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
+            WcmTextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
         },
     )
 }

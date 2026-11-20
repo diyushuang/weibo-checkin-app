@@ -148,10 +148,10 @@ private fun ActionConfigCard(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = { onSetCount(count - 1) }, enabled = count > 0) { Text("−") }
+            WcmTextButton(onClick = { onSetCount(count - 1) }, enabled = count > 0) { Text("−") }
             Text("$count", style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.width(4.dp))
-            TextButton(onClick = { onSetCount(count + 1) }, enabled = count < config.maxCountOf(action)) { Text("+") }
+            WcmTextButton(onClick = { onSetCount(count + 1) }, enabled = count < config.maxCountOf(action)) { Text("+") }
             Text(
                 stringResource(R.string.engage_count_unit),
                 style = MaterialTheme.typography.bodySmall,
@@ -257,11 +257,11 @@ private fun PostActionConfig(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.weight(1f),
         )
-        TextButton(onClick = {
+        WcmTextButton(onClick = {
             onUpdate { it.copy(maxTextLen = (it.maxTextLen - 100).coerceAtLeast(100)) }
         }) { Text("−") }
         Text("${config.maxTextLen}", style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = {
+        WcmTextButton(onClick = {
             onUpdate { it.copy(maxTextLen = (it.maxTextLen + 100).coerceAtMost(2000)) }
         }) { Text("+") }
     }
@@ -305,7 +305,7 @@ private fun TextLibraryConfig(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = { onOpenTexts(kind) }) {
+        WcmTextButton(onClick = { onOpenTexts(kind) }) {
             Text(stringResource(R.string.engage_texts_manage))
         }
     }
@@ -517,7 +517,7 @@ private fun ActionLogCard(state: EngageUiState, action: EngageAction) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = { showGlobal = !showGlobal }) {
+            WcmTextButton(onClick = { showGlobal = !showGlobal }) {
                 Text(
                     if (showGlobal) {
                         stringResource(R.string.engage_task_logs_hide_global)

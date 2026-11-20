@@ -202,7 +202,7 @@ fun HomeTab(
             title = { Text(title) },
             text = { Text(message) },
             confirmButton = {
-                TextButton(onClick = { messageDialog = null }) {
+                WcmTextButton(onClick = { messageDialog = null }) {
                     Text(stringResource(android.R.string.ok))
                 }
             },

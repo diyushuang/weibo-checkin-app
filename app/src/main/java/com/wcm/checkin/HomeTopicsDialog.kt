@@ -70,7 +70,7 @@ fun TopicsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = colorResource(R.color.ink_3),
                 )
-                TextButton(onClick = onViewAll) {
+                WcmTextButton(onClick = onViewAll) {
                     Text(stringResource(R.string.topic_view_all))
                 }
                 if (state.topics.isEmpty()) {
@@ -117,9 +117,9 @@ fun TopicsDialog(
         },
         confirmButton = {
             if (pending.isEmpty()) {
-                TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.ok)) }
+                WcmTextButton(onClick = onDismiss) { Text(stringResource(android.R.string.ok)) }
             } else {
-                TextButton(onClick = {
+                WcmTextButton(onClick = {
                     onResign(pending.filter { it.key in picked }.map { it.key })
                 }) {
                     Text(stringResource(R.string.home_topic_resign))
@@ -127,7 +127,7 @@ fun TopicsDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
+            WcmTextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
         },
     )
 }

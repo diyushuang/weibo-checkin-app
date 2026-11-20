@@ -214,7 +214,7 @@ private fun FilterChip(text: String, selected: Boolean, onClick: () -> Unit) {
         shape = WcmShape.pill,
         color = if (selected) colorResource(R.color.brand_soft) else Color.Transparent,
         border = if (selected) null else BorderStroke(1.dp, colorResource(R.color.line_2)),
-        modifier = Modifier.clickable { onClick() },
+        modifier = Modifier.wcmFocusRing(WcmShape.pill).clickable { onClick() },
     ) {
         Text(
             text = text,
@@ -278,6 +278,7 @@ private fun PostCard(
         androidx.compose.material3.Card(
             modifier = Modifier
                 .fillMaxWidth()
+                .wcmFocusRing(WcmShape.card)
                 .combinedClickable(onClick = { onClick(post.bid) }, onLongClick = { onLongClick(post.bid) }),
             shape = WcmShape.card,
             colors = androidx.compose.material3.CardDefaults.cardColors(
@@ -376,6 +377,7 @@ private fun ThumbTile(thumb: BrowseThumbUi, index: Int, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(56.dp)
+            .wcmFocusRing(WcmShape.chip)
             .clip(WcmShape.chip)
             .background(colorResource(R.color.surface_2))
             .clickable(onClick = onClick)

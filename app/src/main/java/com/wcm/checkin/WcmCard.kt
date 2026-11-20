@@ -51,7 +51,8 @@ fun WcmCard(
     if (onClick != null) {
         Card(
             onClick = onClick,
-            modifier = modifier.fillMaxWidth(),
+            // 聚焦环画在 Card 外层：Card 自己按 shape 裁切，画在内侧会被裁掉
+            modifier = modifier.fillMaxWidth().wcmFocusRing(WcmShape.card),
             shape = WcmShape.card,
             colors = colors,
             border = border,

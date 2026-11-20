@@ -5,6 +5,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
@@ -34,7 +35,8 @@ fun WcmButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier,
+        // 聚焦环挂在 Button 外层：Card/Button 自己会裁切内容，画在里面会被裁掉
+        modifier = modifier.wcmFocusRing(WcmShape.button),
         enabled = enabled,
         shape = WcmShape.button,
         colors = colors,
@@ -52,7 +54,32 @@ fun WcmOutlinedButton(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.wcmFocusRing(WcmShape.button),
+        enabled = enabled,
+        shape = WcmShape.button,
+        colors = colors,
+        content = content,
+    )
+}
+
+/**
+ * 文字按钮。
+ *
+ * 用它的理由和上面两个一样：M3 的 `TextButton` 也不读 `MaterialTheme.shapes`，
+ * 圆角固定 20dp。全站 40+ 处文字按钮（任务页的「详情」「单独执行」「补齐」…）
+ * 在桌面模式下同样需要一圈可见的聚焦指示，所以一并包起来。
+ */
+@Composable
+fun WcmTextButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    colors: ButtonColors = ButtonDefaults.textButtonColors(),
+    content: @Composable RowScope.() -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = modifier.wcmFocusRing(WcmShape.button),
         enabled = enabled,
         shape = WcmShape.button,
         colors = colors,

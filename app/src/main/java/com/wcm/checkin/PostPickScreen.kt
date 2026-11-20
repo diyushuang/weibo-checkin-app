@@ -79,7 +79,7 @@ fun PostPickScreen(
             title = stringResource(R.string.pick_title),
             onBack = onBack,
             actions = {
-                TextButton(onClick = onToggleAll, enabled = state.items.isNotEmpty()) {
+                WcmTextButton(onClick = onToggleAll, enabled = state.items.isNotEmpty()) {
                     Text(
                         stringResource(
                             if (state.allSelected) R.string.pick_deselect_all else R.string.pick_all,
@@ -165,6 +165,7 @@ private fun PickCell(item: PickItemUi, index: Int, onClick: () -> Unit, onLongCl
     Box(
         modifier = Modifier
             .aspectRatio(1f)
+            .wcmFocusRing(WcmRowRingShape)
             .clip(WcmShape.chip)
             .background(colorResource(R.color.surface_2))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -292,13 +293,13 @@ fun FullPickPreviewDialog(
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.Center,
             ) {
-                TextButton(onClick = onOnlyThis) {
+                WcmTextButton(onClick = onOnlyThis) {
                     Text(
                         text = stringResource(R.string.pick_only_this),
                         color = Color.White,
                     )
                 }
-                TextButton(onClick = onDismiss) {
+                WcmTextButton(onClick = onDismiss) {
                     Text(
                         text = stringResource(R.string.pick_close),
                         color = Color(0xB3FFFFFF),

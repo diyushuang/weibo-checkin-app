@@ -125,7 +125,7 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
                     )
                     Row {
                         Spacer(Modifier.weight(1f))
-                        TextButton(
+                        WcmTextButton(
                             onClick = {
                                 viewModel.addText(kind, newBody)
                                 newBody = ""
@@ -180,12 +180,12 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = {
+                        WcmTextButton(onClick = {
                             val text = clipboard.getText()?.text.orEmpty()
                             if (text.isNotEmpty()) importRaw = text
                         }) { Text(stringResource(R.string.engage_texts_paste)) }
                         Spacer(Modifier.weight(1f))
-                        TextButton(
+                        WcmTextButton(
                             onClick = {
                                 lastResult = viewModel.importTexts(kind, importRaw, mode, separator)
                                 importRaw = ""
@@ -213,7 +213,7 @@ fun EngageTextScreen(viewModel: EngageViewModel, kind: TextKind, onBack: () -> U
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(6.dp))
-                        TextButton(onClick = {
+                        WcmTextButton(onClick = {
                             lastResult = viewModel.importFromPostLibrary(kind)
                             Toast.makeText(context, lastResult, Toast.LENGTH_SHORT).show()
                         }) { Text(stringResource(R.string.engage_texts_fill_do)) }

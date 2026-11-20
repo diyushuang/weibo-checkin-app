@@ -710,7 +710,7 @@ MaterialTheme(
 
 | 项 | 原因 |
 |---|---|
-| 桌面模式聚焦环（原 P2-21） | 需要给每个可点组件挂 `interactionSource` + `focusable`，改动面比其余 P2 项大一个量级，且当前无桌面设备可验，留待单独一轮 |
+| ~~桌面模式聚焦环（原 P2-21）~~ | **已完成**，见 §11.10 |
 | 真机像素级验收（360×640 / 412×915 / 平板 / 深色） | 本机无设备与模拟器；当前验证为「资源编译 + Kotlin 编译 + 单元测试 + lint」 |
 | `type.xml` / `dimens.xml` 清理 | 仍被登录 WebView（XML 页面）与 `shape.xml` 引用，删了会连带登录页失效；待登录页也迁到 Compose 时一并处理 |
 
@@ -780,6 +780,35 @@ Android 会自动回落到 `values/`，不是缺色。
 
 另修：`WcmMetricStrip` 的数字加 `maxLines = 1` —— 三列各占 1/3，
 四位数（如关注 1024 个超话）在 360dp 上会折行，把整条撑高两行。
+
+### 11.10 键盘聚焦环（桌面模式）
+
+新增 `WcmFocus.kt`：`Modifier.wcmFocusRing(shape)`。桌面模式（DeX / 平板接键盘 / 电视盒子）下
+用 Tab 与方向键走界面时，焦点在哪一屏都看得见 —— 之前完全没有指示。
+
+**画法**：内容画完后补 **2dp 品牌色描边**，轮廓**外扩 2dp**（`translate(-gap,-gap)` + 放大后的
+outline）。不用 padding 预留，否则聚焦瞬间布局会跳 2dp。
+
+**三条落地时踩到的规则**（顺序错了环会"消失"，不报错）：
+
+1. **必须挂在 `clickable` / `toggleable` / `combinedClickable` 之前**。
+   `onFocusChanged` 只能观察修饰符链里**它之后**的焦点目标；写在后面等于永远收不到事件。
+   而 `Card(onClick=)` / `Button` / `IconButton` 的 clickable 在组件内部追加在传入 modifier 之后，
+   所以这三类直接把环放进 `modifier` 参数就是对的。
+2. **必须挂在 `clip()` / `background(shape)` 之前**。`clip` 会建图层，在其后绘制的外扩 2dp
+   描边会被整圈裁掉 —— 表现为"聚焦了但看不见环"，最难查的一种。
+3. **形状要跟组件一致**：卡片 16 / 行内控件 10（`WcmRowRingShape`）/ 按钮 12 / 胶囊 999。
+   用 `shape.createOutline()` 而不是 `drawRoundRect`，否则胶囊上会画成"方角套圆角"。
+
+**为什么用 Path 描边**：`Outline` 没有公开的直接绘制 API（`drawOutline` 在 compose-ui 1.6
+不对 DrawScope 公开），转成 `Path().addOutline()` 再 `drawPath(style = Stroke)` 才稳。
+
+**覆盖范围**：`WcmCard(onClick)`、`WcmButton` / `WcmOutlinedButton` / `WcmTextButton`
+（新增，40+ 处文字按钮复用）、顶栏两个图标钮、行尾 ⋮、账号行、抓取目标行、开关行、
+筛选 chip、图库网格格子、帖子精挑格子、浏览页帖子卡与小图、底部导航 5 个 Tab。
+
+**已知限制**：只在 `isFocused` 时画，触摸不给焦点（Android touch mode 会清焦点），
+所以手指操作时看不到环 —— 这正是需要的语义。未在真机/桌面模式验证过实际观感。
 
 ### 11.9 已知遗留
 

@@ -140,7 +140,7 @@ fun WcmTopBarAction(
     description: String?,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, modifier = Modifier.wcmFocusRing(WcmShape.button)) {
         Icon(
             painter = painterResource(icon),
             contentDescription = description,
@@ -163,7 +163,7 @@ fun WcmTopBarAccentAction(
     description: String?,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, modifier = Modifier.wcmFocusRing(WcmShape.button)) {
         Icon(
             painter = painterResource(icon),
             contentDescription = description,

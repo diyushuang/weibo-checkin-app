@@ -166,12 +166,12 @@ fun EngagePostLogScreen(viewModel: EngageViewModel, onBack: () -> Unit) {
 
                         Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = {
+                            WcmTextButton(onClick = {
                                 clipboard.setText(AnnotatedString(post.body))
                             }) { Text(stringResource(R.string.engage_posts_copy)) }
 
                             if (post.remoteId.isNotEmpty()) {
-                                TextButton(onClick = {
+                                WcmTextButton(onClick = {
                                     // 详情页用 m 站，域名仍在微博白名单内
                                     val url = "https://m.weibo.cn/detail/${post.remoteId}"
                                     runCatching {

@@ -196,6 +196,7 @@ private fun DirCard(state: GalleryUiState, onPickDir: () -> Unit) {
                         color = colorResource(R.color.warn_soft),
                         modifier = Modifier
                             .padding(top = 5.dp)
+                            .wcmFocusRing(WcmShape.pill)
                             .clickable { onPickDir() },
                     ) {
                         Text(
@@ -281,6 +282,7 @@ private fun TargetRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .wcmFocusRing(WcmRowRingShape)
             .clickable { menu = true }
             .padding(vertical = WcmSpace.rowV),
         verticalAlignment = Alignment.CenterVertically,
@@ -305,7 +307,7 @@ private fun TargetRow(
             )
         }
         Box {
-            IconButton(onClick = { menu = true }) {
+            IconButton(onClick = { menu = true }, modifier = Modifier.wcmFocusRing(WcmShape.button)) {
                 Icon(
                     painter = painterResource(R.drawable.ic_more_vert),
                     contentDescription = stringResource(R.string.cd_more),
@@ -412,7 +414,7 @@ private fun RunCard(
                     color = colorResource(R.color.ink_3),
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onRetryFailed) {
+                WcmTextButton(onClick = onRetryFailed) {
                     Text(stringResource(R.string.crawl_retry_action))
                 }
             }
@@ -450,7 +452,7 @@ private fun RunCard(
         WcmOutlinedButton(onClick = onBrowse, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.browse_entry))
         }
-        TextButton(
+        WcmTextButton(
             onClick = onSinglePost,
             enabled = !state.busy,
             modifier = Modifier.fillMaxWidth(),
@@ -470,6 +472,7 @@ private fun SwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .wcmFocusRing(WcmRowRingShape)
             .clickable(enabled = enabled) { onToggle(!checked) }
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

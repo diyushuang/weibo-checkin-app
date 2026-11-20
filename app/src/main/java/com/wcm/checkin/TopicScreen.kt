@@ -246,7 +246,7 @@ private fun FilterRow(
             }
         }
         Box {
-            TextButton(onClick = { sortOpen = true }) {
+            WcmTextButton(onClick = { sortOpen = true }) {
                 Text(stringResource(R.string.topic_sort_label), color = colorResource(R.color.ink_2))
             }
             DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
@@ -276,7 +276,7 @@ private fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
         shape = WcmShape.button,
         color = if (selected) colorResource(R.color.brand_soft) else Color.Transparent,
         border = if (selected) null else BorderStroke(1.dp, colorResource(R.color.line_2)),
-        modifier = Modifier.clickable { onClick() },
+        modifier = Modifier.wcmFocusRing(WcmShape.button).clickable { onClick() },
     ) {
         Text(
             text = text,
@@ -326,7 +326,7 @@ private fun TopicRowCard(
             StatePill(row.done)
             Box {
                 val moreDesc = stringResource(R.string.cd_topic_more)
-                IconButton(onClick = { menu = true }) {
+                IconButton(onClick = { menu = true }, modifier = Modifier.wcmFocusRing(WcmShape.button)) {
                     Icon(
                         painter = painterResource(R.drawable.ic_more_vert),
                         contentDescription = moreDesc,

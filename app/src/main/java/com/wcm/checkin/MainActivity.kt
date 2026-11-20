@@ -444,7 +444,7 @@ private fun AppShell(
                             },
                             text = { Text(stringResource(R.string.gallery_batch_delete_msg)) },
                             confirmButton = {
-                                TextButton(
+                                WcmTextButton(
                                     onClick = {
                                         confirmDelete = false
                                         vm.batchDelete()
@@ -452,7 +452,7 @@ private fun AppShell(
                                 ) { Text(stringResource(R.string.gallery_batch_delete)) }
                             },
                             dismissButton = {
-                                TextButton(onClick = { confirmDelete = false }) {
+                                WcmTextButton(onClick = { confirmDelete = false }) {
                                     Text(stringResource(android.R.string.cancel))
                                 }
                             },
@@ -512,7 +512,7 @@ private fun AppShell(
                                 )
                             },
                             confirmButton = {
-                                TextButton(
+                                WcmTextButton(
                                     onClick = {
                                         deleteIndex = null
                                         vm.delete(at)
@@ -520,7 +520,7 @@ private fun AppShell(
                                 ) { Text(stringResource(R.string.preview_delete)) }
                             },
                             dismissButton = {
-                                TextButton(onClick = { deleteIndex = null }) {
+                                WcmTextButton(onClick = { deleteIndex = null }) {
                                     Text(stringResource(android.R.string.cancel))
                                 }
                             },
@@ -659,6 +659,7 @@ private fun RowScope.NavItem(
     NavigationBarItem(
         selected = selected,
         onClick = onClick,
+        modifier = Modifier.wcmFocusRing(WcmShape.button),
         // 显式指定选中态：不依赖 M3 默认（默认 indicator 取 secondaryContainer，
         // 主题把 secondaryContainer 映射成了 surface_2，深色下几乎看不出选中）
         colors = NavigationBarItemDefaults.colors(

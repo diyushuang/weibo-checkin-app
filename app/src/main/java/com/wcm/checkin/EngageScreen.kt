@@ -308,7 +308,7 @@ private fun AlertCard(state: EngageUiState, onOpenPosts: () -> Unit) {
                     color = fg,
                 )
             }
-            TextButton(onClick = onOpenPosts) { Text(stringResource(R.string.engage_posts_open)) }
+            WcmTextButton(onClick = onOpenPosts) { Text(stringResource(R.string.engage_posts_open)) }
         }
     }
 }
@@ -357,7 +357,7 @@ private fun TextLibCard(state: EngageUiState, onOpenTexts: (TextKind) -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                TextButton(onClick = { onOpenTexts(kind) }) {
+                WcmTextButton(onClick = { onOpenTexts(kind) }) {
                     Text(stringResource(R.string.engage_texts_manage))
                 }
             }
@@ -383,7 +383,7 @@ private fun PreviewCard(state: EngageUiState, onNext: () -> Unit, onOpenTexts: (
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            TextButton(onClick = { onOpenTexts(TextKind.POST) }) {
+            WcmTextButton(onClick = { onOpenTexts(TextKind.POST) }) {
                 Text(stringResource(R.string.engage_texts_manage))
             }
         } else {
@@ -400,7 +400,7 @@ private fun PreviewCard(state: EngageUiState, onNext: () -> Unit, onOpenTexts: (
                     },
                 )
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = onNext) { Text(stringResource(R.string.engage_preview_next)) }
+                WcmTextButton(onClick = onNext) { Text(stringResource(R.string.engage_preview_next)) }
             }
             if (state.previewError.isNotEmpty()) {
                 Text(
@@ -437,7 +437,7 @@ private fun TargetCard(
         } else {
             state.accounts.forEach { acc ->
                 val selected = acc.uid == state.config.accountUid
-                TextButton(
+                WcmTextButton(
                     onClick = { onSelectAccount(acc.uid) },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -453,7 +453,7 @@ private fun TargetCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.engage_topic_label), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onRefreshTopics) { Text(stringResource(R.string.engage_refresh_topics)) }
+            WcmTextButton(onClick = onRefreshTopics) { Text(stringResource(R.string.engage_refresh_topics)) }
         }
         if (state.topicsLoading) {
             Text(
@@ -470,7 +470,7 @@ private fun TargetCard(
         }
         state.topics.forEach { topic ->
             val selected = topic.id == state.config.topicId
-            TextButton(
+            WcmTextButton(
                 onClick = { onSelectTopic(topic) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -515,11 +515,11 @@ private fun PostSettingsCard(state: EngageUiState, onUpdate: ((EngageConfig) -> 
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = {
+            WcmTextButton(onClick = {
                 onUpdate { it.copy(maxTextLen = (it.maxTextLen - 100).coerceAtLeast(100)) }
             }) { Text("−") }
             Text("${state.config.maxTextLen}", style = MaterialTheme.typography.bodyMedium)
-            TextButton(onClick = {
+            WcmTextButton(onClick = {
                 onUpdate { it.copy(maxTextLen = (it.maxTextLen + 100).coerceAtMost(2000)) }
             }) { Text("+") }
         }
@@ -551,7 +551,7 @@ private fun ScheduleCard(state: EngageUiState, onUpdate: ((EngageConfig) -> Enga
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.engage_time_quiet), modifier = Modifier.weight(1f))
-            TextButton(onClick = {
+            WcmTextButton(onClick = {
                 onUpdate { it.copy(quietEndHour = (it.quietEndHour - 1).coerceAtLeast(it.quietStartHour + 1)) }
             }) { Text("−") }
             Text(
@@ -562,7 +562,7 @@ private fun ScheduleCard(state: EngageUiState, onUpdate: ((EngageConfig) -> Enga
                 ),
                 style = MaterialTheme.typography.bodySmall,
             )
-            TextButton(onClick = {
+            WcmTextButton(onClick = {
                 onUpdate { it.copy(quietEndHour = (it.quietEndHour + 1).coerceAtMost(12)) }
             }) { Text("+") }
         }
@@ -693,11 +693,11 @@ private fun BudgetRow(budgetMs: Long, onSet: (Long) -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(88.dp),
         )
-        TextButton(
+        WcmTextButton(
             onClick = { onSet((minutes - 1).coerceAtLeast(1) * 60_000L) },
             enabled = minutes > 1,
         ) { Text("−") }
-        TextButton(
+        WcmTextButton(
             onClick = { onSet((minutes + 1).coerceAtMost(20) * 60_000L) },
             enabled = minutes < 20,
         ) { Text("+") }
@@ -716,8 +716,8 @@ internal fun GapRow(label: String, range: LongRange, onShift: (Long) -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(88.dp),
         )
-        TextButton(onClick = { onShift(-step) }, enabled = range.first > 0L) { Text("−") }
-        TextButton(onClick = { onShift(step) }, enabled = range.last < EngagePacing.MAX_GAP_MS) { Text("+") }
+        WcmTextButton(onClick = { onShift(-step) }, enabled = range.first > 0L) { Text("−") }
+        WcmTextButton(onClick = { onShift(step) }, enabled = range.last < EngagePacing.MAX_GAP_MS) { Text("+") }
     }
 }
 
@@ -764,10 +764,10 @@ private fun ActionEntryCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                TextButton(onClick = { onRunOnly(action) }, enabled = canRun) {
+                WcmTextButton(onClick = { onRunOnly(action) }, enabled = canRun) {
                     Text(stringResource(R.string.engage_action_run_only))
                 }
-                TextButton(onClick = { onOpenTask(action) }) {
+                WcmTextButton(onClick = { onOpenTask(action) }) {
                     Text(stringResource(R.string.engage_task_detail))
                 }
             }
@@ -1005,7 +1005,7 @@ private fun RunsCard(state: EngageUiState, openRunId: String, onToggle: (String)
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        TextButton(onClick = { onToggle(run.runId) }) {
+                        WcmTextButton(onClick = { onToggle(run.runId) }) {
                             Text(
                                 stringResource(
                                     if (expanded) R.string.common_collapse
@@ -1120,7 +1120,7 @@ private fun PostsCard(state: EngageUiState, onOpenPosts: () -> Unit) {
                 }
             }
         }
-        TextButton(onClick = onOpenPosts) { Text(stringResource(R.string.engage_posts_open)) }
+        WcmTextButton(onClick = onOpenPosts) { Text(stringResource(R.string.engage_posts_open)) }
     }
 }
 
@@ -1159,13 +1159,13 @@ private fun DangerCard(enabled: Boolean, onDisable: () -> Unit, onClearAll: () -
             title = { Text(stringResource(R.string.engage_clear_data)) },
             text = { Text(stringResource(R.string.engage_clear_confirm)) },
             confirmButton = {
-                TextButton(onClick = {
+                WcmTextButton(onClick = {
                     confirming = false
                     onClearAll()
                 }) { Text(stringResource(android.R.string.ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirming = false }) {
+                WcmTextButton(onClick = { confirming = false }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },
@@ -1190,10 +1190,10 @@ fun EngageConsentDialog(onAccept: () -> Unit, onDismiss: () -> Unit) {
         title = { Text(stringResource(R.string.engage_consent_title)) },
         text = { Text(stringResource(R.string.engage_consent_body)) },
         confirmButton = {
-            TextButton(onClick = onAccept) { Text(stringResource(R.string.engage_consent_accept)) }
+            WcmTextButton(onClick = onAccept) { Text(stringResource(R.string.engage_consent_accept)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.engage_consent_decline)) }
+            WcmTextButton(onClick = onDismiss) { Text(stringResource(R.string.engage_consent_decline)) }
         },
     )
 }

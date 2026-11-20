@@ -119,7 +119,7 @@ fun GalleryTab(
                 )
             },
             confirmButton = {
-                TextButton(
+                WcmTextButton(
                     onClick = {
                         addOpen = false
                         viewModel.addTarget(addInput)
@@ -127,7 +127,7 @@ fun GalleryTab(
                 ) { Text(stringResource(android.R.string.ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { addOpen = false }) {
+                WcmTextButton(onClick = { addOpen = false }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },
@@ -155,7 +155,7 @@ fun GalleryTab(
                 }
             },
             confirmButton = {
-                TextButton(
+                WcmTextButton(
                     onClick = {
                         singleOpen = false
                         viewModel.startSingleInput(singleInput)
@@ -163,7 +163,7 @@ fun GalleryTab(
                 ) { Text(stringResource(android.R.string.ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { singleOpen = false }) {
+                WcmTextButton(onClick = { singleOpen = false }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },
@@ -183,7 +183,7 @@ fun GalleryTab(
             },
             text = { Text(stringResource(R.string.crawl_full_confirm_msg)) },
             confirmButton = {
-                TextButton(
+                WcmTextButton(
                     onClick = {
                         fullUids = null
                         viewModel.startCrawl(uids, full = true)
@@ -191,7 +191,7 @@ fun GalleryTab(
                 ) { Text(stringResource(R.string.crawl_full_confirm_ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { fullUids = null }) {
+                WcmTextButton(onClick = { fullUids = null }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },
@@ -207,7 +207,7 @@ fun GalleryTab(
             },
             text = { Text(stringResource(R.string.crawl_remove_msg)) },
             confirmButton = {
-                TextButton(
+                WcmTextButton(
                     onClick = {
                         deleteUid = null
                         viewModel.removeTarget(uid)
@@ -215,7 +215,7 @@ fun GalleryTab(
                 ) { Text(stringResource(android.R.string.ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteUid = null }) {
+                WcmTextButton(onClick = { deleteUid = null }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },
@@ -238,7 +238,7 @@ fun GalleryTab(
                 }
             },
             confirmButton = {
-                TextButton(
+                WcmTextButton(
                     onClick = {
                         retryItems = null
                         viewModel.runRetryOnly()
@@ -246,7 +246,7 @@ fun GalleryTab(
                 ) { Text(stringResource(R.string.crawl_retry_action)) }
             },
             dismissButton = {
-                TextButton(onClick = { retryItems = null }) {
+                WcmTextButton(onClick = { retryItems = null }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },
@@ -275,7 +275,7 @@ fun GalleryTab(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { postPicker = null }) {
+                WcmTextButton(onClick = { postPicker = null }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },

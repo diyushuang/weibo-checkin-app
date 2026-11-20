@@ -180,6 +180,7 @@ private fun SwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .wcmFocusRing(WcmRowRingShape)
             .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
