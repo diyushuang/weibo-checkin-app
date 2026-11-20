@@ -577,7 +577,13 @@ private fun AppShell(
         }
         if (showBottomBar && !imeVisible) {
             HorizontalDivider(thickness = 1.dp, color = colorResource(R.color.line))
-            NavigationBar(containerColor = colorResource(R.color.surface), tonalElevation = 0.dp) {
+            // 5 个 Tab 收成一个 Tab 停靠点：否则从内容区穿到底栏要按 5 次，
+            // 方向键在组内走即可（这是桌面模式下底栏的常规行为）
+            NavigationBar(
+                containerColor = colorResource(R.color.surface),
+                tonalElevation = 0.dp,
+                modifier = Modifier.wcmFocusGroup(),
+            ) {
                 NavItem(
                     selected = route == ROUTE_HOME,
                     icon = R.drawable.ic_nav_home,

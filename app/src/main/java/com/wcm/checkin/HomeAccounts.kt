@@ -30,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
@@ -108,11 +110,14 @@ private fun AccountRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    // 「行 → ⋮」的 Tab 顺序写死，不随行内布局调整而变
+    val moreFocus = remember { FocusRequester() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             // 环必须在 combinedClickable 之前：onFocusChanged 只能观察它之后的焦点目标
             .wcmFocusRing(WcmRowRingShape)
+            .wcmFocusNextTo(moreFocus)
             .combinedClickable(
                 onClick = { onRowClick(row.uid) },
                 onLongClick = { menuOpen = true },
@@ -154,7 +159,10 @@ private fun AccountRow(
         }
         Box {
             val moreDesc = stringResource(R.string.account_more)
-            IconButton(onClick = { menuOpen = true }, modifier = Modifier.wcmFocusRing(WcmShape.button)) {
+            IconButton(
+                onClick = { menuOpen = true },
+                modifier = Modifier.wcmFocusRing(WcmShape.button).focusRequester(moreFocus),
+            ) {
                 // v3.0：文字「⋮」换成矢量图 —— 字符字形由系统字体决定，大字号下会错位
                 Icon(
                     painter = painterResource(R.drawable.ic_more_vert),

@@ -35,6 +35,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
@@ -107,7 +109,9 @@ fun TopicScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = WcmSpace.cardGap)
-                            .horizontalScroll(rememberScrollState()),
+                            .horizontalScroll(rememberScrollState())
+                            // 账号是同一组「选一个」的备选项：Tab 停一次，方向键在组内走
+                            .wcmFocusGroup(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         state.pills.forEach { pill ->
@@ -238,7 +242,8 @@ private fun FilterRow(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .horizontalScroll(rememberScrollState()),
+                .horizontalScroll(rememberScrollState())
+                .wcmFocusGroup(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             state.filters.forEach { chip ->
@@ -298,6 +303,8 @@ private fun TopicRowCard(
     onJson: (TopicRowUi) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
+    // 卡片可点、卡内还有 ⋮：把「卡 → ⋮」的 Tab 顺序写死
+    val moreFocus = remember { FocusRequester() }
     // 整张卡是可点的（点一下展开/收起详情），展开态必须能被 TalkBack 播报出来，
     // 否则读屏用户点完之后听不到任何变化。
     val expandState = stringResource(
@@ -306,7 +313,9 @@ private fun TopicRowCard(
     WcmCard(
         onClick = { onClick(row) },
         padding = 14.dp,
-        modifier = Modifier.semantics { stateDescription = expandState },
+        modifier = Modifier
+            .wcmFocusNextTo(moreFocus)
+            .semantics { stateDescription = expandState },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (row.levelTier > 0) {
@@ -326,7 +335,10 @@ private fun TopicRowCard(
             StatePill(row.done)
             Box {
                 val moreDesc = stringResource(R.string.cd_topic_more)
-                IconButton(onClick = { menu = true }, modifier = Modifier.wcmFocusRing(WcmShape.button)) {
+                IconButton(
+                    onClick = { menu = true },
+                    modifier = Modifier.wcmFocusRing(WcmShape.button).focusRequester(moreFocus),
+                ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_more_vert),
                         contentDescription = moreDesc,

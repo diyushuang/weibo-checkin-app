@@ -30,6 +30,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
@@ -279,10 +281,12 @@ private fun TargetRow(
     onDelete: (String) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
+    val moreFocus = remember { FocusRequester() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .wcmFocusRing(WcmRowRingShape)
+            .wcmFocusNextTo(moreFocus)
             .clickable { menu = true }
             .padding(vertical = WcmSpace.rowV),
         verticalAlignment = Alignment.CenterVertically,
@@ -307,7 +311,10 @@ private fun TargetRow(
             )
         }
         Box {
-            IconButton(onClick = { menu = true }, modifier = Modifier.wcmFocusRing(WcmShape.button)) {
+            IconButton(
+                onClick = { menu = true },
+                modifier = Modifier.wcmFocusRing(WcmShape.button).focusRequester(moreFocus),
+            ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_more_vert),
                     contentDescription = stringResource(R.string.cd_more),
@@ -485,8 +492,10 @@ private fun SwitchRow(
         )
         Switch(
             checked = checked,
-            onCheckedChange = onToggle,
+            // 行本身 clickable 已负责切换；开关再参与焦点会在同一个开关上停两次
+            onCheckedChange = null,
             enabled = enabled,
+            modifier = Modifier.wcmSkipFocus(),
         )
     }
 }
